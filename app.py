@@ -17,7 +17,7 @@ from googleapiclient.http import MediaIoBaseUpload
 
 # --- 1. CONFIGURATION ---
 # IMPORTANT: Paste your Folder ID here (from the URL of your Drive folder)
-DRIVE_FOLDER_ID = "https://drive.google.com/drive/folders/1gw_UvfQmVx-epCTZwIbVbXlKUKRfaitx"
+DRIVE_FOLDER_ID = "1gw_UvfQmVx-epCTZwIbVbXlKUKRfaitx"
 
 st.set_page_config(page_title="AI Circuit Tutor", layout="centered")
 
@@ -50,12 +50,21 @@ if 'saved' not in st.session_state:
 def upload_to_drive(file_bytes, file_name, mime_type='image/jpeg'):
     """Uploads bytes directly to Google Drive."""
     try:
-        file_metadata = {'name': file_name, 'parents': [DRIVE_FOLDER_ID]}
-        # Use BytesIO to handle the file in memory
+        # Ensure DRIVE_FOLDER_ID is just the ID string
+        folder_id = DRIVE_FOLDER_ID.split('/')[-1] 
+        
+        file_metadata = {'name': file_name, 'parents': [folder_id]}
         media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mime_type, resumable=True)
-        file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        
+        file = drive_service.files().create(
+            body=file_metadata, 
+            media_body=media, 
+            fields='id'
+        ).execute()
+        
         return file.get('id')
     except Exception as e:
+        # This will show you if it's a Permission (403) or ID (404) error
         st.error(f"Drive Upload Error: {e}")
         return None
 
@@ -152,4 +161,4 @@ if img_file and student_number:
                         st.table(df)
 
 st.divider()
-st.caption("Circuit AI Tutor | Powered by Gemini 1.5 Pro & Google Drive API")
+st.caption("Circuit AI Tutor | Powered by Gemini 2.5 Pro & Google Drive API")
