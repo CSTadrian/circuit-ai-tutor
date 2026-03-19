@@ -17,18 +17,28 @@ from PIL import Image as PILImage
 import vertexai
 from vertexai.generative_models import GenerativeModel, Image, GenerationConfig
 
+from google.oauth2 import service_account # Add this import at the top
+
 # --- 1. INITIALIZATION & CONFIG ---
-# This looks for the ID in your Streamlit Secrets dashboard
-if "PROJECT_ID" in st.secrets:
-    PROJECT_ID = st.secrets["PROJECT_ID"]
+if "gcp_service_account" in st.secrets:
+    # This pulls the JSON dictionary you pasted into the Secrets UI
+    creds_info = st.secrets["gcp_service_account"]
+    credentials = service_account.Credentials.from_service_account_info(creds_info)
+    
+    # Use the project ID from the JSON itself
+    PROJECT_ID = creds_info["project_id"]
+    
+    # INITIALIZE with credentials
+    vertexai.init(project=PROJECT_ID, location="us-central1", credentials=credentials)
 else:
-    PROJECT_ID = "your-actual-id-here" # You can put it here if your GitHub repo is PRIVATE
+    st.error("GCP Service Account secrets not found! Check your Streamlit Cloud settings.")
+    st.stop()
 
-vertexai.init(project=PROJECT_ID, location="us-central1")
-
-
-# Note: Using gemini-2.5-pro as it is the current stable high-reasoning model
+# Note: Check your model name. 
+# As of now, the stable high-reasoning model is "gemini-1.5-pro". 
+# "gemini-2.5-pro" may not be a valid string yet.
 model = GenerativeModel("gemini-2.5-pro")
+
 
 st.set_page_config(page_title="AI Circuit Tutor", layout="centered")
 
