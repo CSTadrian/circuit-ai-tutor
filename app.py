@@ -29,7 +29,7 @@ else:
     st.stop()
 
 # Using gemini-1.5-pro for high-reasoning diagnostic tasks
-model = GenerativeModel("gemini-1.5-pro")
+model = GenerativeModel("gemini-2.5-pro")
 
 st.set_page_config(page_title="AI Circuit Tutor", layout="centered")
 
