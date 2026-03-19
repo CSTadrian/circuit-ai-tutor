@@ -4,6 +4,7 @@ import pandas as pd
 import json
 import os
 import io
+import hashlib
 from datetime import datetime, timedelta, timezone
 
 # AI & Google Auth Imports
@@ -14,7 +15,6 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload 
 
 # --- 1. CONFIGURATION ---
-# You can paste the full URL or just the ID here
 DRIVE_FOLDER_ID = "1gw_UvfQmVx-epCTZwIbVbXlKUKRfaitx"
 
 st.set_page_config(page_title="AI Circuit Tutor", layout="centered", page_icon="🔌")
@@ -27,12 +27,10 @@ def init_services():
         credentials = service_account.Credentials.from_service_account_info(creds_info)
         PROJECT_ID = creds_info["project_id"]
         
-        # Initialize Vertex AI
         vertexai.init(project=PROJECT_ID, location="us-central1", credentials=credentials)
-        # Use gemini-2.5-pro for complex circuit reasoning
+        # Use gemini-2.5-pro (2.5 does not exist in the API yet)
         model = GenerativeModel("gemini-2.5-pro") 
         
-        # Initialize Google Drive Service
         drive_service = build('drive', 'v3', credentials=credentials)
         return model, drive_service
     else:
@@ -48,25 +46,17 @@ if 'current_analysis' not in st.session_state:
     st.session_state.current_analysis = {}
 if 'saved' not in st.session_state:
     st.session_state.saved = False
-if 'last_uploaded_image' not in st.session_state:
-    st.session_state.last_uploaded_image = None
+if 'last_img_hash' not in st.session_state:
+    st.session_state.last_img_hash = None
 
 # --- 4. HELPER FUNCTIONS ---
 def upload_to_drive(file_bytes, file_name, mime_type='image/jpeg'):
     """Uploads bytes directly to Google Drive."""
     try:
-        # Extract ID if a full URL was provided
         folder_id = DRIVE_FOLDER_ID.split('/')[-1] 
-        
         file_metadata = {'name': file_name, 'parents': [folder_id]}
         media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mime_type, resumable=True)
-        
-        file = drive_service.files().create(
-            body=file_metadata, 
-            media_body=media, 
-            fields='id'
-        ).execute()
-        
+        file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
         return file.get('id')
     except Exception as e:
         st.error(f"Drive Upload Error: {e}")
@@ -82,36 +72,37 @@ with st.sidebar:
     option_choice = st.radio("Debug Mode", ["1: Direct Debug", "2: Socratic Debug"])
     
     if st.button("Reset Session"):
-        for key in ["analysis_done", "current_analysis", "saved", "last_uploaded_image"]:
-            if key in st.session_state: st.session_state[key] = False if "done" in key or "saved" in key else None
+        for key in ["analysis_done", "current_analysis", "saved", "last_img_hash"]:
+            if key in st.session_state:
+                st.session_state[key] = False if "done" in key or "saved" in key else None
         st.rerun()
 
 img_file = st.camera_input("Capture your breadboard circuit")
 
-# Reset analysis if a new photo is taken
-if img_file is not None:
-    if st.session_state.last_uploaded_image != img_file.id:
-        st.session_state.analysis_done = False
-        st.session_state.saved = False
-        st.session_state.last_uploaded_image = img_file.id
-
 # --- 6. CORE LOGIC ---
 if img_file and student_number:
-    # Ensure the reference directory exists
+    # FIX: Use hash of bytes to detect if the image is new instead of .id
+    img_bytes = img_file.getvalue()
+    current_hash = hashlib.md5(img_bytes).hexdigest()
+
+    if st.session_state.last_img_hash != current_hash:
+        st.session_state.analysis_done = False
+        st.session_state.saved = False
+        st.session_state.last_img_hash = current_hash
+
     ref_path = f"data2/circuit-{task_number}.jpg"
 
     if not os.path.exists(ref_path):
-        st.error(f"Reference image {ref_path} not found. Please ensure the 'data2' folder exists in your repo.")
+        st.error(f"Reference image {ref_path} not found. Please ensure the 'data2' folder exists.")
     else:
-        # Load images for AI
-        schematic_img_ai = Image.load_from_file(ref_path)
-        student_img_bytes = img_file.getvalue()
-        student_img_ai = Image.from_bytes(student_img_bytes)
-
         # Trigger Analysis
         if not st.session_state.analysis_done:
             with st.spinner("AI analyzing your circuit..."):
                 try:
+                    schematic_img_ai = Image.load_from_file(ref_path)
+                    student_img_ai = Image.from_bytes(img_bytes)
+
+                    # YOUR ORIGINAL PROMPTS UNCHANGED
                     if "1" in option_choice:
                         prompt = """Compare the student's circuit photo with the reference schematic.
                         Identify missing wires, wrong resistor values, or incorrect pin connections.
@@ -146,8 +137,8 @@ if img_file and student_number:
         # Display Results
         if st.session_state.analysis_done:
             data = st.session_state.current_analysis
-            
             status = data.get('match_status', 'Unknown')
+            
             if status == "MATCH":
                 st.success("✅ Circuit Matches Schematic!")
             else:
@@ -159,19 +150,16 @@ if img_file and student_number:
             st.subheader("Tutor Hint")
             st.write(f"💡 {data.get('remediation_hints', 'No hints available.')}")
 
-            # Save to Drive Logic
             if not st.session_state.saved:
                 if st.button("Finalize and Save to Drive"):
                     now_hkt = datetime.now(timezone.utc) + timedelta(hours=8)
                     ts = now_hkt.strftime('%Y%m%d_%H%M%S')
                     
                     with st.spinner("Uploading to Google Drive..."):
-                        # 1. Upload Image
                         img_fn = f"std_{student_number}_task_{task_number}_{ts}.jpg"
-                        drive_id = upload_to_drive(student_img_bytes, img_fn)
+                        drive_id = upload_to_drive(img_bytes, img_fn)
 
                         if drive_id:
-                            # 2. Save Results as CSV
                             log_entry = {
                                 "Timestamp": [now_hkt.strftime('%Y-%m-%d %H:%M:%S')],
                                 "Student": [student_number],
@@ -182,8 +170,7 @@ if img_file and student_number:
                             }
                             df = pd.DataFrame(log_entry)
                             csv_bytes = df.to_csv(index=False).encode('utf-8')
-                            csv_fn = f"result_{student_number}_{ts}.csv"
-                            upload_to_drive(csv_bytes, csv_fn, mime_type='text/csv')
+                            upload_to_drive(csv_bytes, f"result_{student_number}_{ts}.csv", mime_type='text/csv')
 
                             st.session_state.saved = True
                             st.success(f"✅ Data saved successfully!")
