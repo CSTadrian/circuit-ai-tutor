@@ -26,7 +26,7 @@ def init_services():
     creds_info = st.secrets["gcp_service_account"]
     vertex_creds = service_account.Credentials.from_service_account_info(creds_info)
     vertexai.init(project=creds_info["project_id"], location="us-central1", credentials=vertex_creds)
-    model = GenerativeModel("gemini-2.5-pro") 
+    model = GenerativeModel("gemini-1.5-pro") 
 
     oauth_info = st.secrets["google_oauth"]
     from google.oauth2.credentials import Credentials
@@ -78,6 +78,7 @@ def save_to_central_csv(new_row_df):
                 _, done = downloader.next_chunk()
             fh.seek(0)
             existing_df = pd.read_csv(fh)
+            # Ensure column order matches
             updated_df = pd.concat([existing_df, new_row_df], ignore_index=True)
         else:
             updated_df = new_row_df
@@ -117,8 +118,9 @@ with st.sidebar:
         for key in list(st.session_state.keys()): del st.session_state[key]
         st.rerun()
 
-# --- PHOTO INPUT SELECTION ---
-input_method = st.tabs(["📸 Live Camera", "📤 High-Res Upload (Recommended)"])
+# --- PHOTO INPUT SELECTION (Fixes Blur) ---
+st.info("💡 **Tip:** If the live camera is blurry, use the 'High-Res Upload' tab and select 'Take Photo' from your phone's native camera.")
+input_method = st.tabs(["📸 Live Camera", "📤 High-Res Upload"])
 
 img_file = None
 with input_method[0]:
@@ -126,7 +128,7 @@ with input_method[0]:
     if cam_file: img_file = cam_file
 
 with input_method[1]:
-    up_file = st.file_uploader("Upload High-Res Photo (or use phone camera)", type=['jpg', 'jpeg', 'png'])
+    up_file = st.file_uploader("Upload High-Res Photo", type=['jpg', 'jpeg', 'png'])
     if up_file: img_file = up_file
 
 # --- 6. CORE LOGIC ---
@@ -181,21 +183,18 @@ if img_file and student_number:
             data = st.session_state.current_analysis
             
             if mode_choice.startswith("1"):
-                # MODE 1: DIRECT
                 st.subheader("Direct Feedback")
                 if data['match_status'] == "MATCH":
                     st.success("✅ Circuit Matches Schematic!")
                 else:
                     st.warning(f"⚠️ {data['error_analysis']}")
                     st.info(f"💡 Hint: {data['remediation_hints']}")
-                st.session_state.socratic_complete = True # Skip to save
+                st.session_state.socratic_complete = True
             
             else:
-                # MODE 2: SOCRATIC
                 st.subheader(f"Socratic Debugging (Step {st.session_state.socratic_step}/3)")
                 questions = data.get('socratic_questions', ["Look at your wiring again."]*3)
                 current_q = questions[st.session_state.socratic_step - 1]
-                
                 st.write(f"**Tutor:** {current_q}")
                 
                 with st.form(key=f"socratic_form_{st.session_state.socratic_step}"):
@@ -203,12 +202,10 @@ if img_file and student_number:
                     submit = st.form_submit_button("Submit Answer")
                     
                     if submit and user_ans:
-                        # AI evaluates the answer to the specific question
                         eval_prompt = f"Context: {data['error_analysis']}. Tutor asked: {current_q}. Student answered: {user_ans}. Is student on right track? Provide brief feedback. [JSON] {{'correct': bool, 'feedback': 'string'}}"
                         eval_resp = model.generate_content(eval_prompt, generation_config=GenerationConfig(response_mime_type="application/json"))
                         eval_data = json.loads(eval_resp.text)
                         
-                        # Log history
                         st.session_state.socratic_history.append(f"Q{st.session_state.socratic_step}: {current_q} | A: {user_ans} | AI: {eval_data['feedback']}")
                         
                         if eval_data['correct']:
@@ -228,20 +225,23 @@ if img_file and student_number:
                     ts = now_hkt.strftime('%Y-%m-%d %H:%M:%S')
                     
                     with st.spinner("Updating Central Log..."):
-                        # Upload Image
+                        # Define the Photo Name
                         img_fn = f"std_{student_number}_task_{task_number}_{now_hkt.strftime('%H%M%S')}.jpg"
+                        
+                        # Upload Image to Drive
                         drive_img_id = upload_image(img_bytes, img_fn)
                         
-                        # Format Socratic History for CSV
+                        # Format Socratic History
                         dialogue_log = " || ".join(st.session_state.socratic_history) if st.session_state.socratic_history else "N/A"
                         
-                        # Prepare Row
+                        # Prepare Row with Photo_Name
                         new_entry = pd.DataFrame([{
                             "Timestamp": ts,
                             "Student": student_number,
                             "Task": task_number,
                             "Mode": mode_choice,
                             "Status": data['match_status'],
+                            "Photo_Name": img_fn,  # <--- Added this column
                             "AI_Analysis": data['error_analysis'],
                             "Dialogue_History": dialogue_log,
                             "Image_Link": f"https://drive.google.com/open?id={drive_img_id}"
@@ -250,7 +250,7 @@ if img_file and student_number:
                         if save_to_central_csv(new_entry):
                             st.session_state.saved = True
                             st.balloons()
-                            st.success(f"Successfully appended to {LOG_FILE_NAME}")
+                            st.success(f"Saved to {LOG_FILE_NAME} and uploaded {img_fn}")
             
             elif st.session_state.saved:
                 st.success("Submission complete. Data is in the central Google Drive CSV.")
@@ -259,4 +259,4 @@ elif img_file and not student_number:
     st.warning("Please enter your Student Number in the sidebar.")
 
 st.divider()
-st.caption("Circuit AI Tutor| High-Res Mode & Centralized Logging")
+st.caption("Circuit AI Tutor v2.2 | Photo Name Tracking Enabled")
