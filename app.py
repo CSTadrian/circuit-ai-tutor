@@ -26,8 +26,7 @@ def init_services():
     creds_info = st.secrets["gcp_service_account"]
     vertex_creds = service_account.Credentials.from_service_account_info(creds_info)
     vertexai.init(project=creds_info["project_id"], location="us-central1", credentials=vertex_creds)
-    # Note: Ensure your model name is correct (gemini-1.5-pro or gemini-1.5-flash)
-    model = GenerativeModel("gemini-1.5-pro") 
+    model = GenerativeModel("gemini-2.5-pro") 
 
     oauth_info = st.secrets["google_oauth"]
     from google.oauth2.credentials import Credentials
@@ -273,4 +272,4 @@ elif img_file and not student_number:
     st.warning("Please enter your Student Number in the sidebar.")
 
 st.divider()
-st.caption("Circuit AI Tutor | Socratic Fix v2.0")
+st.caption("Circuit AI Tutor")
