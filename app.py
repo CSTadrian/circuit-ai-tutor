@@ -5,7 +5,6 @@ import json
 import os
 import io
 import hashlib
-import base64
 from datetime import datetime, timedelta, timezone
 
 # AI & Google Auth Imports
@@ -27,7 +26,8 @@ def init_services():
     creds_info = st.secrets["gcp_service_account"]
     vertex_creds = service_account.Credentials.from_service_account_info(creds_info)
     vertexai.init(project=creds_info["project_id"], location="us-central1", credentials=vertex_creds)
-    model = GenerativeModel("gemini-2.5-pro") 
+    # Note: Ensure your model name is correct (gemini-1.5-pro or gemini-1.5-flash)
+    model = GenerativeModel("gemini-1.5-pro") 
 
     oauth_info = st.secrets["google_oauth"]
     from google.oauth2.credentials import Credentials
@@ -56,6 +56,7 @@ if 'last_img_hash' not in st.session_state: st.session_state.last_img_hash = Non
 if 'socratic_step' not in st.session_state: st.session_state.socratic_step = 1
 if 'socratic_history' not in st.session_state: st.session_state.socratic_history = []
 if 'socratic_complete' not in st.session_state: st.session_state.socratic_complete = False
+if 'last_feedback' not in st.session_state: st.session_state.last_feedback = ""
 
 # --- 4. DRIVE LOGGING LOGIC ---
 def get_file_id_by_name(name):
@@ -114,45 +115,33 @@ with st.sidebar:
         for key in list(st.session_state.keys()): del st.session_state[key]
         st.rerun()
 
-# --- CAMERA SELECTION (The Fix for Back Camera & Blur) ---
+# --- CAMERA SELECTION ---
 st.subheader("Step 1: Take a Clear Photo")
-st.info("📸 **Mobile Users:** Use the 'Back Camera' tab for the best focus and highest resolution.")
-
-input_method = st.tabs(["📷 Back Camera (Recommended)", "🤳 Selfie Camera", "📁 Upload File"])
+input_method = st.tabs(["📷 Back Camera", "🤳 Selfie Camera", "📁 Upload File"])
 
 img_file = None
-
 with input_method[0]:
-    # This is the secret to forcing the back camera on mobile
-    # st.file_uploader with 'label' is standard, but on mobile, 
-    # browsers treat it as a trigger for the native camera app.
     back_cam_file = st.file_uploader("Tap to open Back Camera", type=['jpg', 'jpeg', 'png'], key="back_cam")
-    if back_cam_file:
-        img_file = back_cam_file
-
+    if back_cam_file: img_file = back_cam_file
 with input_method[1]:
-    # Streamlit's default camera input usually defaults to front-facing
     selfie_file = st.camera_input("Quick Selfie Capture", key="selfie_cam")
-    if selfie_file:
-        img_file = selfie_file
-
+    if selfie_file: img_file = selfie_file
 with input_method[2]:
     up_file = st.file_uploader("Select from Gallery", type=['jpg', 'jpeg', 'png'], key="gallery_up")
-    if up_file:
-        img_file = up_file
+    if up_file: img_file = up_file
 
 # --- 6. CORE LOGIC ---
 if img_file and student_number:
     img_bytes = img_file.getvalue()
     current_hash = hashlib.md5(img_bytes).hexdigest()
 
-    # Reset if a new photo is provided
     if st.session_state.last_img_hash != current_hash:
         st.session_state.analysis_done = False
         st.session_state.saved = False
         st.session_state.socratic_step = 1
         st.session_state.socratic_history = []
         st.session_state.socratic_complete = False
+        st.session_state.last_feedback = ""
         st.session_state.last_img_hash = current_hash
 
     ref_path = f"data2/circuit-{task_number}.jpg"
@@ -162,22 +151,21 @@ if img_file and student_number:
     else:
         # 1. Trigger AI Analysis
         if not st.session_state.analysis_done:
-            with st.spinner("AI analyzing high-resolution image..."):
+            with st.spinner("AI analyzing circuit..."):
                 try:
                     ref_img = Image.load_from_file(ref_path)
                     std_img = Image.from_bytes(img_bytes)
                     
                     prompt = """Compare the student's breadboard photo with the reference schematic.
-                    Identify errors in wiring, components, or polarity.
                     [OUTPUT FORMAT - JSON ONLY]
                     {
                       "match_status": "MATCH or ERROR",
                       "error_analysis": "Clear explanation of discrepancy",
                       "remediation_hints": "Direct fix instruction",
                       "socratic_questions": [
-                         "Question 1: Focus on component placement",
-                         "Question 2: Focus on specific wire connections",
-                         "Question 3: Focus on power/ground"
+                         "Question about component placement",
+                         "Question about specific wire connections",
+                         "Question about power/ground"
                       ]
                     }"""
                     
@@ -202,56 +190,75 @@ if img_file and student_number:
                 st.session_state.socratic_complete = True
             
             else:
-                st.subheader(f"Socratic Debugging (Step {st.session_state.socratic_step}/3)")
-                questions = data.get('socratic_questions', ["Look at your wiring again."]*3)
-                current_q = questions[st.session_state.socratic_step - 1]
-                st.write(f"**Tutor:** {current_q}")
-                
-                with st.form(key=f"socratic_form_{st.session_state.socratic_step}"):
-                    user_ans = st.text_input("Your observation:")
-                    submit = st.form_submit_button("Submit Answer")
+                # SOCRATIC MODE
+                if not st.session_state.socratic_complete:
+                    st.subheader(f"Socratic Debugging (Step {st.session_state.socratic_step}/3)")
+                    questions = data.get('socratic_questions', ["Look at your wiring again."]*3)
+                    current_q = questions[st.session_state.socratic_step - 1]
                     
-                    if submit and user_ans:
-                        eval_prompt = f"Context: {data['error_analysis']}. Tutor asked: {current_q}. Student answered: {user_ans}. Is student on right track? Provide brief feedback. [JSON] {{'correct': bool, 'feedback': 'string'}}"
-                        eval_resp = model.generate_content(eval_prompt, generation_config=GenerationConfig(response_mime_type="application/json"))
-                        eval_data = json.loads(eval_resp.text)
-                        
-                        st.session_state.socratic_history.append(f"Q{st.session_state.socratic_step}: {current_q} | A: {user_ans} | AI: {eval_data['feedback']}")
-                        
-                        if eval_data['correct']:
-                            if st.session_state.socratic_step < 3:
-                                st.session_state.socratic_step += 1
-                                st.rerun()
-                            else:
-                                st.session_state.socratic_complete = True
-                                st.success("Excellent! You've identified the circuit logic.")
-                        else:
-                            st.error(eval_data['feedback'])
+                    st.info(f"**Tutor:** {current_q}")
+                    
+                    # Show feedback from previous step if it exists
+                    if st.session_state.last_feedback:
+                        st.write(f"✨ *Feedback:* {st.session_state.last_feedback}")
 
-            # 3. Finalize and Append to CSV
+                    with st.form(key=f"socratic_form_step_{st.session_state.socratic_step}"):
+                        user_ans = st.text_input("Your observation:", key=f"input_text_{st.session_state.socratic_step}")
+                        submit = st.form_submit_button("Submit Answer")
+                        
+                        if submit and user_ans:
+                            with st.spinner("Tutor is evaluating..."):
+                                eval_prompt = f"""
+                                Context: The actual error is '{data['error_analysis']}'. 
+                                The tutor asked: '{current_q}'. 
+                                The student answered: '{user_ans}'.
+                                Is the student noticing the error or on the right track? 
+                                Provide brief encouraging feedback.
+                                [OUTPUT FORMAT - JSON ONLY]
+                                {{"correct": bool, "feedback": "string"}}
+                                """
+                                # We pass images again so the AI can verify the student's claim
+                                ref_img = Image.load_from_file(ref_path)
+                                std_img = Image.from_bytes(img_bytes)
+                                
+                                eval_resp = model.generate_content([eval_prompt, ref_img, std_img], 
+                                    generation_config=GenerationConfig(response_mime_type="application/json"))
+                                eval_data = json.loads(eval_resp.text)
+                                
+                                # Store history
+                                st.session_state.socratic_history.append(f"Q{st.session_state.socratic_step}: {current_q} | A: {user_ans}")
+                                st.session_state.last_feedback = eval_data['feedback']
+                                
+                                # Logic to advance
+                                if st.session_state.socratic_step < 3:
+                                    st.session_state.socratic_step += 1
+                                    st.rerun() # Force refresh to show next question
+                                else:
+                                    st.session_state.socratic_complete = True
+                                    st.rerun()
+                else:
+                    st.success("🎉 Socratic Session Complete!")
+                    st.write(f"**Final Diagnosis:** {data['error_analysis']}")
+                    st.write(f"**Remediation:** {data['remediation_hints']}")
+
+            # 3. Finalize and Save
             if st.session_state.socratic_complete and not st.session_state.saved:
                 if st.button("Finalize and Save to Drive"):
                     now_hkt = datetime.now(timezone.utc) + timedelta(hours=8)
                     ts = now_hkt.strftime('%Y-%m-%d %H:%M:%S')
                     
-                    with st.spinner("Updating Central Log..."):
-                        # Define the Photo Name
+                    with st.spinner("Uploading data..."):
                         img_fn = f"std_{student_number}_task_{task_number}_{now_hkt.strftime('%H%M%S')}.jpg"
-                        
-                        # Upload Image to Drive
                         drive_img_id = upload_image(img_bytes, img_fn)
+                        dialogue_log = " || ".join(st.session_state.socratic_history)
                         
-                        # Format Socratic History
-                        dialogue_log = " || ".join(st.session_state.socratic_history) if st.session_state.socratic_history else "N/A"
-                        
-                        # Prepare Row
                         new_entry = pd.DataFrame([{
                             "Timestamp": ts,
                             "Student": student_number,
                             "Task": task_number,
                             "Mode": mode_choice,
                             "Status": data['match_status'],
-                            "Photo_Name": img_fn,  # Saved correctly as requested
+                            "Photo_Name": img_fn,
                             "AI_Analysis": data['error_analysis'],
                             "Dialogue_History": dialogue_log,
                             "Image_Link": f"https://drive.google.com/open?id={drive_img_id}"
@@ -260,10 +267,10 @@ if img_file and student_number:
                         if save_to_central_csv(new_entry):
                             st.session_state.saved = True
                             st.balloons()
-                            st.success(f"Saved to {LOG_FILE_NAME} and uploaded {img_fn}")
+                            st.success(f"Successfully logged as {img_fn}")
 
 elif img_file and not student_number:
     st.warning("Please enter your Student Number in the sidebar.")
 
 st.divider()
-st.caption("Circuit AI Tutor| Back-Camera Optimization & Photo Naming")
+st.caption("Circuit AI Tutor | Socratic Fix v2.0")
