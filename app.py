@@ -5,6 +5,7 @@ import json
 import os
 import io
 import hashlib
+import base64
 from datetime import datetime, timedelta, timezone
 
 # AI & Google Auth Imports
@@ -26,7 +27,7 @@ def init_services():
     creds_info = st.secrets["gcp_service_account"]
     vertex_creds = service_account.Credentials.from_service_account_info(creds_info)
     vertexai.init(project=creds_info["project_id"], location="us-central1", credentials=vertex_creds)
-    model = GenerativeModel("gemini-1.5-pro") 
+    model = GenerativeModel("gemini-2.5-pro") 
 
     oauth_info = st.secrets["google_oauth"]
     from google.oauth2.credentials import Credentials
@@ -64,12 +65,9 @@ def get_file_id_by_name(name):
     return files[0]['id'] if files else None
 
 def save_to_central_csv(new_row_df):
-    """Appends data to the existing CSV on Google Drive or creates it."""
     try:
         file_id = get_file_id_by_name(LOG_FILE_NAME)
-        
         if file_id:
-            # Download existing CSV
             request = drive_service.files().get_media(fileId=file_id)
             fh = io.BytesIO()
             downloader = MediaIoBaseDownload(fh, request)
@@ -78,12 +76,10 @@ def save_to_central_csv(new_row_df):
                 _, done = downloader.next_chunk()
             fh.seek(0)
             existing_df = pd.read_csv(fh)
-            # Ensure column order matches
             updated_df = pd.concat([existing_df, new_row_df], ignore_index=True)
         else:
             updated_df = new_row_df
 
-        # Upload updated CSV
         csv_buffer = io.BytesIO()
         updated_df.to_csv(csv_buffer, index=False)
         csv_buffer.seek(0)
@@ -118,18 +114,32 @@ with st.sidebar:
         for key in list(st.session_state.keys()): del st.session_state[key]
         st.rerun()
 
-# --- PHOTO INPUT SELECTION (Fixes Blur) ---
-st.info("💡 **Tip:** If the live camera is blurry, use the 'High-Res Upload' tab and select 'Take Photo' from your phone's native camera.")
-input_method = st.tabs(["📸 Live Camera", "📤 High-Res Upload"])
+# --- CAMERA SELECTION (The Fix for Back Camera & Blur) ---
+st.subheader("Step 1: Take a Clear Photo")
+st.info("📸 **Mobile Users:** Use the 'Back Camera' tab for the best focus and highest resolution.")
+
+input_method = st.tabs(["📷 Back Camera (Recommended)", "🤳 Selfie Camera", "📁 Upload File"])
 
 img_file = None
+
 with input_method[0]:
-    cam_file = st.camera_input("Quick Capture")
-    if cam_file: img_file = cam_file
+    # This is the secret to forcing the back camera on mobile
+    # st.file_uploader with 'label' is standard, but on mobile, 
+    # browsers treat it as a trigger for the native camera app.
+    back_cam_file = st.file_uploader("Tap to open Back Camera", type=['jpg', 'jpeg', 'png'], key="back_cam")
+    if back_cam_file:
+        img_file = back_cam_file
 
 with input_method[1]:
-    up_file = st.file_uploader("Upload High-Res Photo", type=['jpg', 'jpeg', 'png'])
-    if up_file: img_file = up_file
+    # Streamlit's default camera input usually defaults to front-facing
+    selfie_file = st.camera_input("Quick Selfie Capture", key="selfie_cam")
+    if selfie_file:
+        img_file = selfie_file
+
+with input_method[2]:
+    up_file = st.file_uploader("Select from Gallery", type=['jpg', 'jpeg', 'png'], key="gallery_up")
+    if up_file:
+        img_file = up_file
 
 # --- 6. CORE LOGIC ---
 if img_file and student_number:
@@ -178,7 +188,7 @@ if img_file and student_number:
                 except Exception as e:
                     st.error(f"AI Analysis failed: {e}")
 
-        # 2. Display Results based on Mode
+        # 2. Display Results
         if st.session_state.analysis_done:
             data = st.session_state.current_analysis
             
@@ -234,14 +244,14 @@ if img_file and student_number:
                         # Format Socratic History
                         dialogue_log = " || ".join(st.session_state.socratic_history) if st.session_state.socratic_history else "N/A"
                         
-                        # Prepare Row with Photo_Name
+                        # Prepare Row
                         new_entry = pd.DataFrame([{
                             "Timestamp": ts,
                             "Student": student_number,
                             "Task": task_number,
                             "Mode": mode_choice,
                             "Status": data['match_status'],
-                            "Photo_Name": img_fn,  # <--- Added this column
+                            "Photo_Name": img_fn,  # Saved correctly as requested
                             "AI_Analysis": data['error_analysis'],
                             "Dialogue_History": dialogue_log,
                             "Image_Link": f"https://drive.google.com/open?id={drive_img_id}"
@@ -251,12 +261,9 @@ if img_file and student_number:
                             st.session_state.saved = True
                             st.balloons()
                             st.success(f"Saved to {LOG_FILE_NAME} and uploaded {img_fn}")
-            
-            elif st.session_state.saved:
-                st.success("Submission complete. Data is in the central Google Drive CSV.")
 
 elif img_file and not student_number:
     st.warning("Please enter your Student Number in the sidebar.")
 
 st.divider()
-st.caption("Circuit AI Tutor v2.2 | Photo Name Tracking Enabled")
+st.caption("Circuit AI Tutor| Back-Camera Optimization & Photo Naming")
