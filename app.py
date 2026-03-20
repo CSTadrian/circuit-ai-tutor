@@ -15,27 +15,44 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload 
 
 # --- 1. CONFIGURATION ---
+# Ensure this folder is SHARED with your service account email as an "Editor"
 DRIVE_FOLDER_ID = "1gw_UvfQmVx-epCTZwIbVbXlKUKRfaitx"
 
 st.set_page_config(page_title="AI Circuit Tutor", layout="centered", page_icon="🔌")
 
 # --- 2. INITIALIZE SERVICES ---
+import streamlit as st
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+# ... other imports ...
+
 @st.cache_resource
 def init_services():
-    if "gcp_service_account" in st.secrets:
-        creds_info = st.secrets["gcp_service_account"]
-        credentials = service_account.Credentials.from_service_account_info(creds_info)
-        PROJECT_ID = creds_info["project_id"]
+    # 1. Setup Gemini (Still uses Service Account)
+    creds_info = st.secrets["gcp_service_account"]
+    vertex_creds = service_account.Credentials.from_service_account_info(creds_info)
+    vertexai.init(project=creds_info["project_id"], location="us-central1", credentials=vertex_creds)
+    model = GenerativeModel("gemini-1.5-pro")
+
+    # 2. Setup Google Drive (Uses OAuth User Credentials)
+    oauth_info = st.secrets["google_oauth"]
+    drive_creds = Credentials(
+        token=None, # Will be refreshed
+        refresh_token=oauth_info["refresh_token"],
+        client_id=oauth_info["client_id"],
+        client_secret=oauth_info["client_secret"],
+        token_uri="https://oauth2.googleapis.com/token",
+        scopes=['https://www.googleapis.com/auth/drive.file']
+    )
+    
+    # Refresh the token if it's expired
+    if not drive_creds.valid:
+        drive_creds.refresh(Request())
         
-        vertexai.init(project=PROJECT_ID, location="us-central1", credentials=credentials)
-        # Use gemini-2.5-pro (2.5 does not exist in the API yet)
-        model = GenerativeModel("gemini-2.5-pro") 
-        
-        drive_service = build('drive', 'v3', credentials=credentials)
-        return model, drive_service
-    else:
-        st.error("GCP Service Account secrets not found! Please add them to .streamlit/secrets.toml")
-        st.stop()
+    drive_service = build('drive', 'v3', credentials=drive_creds)
+    
+    return model, drive_service
 
 model, drive_service = init_services()
 
@@ -56,9 +73,17 @@ def upload_to_drive(file_bytes, file_name, mime_type='image/jpeg'):
         folder_id = DRIVE_FOLDER_ID.split('/')[-1] 
         file_metadata = {'name': file_name, 'parents': [folder_id]}
         media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mime_type, resumable=True)
-        file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        
+        file = drive_service.files().create(
+            body=file_metadata, 
+            media_body=media, 
+            fields='id'
+        ).execute()
+        
         return file.get('id')
     except Exception as e:
+        # This is where the 403 error was caught. 
+        # Sharing the folder with the service account email fixes this.
         st.error(f"Drive Upload Error: {e}")
         return None
 
@@ -81,7 +106,7 @@ img_file = st.camera_input("Capture your breadboard circuit")
 
 # --- 6. CORE LOGIC ---
 if img_file and student_number:
-    # FIX: Use hash of bytes to detect if the image is new instead of .id
+    # Use MD5 hash to detect if a new photo was taken
     img_bytes = img_file.getvalue()
     current_hash = hashlib.md5(img_bytes).hexdigest()
 
@@ -93,7 +118,7 @@ if img_file and student_number:
     ref_path = f"data2/circuit-{task_number}.jpg"
 
     if not os.path.exists(ref_path):
-        st.error(f"Reference image {ref_path} not found. Please ensure the 'data2' folder exists.")
+        st.error(f"Reference image {ref_path} not found.")
     else:
         # Trigger Analysis
         if not st.session_state.analysis_done:
@@ -102,7 +127,7 @@ if img_file and student_number:
                     schematic_img_ai = Image.load_from_file(ref_path)
                     student_img_ai = Image.from_bytes(img_bytes)
 
-                    # YOUR ORIGINAL PROMPTS UNCHANGED
+                    # PROMPTS REMAIN UNCHANGED AS REQUESTED
                     if "1" in option_choice:
                         prompt = """Compare the student's circuit photo with the reference schematic.
                         Identify missing wires, wrong resistor values, or incorrect pin connections.
@@ -150,6 +175,7 @@ if img_file and student_number:
             st.subheader("Tutor Hint")
             st.write(f"💡 {data.get('remediation_hints', 'No hints available.')}")
 
+            # Save to Drive Logic
             if not st.session_state.saved:
                 if st.button("Finalize and Save to Drive"):
                     now_hkt = datetime.now(timezone.utc) + timedelta(hours=8)
@@ -170,7 +196,8 @@ if img_file and student_number:
                             }
                             df = pd.DataFrame(log_entry)
                             csv_bytes = df.to_csv(index=False).encode('utf-8')
-                            upload_to_drive(csv_bytes, f"result_{student_number}_{ts}.csv", mime_type='text/csv')
+                            csv_fn = f"result_{student_number}_{ts}.csv"
+                            upload_to_drive(csv_bytes, csv_fn, mime_type='text/csv')
 
                             st.session_state.saved = True
                             st.success(f"✅ Data saved successfully!")
