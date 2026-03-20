@@ -5,6 +5,7 @@ import json
 import os
 import io
 import hashlib
+import time
 from datetime import datetime, timedelta, timezone
 
 # AI & Google Auth Imports
@@ -13,6 +14,7 @@ from vertexai.generative_models import GenerativeModel, Image, GenerationConfig
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
+from googleapiclient.errors import HttpError
 
 # --- 1. CONFIGURATION ---
 DRIVE_FOLDER_ID = "1gw_UvfQmVx-epCTZwIbVbXlKUKRfaitx"
@@ -96,10 +98,21 @@ def save_to_central_csv(new_row_df):
         return False
 
 def upload_image(file_bytes, file_name):
-    media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype='image/jpeg')
-    file_metadata = {'name': file_name, 'parents': [DRIVE_FOLDER_ID]}
-    file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-    return file.get('id')
+    """Uploads image with Resumable Upload and Retry Logic to prevent BrokenPipeError"""
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype='image/jpeg', resumable=True)
+            file_metadata = {'name': file_name, 'parents': [DRIVE_FOLDER_ID]}
+            file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+            return file.get('id')
+        except (Exception, ConnectionResetError) as e:
+            if attempt < max_retries - 1:
+                time.sleep(2) # Wait before retrying
+                continue
+            else:
+                st.error(f"Upload failed after {max_retries} attempts: {e}")
+                return None
 
 # --- 5. UI LAYOUT ---
 st.title("🔌 AI Circuit Diagnostic Station")
@@ -148,25 +161,14 @@ if img_file and student_number:
     if not os.path.exists(ref_path):
         st.error(f"Reference image {ref_path} not found.")
     else:
-        # 1. Trigger AI Analysis
         if not st.session_state.analysis_done:
             with st.spinner("AI analyzing circuit..."):
                 try:
                     ref_img = Image.load_from_file(ref_path)
                     std_img = Image.from_bytes(img_bytes)
                     
-                    prompt = """Compare the student's breadboard photo with the reference schematic.
-                    [OUTPUT FORMAT - JSON ONLY]
-                    {
-                      "match_status": "MATCH or ERROR",
-                      "error_analysis": "Clear explanation of discrepancy",
-                      "remediation_hints": "Direct fix instruction",
-                      "socratic_questions": [
-                         "Question about component placement",
-                         "Question about specific wire connections",
-                         "Question about power/ground"
-                      ]
-                    }"""
+                    prompt = """Compare student's breadboard with reference schematic. 
+                    [JSON ONLY] { "match_status": "MATCH/ERROR", "error_analysis": "...", "remediation_hints": "...", "socratic_questions": ["Q1","Q2","Q3"] }"""
                     
                     response = model.generate_content([prompt, ref_img, std_img], 
                         generation_config=GenerationConfig(response_mime_type="application/json", temperature=0.1))
@@ -175,7 +177,6 @@ if img_file and student_number:
                 except Exception as e:
                     st.error(f"AI Analysis failed: {e}")
 
-        # 2. Display Results
         if st.session_state.analysis_done:
             data = st.session_state.current_analysis
             
@@ -189,87 +190,64 @@ if img_file and student_number:
                 st.session_state.socratic_complete = True
             
             else:
-                # SOCRATIC MODE
                 if not st.session_state.socratic_complete:
                     st.subheader(f"Socratic Debugging (Step {st.session_state.socratic_step}/3)")
                     questions = data.get('socratic_questions', ["Look at your wiring again."]*3)
                     current_q = questions[st.session_state.socratic_step - 1]
-                    
                     st.info(f"**Tutor:** {current_q}")
                     
-                    # Show feedback from previous step if it exists
                     if st.session_state.last_feedback:
                         st.write(f"✨ *Feedback:* {st.session_state.last_feedback}")
 
-                    with st.form(key=f"socratic_form_step_{st.session_state.socratic_step}"):
-                        user_ans = st.text_input("Your observation:", key=f"input_text_{st.session_state.socratic_step}")
+                    with st.form(key=f"soc_form_{st.session_state.socratic_step}"):
+                        user_ans = st.text_input("Your observation:")
                         submit = st.form_submit_button("Submit Answer")
                         
                         if submit and user_ans:
-                            with st.spinner("Tutor is evaluating..."):
-                                eval_prompt = f"""
-                                Context: The actual error is '{data['error_analysis']}'. 
-                                The tutor asked: '{current_q}'. 
-                                The student answered: '{user_ans}'.
-                                Is the student noticing the error or on the right track? 
-                                Provide brief encouraging feedback.
-                                [OUTPUT FORMAT - JSON ONLY]
-                                {{"correct": bool, "feedback": "string"}}
-                                """
-                                # We pass images again so the AI can verify the student's claim
-                                ref_img = Image.load_from_file(ref_path)
-                                std_img = Image.from_bytes(img_bytes)
-                                
-                                eval_resp = model.generate_content([eval_prompt, ref_img, std_img], 
-                                    generation_config=GenerationConfig(response_mime_type="application/json"))
-                                eval_data = json.loads(eval_resp.text)
-                                
-                                # Store history
-                                st.session_state.socratic_history.append(f"Q{st.session_state.socratic_step}: {current_q} | A: {user_ans}")
-                                st.session_state.last_feedback = eval_data['feedback']
-                                
-                                # Logic to advance
-                                if st.session_state.socratic_step < 3:
-                                    st.session_state.socratic_step += 1
-                                    st.rerun() # Force refresh to show next question
-                                else:
-                                    st.session_state.socratic_complete = True
-                                    st.rerun()
+                            eval_prompt = f"Error: {data['error_analysis']}. Q: {current_q}. Student: {user_ans}. Provide feedback. [JSON] {{'correct': bool, 'feedback': 'string'}}"
+                            eval_resp = model.generate_content(eval_prompt, generation_config=GenerationConfig(response_mime_type="application/json"))
+                            eval_data = json.loads(eval_resp.text)
+                            
+                            st.session_state.socratic_history.append(f"Q{st.session_state.socratic_step}: {current_q} | A: {user_ans}")
+                            st.session_state.last_feedback = eval_data['feedback']
+                            
+                            if st.session_state.socratic_step < 3:
+                                st.session_state.socratic_step += 1
+                                st.rerun()
+                            else:
+                                st.session_state.socratic_complete = True
+                                st.rerun()
                 else:
                     st.success("🎉 Socratic Session Complete!")
-                    st.write(f"**Final Diagnosis:** {data['error_analysis']}")
-                    st.write(f"**Remediation:** {data['remediation_hints']}")
 
-            # 3. Finalize and Save
             if st.session_state.socratic_complete and not st.session_state.saved:
                 if st.button("Finalize and Save to Drive"):
                     now_hkt = datetime.now(timezone.utc) + timedelta(hours=8)
                     ts = now_hkt.strftime('%Y-%m-%d %H:%M:%S')
                     
-                    with st.spinner("Uploading data..."):
+                    with st.spinner("Uploading to Drive..."):
                         img_fn = f"std_{student_number}_task_{task_number}_{now_hkt.strftime('%H%M%S')}.jpg"
                         drive_img_id = upload_image(img_bytes, img_fn)
-                        dialogue_log = " || ".join(st.session_state.socratic_history)
                         
-                        new_entry = pd.DataFrame([{
-                            "Timestamp": ts,
-                            "Student": student_number,
-                            "Task": task_number,
-                            "Mode": mode_choice,
-                            "Status": data['match_status'],
-                            "Photo_Name": img_fn,
-                            "AI_Analysis": data['error_analysis'],
-                            "Dialogue_History": dialogue_log,
-                            "Image_Link": f"https://drive.google.com/open?id={drive_img_id}"
-                        }])
-                        
-                        if save_to_central_csv(new_entry):
-                            st.session_state.saved = True
-                            st.balloons()
-                            st.success(f"Successfully logged as {img_fn}")
+                        if drive_img_id:
+                            dialogue_log = " || ".join(st.session_state.socratic_history)
+                            new_entry = pd.DataFrame([{
+                                "Timestamp": ts, "Student": student_number, "Task": task_number,
+                                "Mode": mode_choice, "Status": data['match_status'],
+                                "Photo_Name": img_fn, "AI_Analysis": data['error_analysis'],
+                                "Dialogue_History": dialogue_log,
+                                "Image_Link": f"https://drive.google.com/open?id={drive_img_id}"
+                            }])
+                            
+                            if save_to_central_csv(new_entry):
+                                st.session_state.saved = True
+                                st.balloons()
+                                st.success(f"Saved successfully!")
+                        else:
+                            st.error("Could not upload image. Please check your connection and try again.")
 
 elif img_file and not student_number:
     st.warning("Please enter your Student Number in the sidebar.")
 
 st.divider()
-st.caption("Circuit AI Tutor")
+st.caption("Circuit AI Tutor | Connection Stability Patch")
