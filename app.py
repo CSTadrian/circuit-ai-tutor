@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 from datetime import datetime, timedelta, timezone
-from PIL import Image as PILImage
+from PIL import Image as PILImage, ImageOps  # Added ImageOps for flipping
 
 # Google Auth & Drive Imports
 from google.oauth2.credentials import Credentials
@@ -15,7 +15,6 @@ PARENT_FOLDER_ID = "1gw_UvfQmVx-epCTZwIbVbXlKUKRfaitx"
 SUBFOLDER_NAME = "0321"
 LOG_FILE_NAME = "circuit_log_0321.csv"
 
-# The specific task list provided
 TASK_OPTIONS = [
     "1) turn on LED", "2) use a button", "3a) button -- series", 
     "3b) button -- parallel", "3c) button -- NOT", "4a) bright-activated LDR", 
@@ -25,7 +24,7 @@ TASK_OPTIONS = [
     "13) 555 IC", "14) 74LS90 IC", "15) IR with 74LS90"
 ]
 
-st.set_page_config(page_title="Circuit Task Logger", layout="centered", page_icon="🔌")
+st.set_page_config(page_title="Circuit Logger", layout="centered", page_icon="🔌")
 
 # --- 2. INITIALIZE DRIVE SERVICE ---
 @st.cache_resource
@@ -58,10 +57,20 @@ def get_or_create_subfolder():
         folder = drive_service.files().create(body=file_metadata, fields='id').execute()
         return folder.get('id')
 
-def process_image(uploaded_file):
+def process_image(uploaded_file, flip_h, rotate_val):
     img = PILImage.open(uploaded_file)
+    
+    # Fix mirroring if enabled
+    if flip_h:
+        img = ImageOps.mirror(img)
+    
+    # Rotate if needed
+    if rotate_val != 0:
+        img = img.rotate(-rotate_val, expand=True) # Negative for clockwise
+
     img.thumbnail((1600, 1600)) 
     if img.mode in ("RGBA", "P"): img = img.convert("RGB")
+    
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=85) 
     return buf.getvalue()
@@ -110,17 +119,17 @@ def save_log_csv(new_row_df, folder_id):
 st.title("🔌 Circuit Task Logger")
 
 with st.sidebar:
-    st.header("Step 1: Task Info")
-    selected_task = st.selectbox("Select the Task:", TASK_OPTIONS)
+    st.header("1. Task Info")
+    selected_task = st.selectbox("Select Task:", TASK_OPTIONS)
     
-    st.write("Step 2: Result")
-    status = st.radio("Circuit Status:", ["✅ Correct", "❌ Wrong"], horizontal=True)
+    st.header("2. Result")
+    status = st.radio("Status:", ["✅ Correct", "❌ Wrong"], horizontal=True)
     
-    notes = ""
-    if status == "❌ Wrong":
-        notes = st.text_area("Why is it wrong? (Optional)", placeholder="e.g. Loose wire, LED reversed...")
-    else:
-        notes = st.text_input("Notes (Optional)", placeholder="Everything works!")
+    notes = st.text_area("Notes/Why wrong? (Optional)", placeholder="Enter details here...")
+
+    st.header("3. Image Fixes")
+    flip_h = st.checkbox("Un-mirror Image (Flip Horizontal)", value=True)
+    rotate_angle = st.select_slider("Rotate Image", options=[0, 90, 180, 270], value=0)
 
     if st.button("🔄 Reset Form"):
         st.rerun()
@@ -141,27 +150,28 @@ with tabs[2]:
 
 # --- 5. SAVE LOGIC ---
 if img_file:
-    st.image(img_file, caption="Selected Image", width=300)
+    # Preview with fixes applied locally for the user to see
+    preview_img = PILImage.open(img_file)
+    if flip_h: preview_img = ImageOps.mirror(preview_img)
+    if rotate_angle != 0: preview_img = preview_img.rotate(-rotate_angle, expand=True)
+    
+    st.image(preview_img, caption="Final Preview (As it will be saved)", width=400)
     
     if st.button("🚀 Click to Save to Drive"):
-        with st.spinner("Saving data and photo..."):
-            # 1. Prepare Folder
+        with st.spinner("Saving..."):
             target_folder_id = get_or_create_subfolder()
             
-            # 2. Prepare Image
-            img_bytes = process_image(img_file)
+            # Process image with the selected flip/rotate settings
+            img_bytes = process_image(img_file, flip_h, rotate_angle)
+            
             now_hkt = datetime.now(timezone.utc) + timedelta(hours=8)
             timestamp_str = now_hkt.strftime('%Y%m%d_%H%M%S')
-            
-            # Create a filename based on task number and timestamp
-            task_num = selected_task.split(')')[0]
+            task_num = selected_task.split(')')[0].strip()
             file_name = f"Task{task_num}_{timestamp_str}.jpg"
             
-            # 3. Upload Image
             drive_id = upload_to_drive(img_bytes, file_name, target_folder_id)
             
             if drive_id:
-                # 4. Update CSV
                 new_entry = pd.DataFrame([{
                     "Timestamp": now_hkt.strftime('%Y-%m-%d %H:%M:%S'),
                     "Task": selected_task,
@@ -173,8 +183,7 @@ if img_file:
                 
                 if save_log_csv(new_entry, target_folder_id):
                     st.balloons()
-                    st.success(f"Successfully Saved! Task: {selected_task} | Status: {status}")
-                    st.info("You can now select a new task or take another photo.")
+                    st.success(f"Saved: {selected_task}")
 
 st.divider()
-st.caption("Circuit Collector | 21st March, 2026")
+st.caption("Circuit Collector | 2026-03-21")
