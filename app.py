@@ -60,22 +60,15 @@ def get_or_create_subfolder():
 
 
 
-def process_image(uploaded_file):
-    img = PILImage.open(uploaded_file)
-    
-    # --- FIX STARTS HERE ---
-    # This line reads the EXIF orientation tag and physically 
-    # rotates the pixels so the image matches what the user saw.
-    img = ImageOps.exif_transpose(img)
-    # --- FIX ENDS HERE ---
-
-    img.thumbnail((1600, 1600)) 
-    if img.mode in ("RGBA", "P"): 
-        img = img.convert("RGB")
-    
+def process_image(pil_img):
+    # This function now just handles resizing and conversion to bytes
+    pil_img.thumbnail((1600, 1600)) 
+    if pil_img.mode in ("RGBA", "P"): 
+        pil_img = pil_img.convert("RGB")
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=85) 
+    pil_img.save(buf, format="JPEG", quality=85) 
     return buf.getvalue()
+    
 
 def upload_to_drive(file_bytes, file_name, folder_id):
     media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype='image/jpeg', resumable=True)
@@ -152,19 +145,24 @@ with tabs[2]:
 
 # --- 5. SAVE LOGIC ---
 if img_file:
-    st.image(img_file, caption="Selected Image", width=300)
+    # --- NEW: Fix orientation for the UI display ---
+    raw_img = PILImage.open(img_file)
+    fixed_img = ImageOps.exif_transpose(raw_img)
+    
+    # Display the FIXED image on the platform
+    st.image(fixed_img, caption="Selected Image (Orientation Corrected)", width=300)
     
     if st.button("🚀 Click to Save to Drive"):
         with st.spinner("Saving data and photo..."):
             # 1. Prepare Folder
             target_folder_id = get_or_create_subfolder()
             
-            # 2. Prepare Image
-            img_bytes = process_image(img_file)
+            # 2. Prepare Image (using our already fixed_img)
+            img_bytes = process_image(fixed_img) 
             now_hkt = datetime.now(timezone.utc) + timedelta(hours=8)
             timestamp_str = now_hkt.strftime('%Y%m%d_%H%M%S')
             
-            # Create a filename based on task number and timestamp
+            # Create a filename
             task_num = selected_task.split(')')[0]
             file_name = f"Task{task_num}_{timestamp_str}.jpg"
             
@@ -184,8 +182,7 @@ if img_file:
                 
                 if save_log_csv(new_entry, target_folder_id):
                     st.balloons()
-                    st.success(f"Successfully Saved! Task: {selected_task} | Status: {status}")
-                    st.info("You can now select a new task or take another photo.")
-
+                    st.success(f"Successfully Saved! Task: {selected_task}")
+                    
 st.divider()
 st.caption("Circuit Collector | 21st March, 2026")
