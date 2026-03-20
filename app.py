@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 from datetime import datetime, timedelta, timezone
-from PIL import Image as PILImage
+from PIL import Image as PILImage, ImageOps
 
 # Google Auth & Drive Imports
 from google.oauth2.credentials import Credentials
@@ -58,10 +58,21 @@ def get_or_create_subfolder():
         folder = drive_service.files().create(body=file_metadata, fields='id').execute()
         return folder.get('id')
 
+
+
 def process_image(uploaded_file):
     img = PILImage.open(uploaded_file)
+    
+    # --- FIX STARTS HERE ---
+    # This line reads the EXIF orientation tag and physically 
+    # rotates the pixels so the image matches what the user saw.
+    img = ImageOps.exif_transpose(img)
+    # --- FIX ENDS HERE ---
+
     img.thumbnail((1600, 1600)) 
-    if img.mode in ("RGBA", "P"): img = img.convert("RGB")
+    if img.mode in ("RGBA", "P"): 
+        img = img.convert("RGB")
+    
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=85) 
     return buf.getvalue()
