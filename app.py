@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
-import os
 import io
-import hashlib
 from datetime import datetime, timedelta, timezone
 from PIL import Image as PILImage
 
@@ -13,12 +11,21 @@ from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 from google.auth.transport.requests import Request
 
 # --- 1. CONFIGURATION ---
-# The Parent Folder ID you provided
 PARENT_FOLDER_ID = "1gw_UvfQmVx-epCTZwIbVbXlKUKRfaitx"
 SUBFOLDER_NAME = "0321"
-LOG_FILE_NAME = "photo_log_0321.csv"
+LOG_FILE_NAME = "circuit_log_0321.csv"
 
-st.set_page_config(page_title="Circuit Photo Uploader", layout="centered", page_icon="📷")
+# The specific task list provided
+TASK_OPTIONS = [
+    "1) turn on LED", "2) use a button", "3a) button -- series", 
+    "3b) button -- parallel", "3c) button -- NOT", "4a) bright-activated LDR", 
+    "4b) dark-activated LDR", "5) light up parallel LED", "6) capacitor and VR", 
+    "7) using one slide-switch", "8) using Two slide-switch", "9) diode", 
+    "10) NPN transistor - v1", "11) NPN transistor - v2", "12) IR emitter & detector", 
+    "13) 555 IC", "14) 74LS90 IC", "15) IR with 74LS90"
+]
+
+st.set_page_config(page_title="Circuit Task Logger", layout="centered", page_icon="🔌")
 
 # --- 2. INITIALIZE DRIVE SERVICE ---
 @st.cache_resource
@@ -41,44 +48,31 @@ drive_service = init_drive()
 # --- 3. HELPER FUNCTIONS ---
 
 def get_or_create_subfolder():
-    """Checks for '0321' folder inside Parent, creates it if missing."""
     query = f"name = '{SUBFOLDER_NAME}' and '{PARENT_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
     results = drive_service.files().list(q=query, fields="files(id)").execute()
     files = results.get('files', [])
-    
     if files:
         return files[0]['id']
     else:
-        file_metadata = {
-            'name': SUBFOLDER_NAME,
-            'parents': [PARENT_FOLDER_ID],
-            'mimeType': 'application/vnd.google-apps.folder'
-        }
+        file_metadata = {'name': SUBFOLDER_NAME, 'parents': [PARENT_FOLDER_ID], 'mimeType': 'application/vnd.google-apps.folder'}
         folder = drive_service.files().create(body=file_metadata, fields='id').execute()
         return folder.get('id')
 
-def process_image_high_res(uploaded_file):
-    """Resizes to 2048px for high quality while keeping file size reasonable."""
+def process_image(uploaded_file):
     img = PILImage.open(uploaded_file)
-    img.thumbnail((2048, 2048)) 
-    if img.mode in ("RGBA", "P"):
-        img = img.convert("RGB")
+    img.thumbnail((1600, 1600)) 
+    if img.mode in ("RGBA", "P"): img = img.convert("RGB")
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=95, subsampling=0) 
+    img.save(buf, format="JPEG", quality=85) 
     return buf.getvalue()
 
 def upload_to_drive(file_bytes, file_name, folder_id):
-    try:
-        media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype='image/jpeg', resumable=True)
-        file_metadata = {'name': file_name, 'parents': [folder_id]}
-        file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-        return file.get('id')
-    except Exception as e:
-        st.error(f"Upload failed: {e}")
-        return None
+    media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype='image/jpeg', resumable=True)
+    file_metadata = {'name': file_name, 'parents': [folder_id]}
+    file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+    return file.get('id')
 
 def save_log_csv(new_row_df, folder_id):
-    """Saves/Updates the CSV log in the same '0321' folder."""
     try:
         query = f"name = '{LOG_FILE_NAME}' and '{folder_id}' in parents and trashed = false"
         results = drive_service.files().list(q=query, fields="files(id)").execute()
@@ -90,8 +84,7 @@ def save_log_csv(new_row_df, folder_id):
             fh = io.BytesIO()
             downloader = MediaIoBaseDownload(fh, request)
             done = False
-            while not done:
-                _, done = downloader.next_chunk()
+            while not done: _, done = downloader.next_chunk()
             fh.seek(0)
             existing_df = pd.read_csv(fh)
             updated_df = pd.concat([existing_df, new_row_df], ignore_index=True)
@@ -103,7 +96,6 @@ def save_log_csv(new_row_df, folder_id):
         updated_df.to_csv(csv_buffer, index=False)
         csv_buffer.seek(0)
         media = MediaIoBaseUpload(csv_buffer, mimetype='text/csv', resumable=True)
-        
         if file_id:
             drive_service.files().update(fileId=file_id, media_body=media).execute()
         else:
@@ -111,72 +103,78 @@ def save_log_csv(new_row_df, folder_id):
             drive_service.files().create(body=file_metadata, media_body=media).execute()
         return True
     except Exception as e:
-        st.error(f"CSV Log Error: {e}")
+        st.error(f"Log update failed: {e}")
         return False
 
 # --- 4. UI LAYOUT ---
-st.title("📷 Circuit Photo Collector")
-st.info("Photos will be saved to Google Drive in folder: `0321`")
+st.title("🔌 Circuit Task Logger")
 
 with st.sidebar:
-    st.header("Student Info")
-    student_id = st.text_input("Student ID", placeholder="e.g. 42")
-    task_id = st.number_input("Task Number", 1, 20, 1)
-    if st.button("Clear Screen"):
+    st.header("Step 1: Task Info")
+    selected_task = st.selectbox("Select the Task:", TASK_OPTIONS)
+    
+    st.write("Step 2: Result")
+    status = st.radio("Circuit Status:", ["✅ Correct", "❌ Wrong"], horizontal=True)
+    
+    notes = ""
+    if status == "❌ Wrong":
+        notes = st.text_area("Why is it wrong? (Optional)", placeholder="e.g. Loose wire, LED reversed...")
+    else:
+        notes = st.text_input("Notes (Optional)", placeholder="Everything works!")
+
+    if st.button("🔄 Reset Form"):
         st.rerun()
 
 # --- CAMERA SELECTION ---
-tabs = st.tabs(["📷 Camera (iPad/Mobile)", "🤳 Selfie Cam", "📁 Upload"])
-
+tabs = st.tabs(["📷 Camera", "🤳 Selfie", "📁 Upload"])
 img_file = None
+
 with tabs[0]:
-    # This uses the native camera on iPad/Android
-    cam_file = st.file_uploader("Tap to take photo with Back Camera", type=['jpg', 'jpeg', 'png'], key="back_cam")
+    cam_file = st.file_uploader("Take Photo", type=['jpg', 'jpeg', 'png'], key="back_cam")
     if cam_file: img_file = cam_file
 with tabs[1]:
-    selfie_file = st.camera_input("Capture with Front Camera")
+    selfie_file = st.camera_input("Capture")
     if selfie_file: img_file = selfie_file
 with tabs[2]:
-    up_file = st.file_uploader("Choose from Gallery", type=['jpg', 'jpeg', 'png'], key="gallery")
+    up_file = st.file_uploader("Gallery", type=['jpg', 'jpeg', 'png'], key="gallery")
     if up_file: img_file = up_file
 
 # --- 5. SAVE LOGIC ---
 if img_file:
-    if not student_id:
-        st.warning("⚠️ Please enter a Student ID in the sidebar before saving.")
-    else:
-        st.image(img_file, caption="Preview", width=300)
-        
-        if st.button("🚀 Upload Photo to Drive"):
-            with st.spinner("Processing and Uploading..."):
-                # 1. Get the 0321 folder ID
-                target_folder_id = get_or_create_subfolder()
+    st.image(img_file, caption="Selected Image", width=300)
+    
+    if st.button("🚀 Click to Save to Drive"):
+        with st.spinner("Saving data and photo..."):
+            # 1. Prepare Folder
+            target_folder_id = get_or_create_subfolder()
+            
+            # 2. Prepare Image
+            img_bytes = process_image(img_file)
+            now_hkt = datetime.now(timezone.utc) + timedelta(hours=8)
+            timestamp_str = now_hkt.strftime('%Y%m%d_%H%M%S')
+            
+            # Create a filename based on task number and timestamp
+            task_num = selected_task.split(')')[0]
+            file_name = f"Task{task_num}_{timestamp_str}.jpg"
+            
+            # 3. Upload Image
+            drive_id = upload_to_drive(img_bytes, file_name, target_folder_id)
+            
+            if drive_id:
+                # 4. Update CSV
+                new_entry = pd.DataFrame([{
+                    "Timestamp": now_hkt.strftime('%Y-%m-%d %H:%M:%S'),
+                    "Task": selected_task,
+                    "Status": status,
+                    "Notes": notes,
+                    "Filename": file_name,
+                    "Drive_Link": f"https://drive.google.com/open?id={drive_id}"
+                }])
                 
-                # 2. Process image (High Res)
-                img_bytes = process_image_high_res(img_file)
-                
-                # 3. Create Filename
-                now_hkt = datetime.now(timezone.utc) + timedelta(hours=8)
-                timestamp_str = now_hkt.strftime('%Y%m%d_%H%M%S')
-                file_name = f"SID{student_id}_Task{task_id}_{timestamp_str}.jpg"
-                
-                # 4. Upload Image
-                drive_id = upload_to_drive(img_bytes, file_name, target_folder_id)
-                
-                if drive_id:
-                    # 5. Update CSV Log
-                    new_entry = pd.DataFrame([{
-                        "Timestamp": now_hkt.strftime('%Y-%m-%d %H:%M:%S'),
-                        "Student_ID": student_id,
-                        "Task": task_id,
-                        "Filename": file_name,
-                        "Drive_Link": f"https://drive.google.com/open?id={drive_id}"
-                    }])
-                    
-                    if save_log_csv(new_entry, target_folder_id):
-                        st.balloons()
-                        st.success(f"Successfully saved as {file_name}")
-                        st.markdown(f"[🔗 View in Google Drive](https://drive.google.com/open?id={drive_id})")
+                if save_log_csv(new_entry, target_folder_id):
+                    st.balloons()
+                    st.success(f"Successfully Saved! Task: {selected_task} | Status: {status}")
+                    st.info("You can now select a new task or take another photo.")
 
 st.divider()
-st.caption("v2.1 | Direct Drive Upload (No AI Costs)")
+st.caption("Circuit Collector | 21st March, 2026")
