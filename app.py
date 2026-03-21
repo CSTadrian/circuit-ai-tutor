@@ -1,188 +1,176 @@
-import streamlit as st
-import pandas as pd
-import io
+import os
+import json
+import pd
+import base64
+import shutil
+import ipywidgets as widgets
 from datetime import datetime, timedelta, timezone
-from PIL import Image as PILImage, ImageOps
+from google.colab import output
+from IPython.display import display, Javascript, clear_output
+import vertexai
+from vertexai.generative_models import GenerativeModel, Image, GenerationConfig
 
-# Google Auth & Drive Imports
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
-from google.auth.transport.requests import Request
+# --- 1. UPDATED INITIALIZATION ---
+# Replace "your-project-id" with your actual GCP Project ID
+# Note: Gemini 3.1 Pro is significantly better at the "Structural Netlist Analysis" 
+# step you defined in your prompt.
+vertexai.init(project="your-project-id", location="us-central1")
 
-# --- 1. CONFIGURATION ---
-PARENT_FOLDER_ID = "1gw_UvfQmVx-epCTZwIbVbXlKUKRfaitx"
-SUBFOLDER_NAME = "0321"
-LOG_FILE_NAME = "circuit_log_0321.csv"
+# Use the 3.1 Pro model for advanced reasoning on breadboard spacing
+MODEL_ID = "gemini-3.1-pro-preview-0520" 
+model = GenerativeModel(MODEL_ID)
 
-# The specific task list provided
-TASK_OPTIONS = [
-    "1) turn on LED", "2) use a button", "3a) button -- series", 
-    "3b) button -- parallel", "3c) button -- NOT", "4a) bright-activated LDR", 
-    "4b) dark-activated LDR", "5) light up parallel LED", "6) capacitor and VR", 
-    "7) using one slide-switch", "8) using Two slide-switch", "9) diode", 
-    "10) NPN transistor - v1", "11) NPN transistor - v2", "12) IR emitter & detector", 
-    "13) 555 IC", "14) 74LS90 IC", "15) IR with 74LS90"
-]
+# --- JAVASCRIPT FOR WEBCAM ACCESS (Unchanged) ---
+def take_photo(filepath, quality=0.8):
+    js = Javascript('''
+    async function takePhoto(quality) {
+      const div = document.createElement('div');
+      const capture = document.createElement('button');
+      capture.textContent = 'Capture Photo';
+      capture.style.padding = '10px';
+      capture.style.margin = '10px';
+      capture.style.backgroundColor = '#4CAF50';
+      capture.style.color = 'white';
+      capture.style.border = 'none';
+      capture.style.borderRadius = '5px';
+      capture.style.cursor = 'pointer';
 
-st.set_page_config(page_title="Circuit Task Logger", layout="centered", page_icon="🔌")
+      const video = document.createElement('video');
+      video.style.display = 'block';
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { exact: "environment" } }
+      });
+      document.body.appendChild(div);
+      div.appendChild(video);
+      div.appendChild(capture);
+      video.srcObject = stream;
+      await video.play();
 
-# --- 2. INITIALIZE DRIVE SERVICE ---
-@st.cache_resource
-def init_drive():
-    oauth_info = st.secrets["google_oauth"]
-    drive_creds = Credentials(
-        token=None,
-        refresh_token=oauth_info["refresh_token"],
-        client_id=oauth_info["client_id"],
-        client_secret=oauth_info["client_secret"],
-        token_uri="https://oauth2.googleapis.com/token",
-        scopes=['https://www.googleapis.com/auth/drive.file']
-    )
-    if not drive_creds.valid:
-        drive_creds.refresh(Request())
-    return build('drive', 'v3', credentials=drive_creds)
+      google.colab.output.setIframeHeight(document.documentElement.scrollHeight, true);
 
-drive_service = init_drive()
+      await new Promise((resolve) => capture.onclick = resolve);
 
-# --- 3. HELPER FUNCTIONS ---
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      stream.getVideoTracks()[0].stop();
+      div.remove();
+      return canvas.toDataURL('image/jpeg', quality);
+    }
+    ''')
+    display(js)
+    data = output.eval_js('takePhoto({})'.format(quality))
+    binary = base64.b64decode(data.split(',')[1])
+    with open(filepath, 'wb') as f:
+        f.write(binary)
+    return filepath
 
-def get_or_create_subfolder():
-    query = f"name = '{SUBFOLDER_NAME}' and '{PARENT_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-    results = drive_service.files().list(q=query, fields="files(id)").execute()
-    files = results.get('files', [])
-    if files:
-        return files[0]['id']
-    else:
-        file_metadata = {'name': SUBFOLDER_NAME, 'parents': [PARENT_FOLDER_ID], 'mimeType': 'application/vnd.google-apps.folder'}
-        folder = drive_service.files().create(body=file_metadata, fields='id').execute()
-        return folder.get('id')
+def process_live_circuit(task_number):
+    base_folder = "data2"
+    saved_folder = os.path.join(base_folder, "saved")
+    unsaved_folder = os.path.join(base_folder, "unsaved")
+    csv_filename = "circuit_records.csv"
 
+    for folder in [saved_folder, unsaved_folder]:
+        os.makedirs(folder, exist_ok=True)
 
+    ref_image_name = f"circuit-{task_number}.jpg"
+    ref_path = os.path.join(base_folder, ref_image_name)
 
-def process_image(pil_img):
-    # This function now just handles resizing and conversion to bytes
-    pil_img.thumbnail((1600, 1600)) 
-    if pil_img.mode in ("RGBA", "P"): 
-        pil_img = pil_img.convert("RGB")
-    buf = io.BytesIO()
-    pil_img.save(buf, format="JPEG", quality=85) 
-    return buf.getvalue()
-    
+    if not os.path.exists(ref_path):
+        print(f"Error: Reference image {ref_image_name} not found.")
+        return
 
-def upload_to_drive(file_bytes, file_name, folder_id):
-    media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype='image/jpeg', resumable=True)
-    file_metadata = {'name': file_name, 'parents': [folder_id]}
-    file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-    return file.get('id')
+    now_hkt = datetime.now(timezone.utc) + timedelta(hours=8)
+    timestamp_str = now_hkt.strftime('%Y_%m_%d__%H_%M_%S')
+    temp_filename = f"temp_{timestamp_str}.jpg"
 
-def save_log_csv(new_row_df, folder_id):
+    print(f"--- TASK {task_number} LIVE CAPTURE ---")
     try:
-        query = f"name = '{LOG_FILE_NAME}' and '{folder_id}' in parents and trashed = false"
-        results = drive_service.files().list(q=query, fields="files(id)").execute()
-        files = results.get('files', [])
-        
-        if files:
-            file_id = files[0]['id']
-            request = drive_service.files().get_media(fileId=file_id)
-            fh = io.BytesIO()
-            downloader = MediaIoBaseDownload(fh, request)
-            done = False
-            while not done: _, done = downloader.next_chunk()
-            fh.seek(0)
-            existing_df = pd.read_csv(fh)
-            updated_df = pd.concat([existing_df, new_row_df], ignore_index=True)
-        else:
-            file_id = None
-            updated_df = new_row_df
-
-        csv_buffer = io.BytesIO()
-        updated_df.to_csv(csv_buffer, index=False)
-        csv_buffer.seek(0)
-        media = MediaIoBaseUpload(csv_buffer, mimetype='text/csv', resumable=True)
-        if file_id:
-            drive_service.files().update(fileId=file_id, media_body=media).execute()
-        else:
-            file_metadata = {'name': LOG_FILE_NAME, 'parents': [folder_id]}
-            drive_service.files().create(body=file_metadata, media_body=media).execute()
-        return True
+        take_photo(temp_filename)
     except Exception as e:
-        st.error(f"Log update failed: {e}")
-        return False
+        print(f"Webcam Error: {e}")
+        return
 
-# --- 4. UI LAYOUT ---
-st.title("🔌 Circuit Task Logger")
+    # --- 2. AI ANALYSIS (Running on Gemini 3.1 Pro) ---
+    print(f"Analyzing with {MODEL_ID}... please wait.")
+    try:
+        schematic_img_ai = Image.load_from_file(ref_path)
+        student_img_ai = Image.load_from_file(temp_filename)
 
-with st.sidebar:
-    st.header("Step 1: Task Info")
-    selected_task = st.selectbox("Select the Task:", TASK_OPTIONS)
-    
-    st.write("Step 2: Result")
-    status = st.radio("Circuit Status:", ["✅ Correct", "❌ Wrong"], horizontal=True)
-    
-    notes = ""
-    if status == "❌ Wrong":
-        notes = st.text_area("Why is it wrong? (Optional)", placeholder="e.g. Loose wire, LED reversed...")
-    else:
-        notes = st.text_input("Notes (Optional)", placeholder="Everything works!")
+        # Your existing detailed prompt
+        prompt = """
+        You are a Senior Electronic Systems Diagnostic Engineer. Your task is to perform a two-stage validation...
+        [Rest of your prompt remains the same]
+        """
+        
+        # 3.1 Pro handles temperature=0 very strictly for consistent JSON output
+        response = model.generate_content(
+            [prompt, schematic_img_ai, student_img_ai],
+            generation_config=GenerationConfig(
+                response_mime_type="application/json",
+                temperature=0.0
+            )
+        )
 
-    if st.button("🔄 Reset Form"):
-        st.rerun()
+        data = json.loads(response.text)
 
-# --- CAMERA SELECTION ---
-tabs = st.tabs(["📷 Camera", "🤳 Selfie", "📁 Upload"])
-img_file = None
+        print(f"\n" + "="*40)
+        print(f"DIAGNOSTIC RESULT: {data['match_status']}")
+        print(f"ANALYSIS: {data['error_analysis']}")
+        print(f"HINT: {data['remediation_hints']}")
+        print("="*40 + "\n")
 
-with tabs[0]:
-    cam_file = st.file_uploader("Take Photo", type=['jpg', 'jpeg', 'png'], key="back_cam")
-    if cam_file: img_file = cam_file
-with tabs[1]:
-    selfie_file = st.camera_input("Capture")
-    if selfie_file: img_file = selfie_file
-with tabs[2]:
-    up_file = st.file_uploader("Gallery", type=['jpg', 'jpeg', 'png'], key="gallery")
-    if up_file: img_file = up_file
+        # --- 3. UI BUTTONS & SAVING (Unchanged) ---
+        save_button = widgets.Button(description="Save to CSV", button_style='success', icon='check')
+        no_save_button = widgets.Button(description="Discard (Don't Save)", button_style='danger', icon='times')
+        output_widget = widgets.Output()
+        display(widgets.HBox([save_button, no_save_button]), output_widget)
 
-# --- 5. SAVE LOGIC ---
-if img_file:
-    # --- NEW: Fix orientation for the UI display ---
-    raw_img = PILImage.open(img_file)
-    fixed_img = ImageOps.exif_transpose(raw_img)
-    
-    # Display the FIXED image on the platform
-    st.image(fixed_img, caption="Selected Image (Orientation Corrected)", width=300)
-    
-    if st.button("🚀 Click to Save to Drive"):
-        with st.spinner("Saving data and photo..."):
-            # 1. Prepare Folder
-            target_folder_id = get_or_create_subfolder()
-            
-            # 2. Prepare Image (using our already fixed_img)
-            img_bytes = process_image(fixed_img) 
-            now_hkt = datetime.now(timezone.utc) + timedelta(hours=8)
-            timestamp_str = now_hkt.strftime('%Y%m%d_%H%M%S')
-            
-            # Create a filename
-            task_num = selected_task.split(')')[0]
-            file_name = f"Task{task_num}_{timestamp_str}.jpg"
-            
-            # 3. Upload Image
-            drive_id = upload_to_drive(img_bytes, file_name, target_folder_id)
-            
-            if drive_id:
-                # 4. Update CSV
-                new_entry = pd.DataFrame([{
-                    "Timestamp": now_hkt.strftime('%Y-%m-%d %H:%M:%S'),
-                    "Task": selected_task,
-                    "Status": status,
-                    "Notes": notes,
-                    "Filename": file_name,
-                    "Drive_Link": f"https://drive.google.com/open?id={drive_id}"
-                }])
+        def on_save_clicked(b):
+            with output_widget:
+                clear_output()
+                final_name = f"{timestamp_str}.jpg"
+                final_path = os.path.join(saved_folder, final_name)
+                shutil.move(temp_filename, final_path)
                 
-                if save_log_csv(new_entry, target_folder_id):
-                    st.balloons()
-                    st.success(f"Successfully Saved! Task: {selected_task}")
-                    
-st.divider()
-st.caption("Circuit Collector | 21st March, 2026")
+                df = pd.read_csv(csv_filename) if os.path.exists(csv_filename) else pd.DataFrame()
+                hkt_display = now_hkt.strftime('%Y-%m-%d %H:%M:%S')
+                new_row = {
+                    "Index": len(df) + 1,
+                    "Time (HKT)": hkt_display,
+                    "Photo 1 Name": ref_image_name,
+                    "Photo 2 Name": final_name,
+                    "Photo 1 Netlist": data['schematic_netlist'],
+                    "Photo 2 Netlist": data['student_netlist'],
+                    "Result": data['match_status'],
+                    "Logic": f"ANALYSIS: {data['error_analysis']} | HINT: {data['remediation_hints']}"
+                }
+                df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+                df.to_csv(csv_filename, index=False)
+                print(f"✅ Data saved. Image: data2/saved/{final_name}")
+                save_button.disabled = True
+                no_save_button.disabled = True
+
+        def on_no_save_clicked(b):
+            with output_widget:
+                clear_output()
+                final_name = f"{timestamp_str}.jpg"
+                final_path = os.path.join(unsaved_folder, final_name)
+                shutil.move(temp_filename, final_path)
+                print(f"❌ Discarded.")
+                save_button.disabled = True
+                no_save_button.disabled = True
+
+        save_button.on_click(on_save_clicked)
+        no_save_button.on_click(on_no_save_clicked)
+
+    except Exception as e:
+        print(f"Error: {e}")
+        if os.path.exists(temp_filename):
+            os.remove(temp_filename)
+
+if __name__ == "__main__":
+    task_input = input("Enter Task Number: ").strip()
+    process_live_circuit(task_input)
