@@ -28,16 +28,18 @@ TASK_OPTIONS = [
 st.set_page_config(page_title="Circuit Task Logger", layout="centered", page_icon="🔌")
 
 # --- 2. INITIALIZE DRIVE SERVICE ---
+from google.oauth2 import service_account # Add this import at the top
+
 @st.cache_resource
 def init_drive():
-    oauth_info = st.secrets["google_oauth"]
-    drive_creds = Credentials(
-        token=None,
-        refresh_token=oauth_info["refresh_token"],
-        client_id=oauth_info["client_id"],
-        client_secret=oauth_info["client_secret"],
-        token_uri="https://oauth2.googleapis.com/token",
+    # This matches the standard format of a Google Service Account JSON
+    info = st.secrets["google_oauth"]
+    creds = service_account.Credentials.from_service_account_info(
+        info, 
         scopes=['https://www.googleapis.com/auth/drive.file']
+    )
+    return build('drive', 'v3', credentials=creds)
+    
     )
     if not drive_creds.valid:
         drive_creds.refresh(Request())
