@@ -10,6 +10,17 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 from google.auth.transport.requests import Request
 
+import streamlit as st
+import pandas as pd
+import io
+from datetime import datetime, timedelta, timezone
+from PIL import Image as PILImage, ImageOps
+
+# Google Auth & Drive Imports
+from google.oauth2 import service_account # <--- ADD THIS
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
+
 # --- 1. CONFIGURATION ---
 PARENT_FOLDER_ID = "1gw_UvfQmVx-epCTZwIbVbXlKUKRfaitx"
 SUBFOLDER_NAME = "0321"
@@ -30,20 +41,18 @@ st.set_page_config(page_title="Circuit Task Logger", layout="centered", page_ico
 # --- 2. INITIALIZE DRIVE SERVICE ---
 from google.oauth2 import service_account # Add this import at the top
 
+# --- 2. INITIALIZE DRIVE SERVICE ---
 @st.cache_resource
 def init_drive():
-    # This matches the standard format of a Google Service Account JSON
+    # Ensure your secrets are stored under [google_oauth] in Streamlit
     info = st.secrets["google_oauth"]
+    
+    # Use service_account instead of Credentials to avoid refresh_token errors
     creds = service_account.Credentials.from_service_account_info(
         info, 
         scopes=['https://www.googleapis.com/auth/drive.file']
     )
     return build('drive', 'v3', credentials=creds)
-    
-    )
-    if not drive_creds.valid:
-        drive_creds.refresh(Request())
-    return build('drive', 'v3', credentials=drive_creds)
 
 drive_service = init_drive()
 
