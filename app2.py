@@ -19,7 +19,8 @@ LOG_FILE_NAME = "circuit_log_0321.csv"
 TASK_OPTIONS = [
     "1) turn on LED", "2) use a button", "3a) button -- series", 
     "3b) button -- parallel", "3c) button -- NOT", "4a) bright-activated LDR", 
-    "4b) dark-activated LDR", "5) light up parallel LED", "6) capacitor and VR", 
+    "4b) dark-activated LDR", "5) light up parallel LED", "6a) capacitor and VR - v1", 
+    "6b) capacitor and VR - v2", 
     "7) using one slide-switch", "8) using Two slide-switch", "9) diode", 
     "10) NPN transistor - v1", "11) NPN transistor - v2", "12) IR emitter & detector", 
     "13) 555 IC", "14) 74LS90 IC", "15) IR with 74LS90"
