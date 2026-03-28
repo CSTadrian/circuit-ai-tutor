@@ -172,19 +172,31 @@ if img_file and student_number:
                     std_img = Image.from_bytes(img_bytes)
 
                     # ENHANCED SOCRATIC PROMPT STRUCTURE
-                    prompt = """Compare the student's breadboard with the reference schematic.
-                    If there is an error, generate 3 Socratic questions following this EXACT structure:
-                    1. OBSERVATION: Ask the student to look at a specific component or row where the error is. (e.g., 'Look at the LED. Which row is the long leg in?')
-                    2. COMPARISON: Ask the student to compare that specific spot to the schematic. (e.g., 'In the schematic, should that leg connect to the resistor or the ground rail?')
-                    3. CORRECTION: Ask what they need to move to fix it. (e.g., 'So, which hole should you move the wire to?')
-
+                    # --- UPDATED AI PROMPT ---
+                    prompt = """
+                    Analyze the student's breadboard and compare it to the reference schematic.
+                    
+                    CRITICAL INSTRUCTIONS:
+                    1. RESISTOR VALUE: Do NOT verify the resistor's value, color bands, or resistance. 
+                       As long as a resistor is physically present and connecting the correct two points/nodes, mark it as CORRECT.
+                    2. BUTTON LOGIC: Apply the following internal logic for the tactile button:
+                       - UNPRESSED: Current only flows horizontally across the button's internal frame.
+                       - PRESSED: Current flows vertically, horizontally, and diagonally.
+                    3. ANALYSIS: Check if the circuit forms a complete loop from Power to Ground through the switch, LED, and resistor when the button is 'pressed'.
+                    
+                    If there is a connection error, generate 3 Socratic questions:
+                    1. OBSERVATION: Ask the student to look at a specific component or row.
+                    2. COMPARISON: Ask the student to compare that spot to the schematic nodes.
+                    3. CORRECTION: Ask what they need to move to fix the physical gap.
+                    
                     [OUTPUT FORMAT - JSON ONLY]
                     {
                       "match_status": "MATCH or ERROR",
-                      "error_analysis": "Brief technical description of the error",
-                      "remediation_hints": "Direct fix for the teacher's reference",
-                      "socratic_questions": ["Observation Question", "Comparison Question", "Correction Question"]
-                    }"""
+                      "error_analysis": "Brief technical description (Ignore resistor color mismatch)",
+                      "remediation_hints": "Direct fix for teacher reference",
+                      "socratic_questions": ["Observation", "Comparison", "Correction"]
+                    }
+                    """
 
                     response = model.generate_content([prompt, ref_img, std_img],
                         generation_config=GenerationConfig(response_mime_type="application/json", temperature=0.1))
