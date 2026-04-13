@@ -1,140 +1,182 @@
-import streamlit as st
-import pandas as pd
-import json
 import os
-import io
-import hashlib
-from datetime import datetime, timedelta, timezone
-from PIL import Image, ImageDraw, ImageFont
+import PIL.Image, PIL.ImageDraw
+import ipywidgets as widgets
+from IPython.display import display, clear_output, HTML
+from google.genai import types
 
-# AI & Google Auth
-import vertexai
-from vertexai.generative_models import GenerativeModel, Image as VertexImage, GenerationConfig
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
+# --- 1. SETUP ---
+# auth.authenticate_user() # 如果已認證可註解
+PROJECT_ID = "project-b51ce4f6-9f92-4f6b-877"
+client = genai.Client(vertexai=True, project=PROJECT_ID, location="global")
 
-# --- 1. SETUP & CONFIG ---
-st.set_page_config(page_title="AI 專業電路導航", layout="wide", page_icon="🔌")
+BASE_PATH = "/content/drive/MyDrive/Colab/Research_2026/ECCC_AI_cleaned"
+target_img_name = "Task1_20260321_105232.jpg"
+img_path = os.path.join(BASE_PATH, "0321", target_img_name)
 
-DRIVE_FOLDER_ID = "1gw_UvfQmVx-epCTZwIbVbXlKUKRfaitx"
-LOG_FILE_NAME = "circuit_ai_0321.csv"
+# --- 2. STEP 1: INITIAL DETECTION ---
+def get_initial_leads(path):
+    img = PIL.Image.open(path)
+    prompt = "Identify components and their pin endpoints. Output JSON list."
+    try:
+        resp = client.models.generate_content(
+            model="gemini-3.1-pro-preview", 
+            contents=[img, prompt],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema={
+                    "type": "ARRAY",
+                    "items": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "component": {"type": "STRING"},
+                            "center": {"type": "ARRAY", "items": {"type": "INTEGER"}},
+                            "legs": {"type": "ARRAY", "items": {"type": "ARRAY", "items": {"type": "INTEGER"}}}
+                        },
+                        "required": ["component", "center", "legs"]
+                    }
+                }
+            )
+        )
+        if resp.parsed: return resp.parsed
+    except Exception as e:
+        print(f"⚠️ Initial detection failed: {e}")
+    return [{"component": "LDR", "center": [500, 500], "legs": [[480, 480], [520, 520]]}]
 
-# --- 2. INITIALIZE SERVICES ---
-@st.cache_resource
-def init_services():
-    creds_info = st.secrets["gcp_service_account"]
-    vertex_creds = service_account.Credentials.from_service_account_info(creds_info)
-    vertexai.init(project=creds_info["project_id"], location="us-central1", credentials=vertex_creds)
-    model = GenerativeModel("gemini-1.5-pro") # 使用穩定的 Pro 版本
-
-    oauth_info = st.secrets["google_oauth"]
-    from google.oauth2.credentials import Credentials
-    drive_creds = Credentials(
-        token=None,
-        refresh_token=oauth_info["refresh_token"],
-        client_id=oauth_info["client_id"],
-        client_secret=oauth_info["client_secret"],
-        token_uri="https://oauth2.googleapis.com/token",
-        scopes=['https://www.googleapis.com/auth/drive.file']
-    )
-    drive_service = build('drive', 'v3', credentials=drive_creds)
-    return model, drive_service
-
-model, drive_service = init_services()
-
-# --- 3. SESSION STATE (狀態管理) ---
-if 'current_data' not in st.session_state:
-    # 預設零件數據 (P4-S3 常見：LDR, LED)
-    st.session_state.current_data = [
-        {"component": "LDR (光敏電阻)", "center": [500, 500], "legs": [[480, 480], [520, 520]]},
-        {"component": "LED (發光二極管)", "center": [300, 300], "legs": [[280, 280], [320, 320]]}
-    ]
-if 'analysis_result' not in st.session_state: st.session_state.analysis_result = None
-
-# --- 4. 繪圖核心函數 ---
-def draw_overlay(base_img):
-    w, h = base_img.size
-    overlay = Image.new('RGBA', base_img.size, (0,0,0,0))
-    d = ImageDraw.Draw(overlay)
+# --- 3. STEP 2: ANALYZE BASED ON USER ADAPTATION ---
+def run_final_analysis(img_path):
+    global current_data
+    with output:
+        clear_output()
+        print("🧠 3.1-Pro is analyzing, using YOUR corrected pins AND reinforced middle gap...")
     
-    # 畫麵包板內部導軌 (視覺輔助)
-    for row_y in range(100, 950, 40):
-        d.line([(80*w/1000, row_y*h/1000), (440*w/1000, row_y*h/1000)], fill=(0, 255, 0, 40), width=3)
-        d.line([(560*w/1000, row_y*h/1000), (920*w/1000, row_y*h/1000)], fill=(0, 255, 0, 40), width=3)
-        
-    for it in st.session_state.current_data:
-        cy, cx = it['center']
-        cp = (cx * w / 1000, cy * h / 1000)
-        # 中心十字 (紅色)
-        d.line([cp[0]-15, cp[1], cp[0]+15, cp[1]], fill="red", width=3)
-        d.line([cp[0], cp[1]-15, cp[0], cp[1]+15], fill="red", width=3)
-        
-        for j, leg in enumerate(it['legs']):
+    img = PIL.Image.open(img_path).convert('RGBA')
+    w, h = img.size
+    
+    # --- A. 建立高對比度標註層 ---
+    overlay = PIL.Image.new('RGBA', img.size, (0,0,0,0))
+    draw = PIL.ImageDraw.Draw(overlay)
+    
+    inventory_text = ""
+    for i, item in enumerate(current_data):
+        cy, cx = item['center']
+        comp = item.get('component', f'Part_{i}')
+        inventory_text += f"- {comp}: "
+        for j, leg in enumerate(item['legs']):
             ly, lx = leg
-            start_p = cp
-            end_p = (lx * w / 1000, ly * h / 1000)
-            # 橘色引線
-            d.line([start_p, end_p], fill=(255, 130, 0, 200), width=10)
-            # 青色孔位
-            d.ellipse([end_p[0]-12, end_p[1]-12, end_p[0]+12, end_p[1]+12], fill=(0, 255, 255, 255))
+            # 畫粗橘線
+            draw.line([(cx*w/1000, cy*h/1000), (lx*w/1000, ly*h/1000)], fill=(255, 165, 0, 200), width=15)
+            # 畫青色孔位點 (AI 分析的精確依據)
+            draw.ellipse([(lx*w/1000-12, ly*h/1000-12), (lx*w/1000+12, ly*h/1000+12)], fill=(0, 255, 255, 255))
+            # 輔助 AI 定位引腳是在左(L)還是右(R)
+            side = "LEFT (a-e)" if lx < 500 else "RIGHT (f-j)"
+            inventory_text += f"Leg{j+1}[{side},y:{ly},x:{lx}]; "
+        inventory_text += "\n"
+
+    # --- B. 核心修正：在麵包板中間畫藍色隔離線 ---
+    middle_x = w // 2 # 尋找圖片中心位置
+    draw.line([(middle_x, 0), (middle_x, h)], fill=(0, 0, 255, 200), width=25) # 畫一條極粗的藍色線
+    draw.text((middle_x - 100, 50), "LEFT SIDE (a-e)", fill=(0, 0, 255, 255), stroke_fill="white", stroke_width=2)
+    draw.text((middle_x + 20, 50), "RIGHT SIDE (f-j)", fill=(0, 0, 255, 255), stroke_fill="white", stroke_width=2)
+
+    # --- C. 合併標註與原圖 ---
+    combined = PIL.Image.alpha_composite(img, overlay).convert('RGB')
+
+    # --- D. 優化 Prompt，強調藍色隔離線和左右列的定義 ---
+    prompt = f"""
+    CRITICAL: Look at the image with reinforcements.
+    A THICK BLUE LINE has been drawn in the middle to define the BREADBOARD GAP.
+    - Area to the LEFT of the blue line is rows a, b, c, d, e.
+    - Area to the RIGHT of the blue line is rows f, g, h, i, j.
+
+    DO NOT ignore this blue line. It is the GROUND TRUTH for middle separation.
+    
+    Verified Component Map (USE CYAN DOTS for exact hole):
+    {inventory_text}
+    
+    Task: 4b (LDR Control Circuit).
+    Compare the connections (CYAN DOTS) to the schematic, paying close attention 
+    to whether pins are on the LEFT or RIGHT of the blue gap line.
+
+    1. RESULT: [✅ CORRECT] or [❌ INCORRECT]
+    2. ANALYSIS: Max 50 words. Focus on specific component topology.
+    3. SOCRATIC QUESTIONS: No limit. Guide student's thinking.
+    """
+
+    
+    try:
+        response = client.models.generate_content(model="gemini-3.1-pro-preview", contents=[combined, prompt])
+        with output:
+            clear_output(wait=True)
+            res_text = response.text
+            color = "green" if "[✅ CORRECT]" in res_text.upper() else "red"
             
-    return Image.alpha_composite(base_img.convert('RGBA'), overlay).convert('RGB')
+            # 分解反饋內容
+            parts = res_text.split("ANALYSIS:")
+            header = parts[0]
+            body_and_q = parts[1] if len(parts) > 1 else "No analysis provided."
+            body = body_and_q.split("SOCRATIC QUESTIONS:")[0]
+            questions = body_and_q.split("SOCRATIC QUESTIONS:")[1] if "SOCRATIC QUESTIONS:" in body_and_q else ""
 
-# --- 5. UI LAYOUT (LEFT-RIGHT) ---
-st.title("🛠️ AI 電路零件精密調教站")
+            display(HTML(f"""
+                <div style='border: 4px solid {color}; padding: 15px; border-radius: 10px; background-color: #fcfcfc;'>
+                    <h2 style='color: {color}; margin-top: 0;'>{header}</h2>
+                    <p><b>Analysis:</b> {body}</p>
+                    <hr>
+                    <p><b>Socratic Questions:</b></p>
+                    <div style='font-family: sans-serif;'>{questions}</div>
+                </div>
+            """))
+            display(combined.resize((700, int(700 * h / w))))
+    except Exception as e:
+        with output: print(f"❌ Analysis failed: {e}")
 
-# Sidebar
-with st.sidebar:
-    st.header("👤 學生資訊")
-    student_id = st.text_input("學生編號", placeholder="例如: 42")
-    task_id = st.number_input("任務編號", 1, 10, 1)
-    if st.button("🔄 重設所有位置"):
-        del st.session_state.current_data
-        st.rerun()
+# --- 4. INTERACTIVE UI ---
+current_data = []
+output = widgets.Output()
 
-# 拍照/上傳
-uploaded_file = st.camera_input("第一步：影低你個麵包板")
-
-if uploaded_file and student_id:
-    # 讀取圖片
-    raw_img = Image.open(uploaded_file)
+def create_ui(img_path, initial_data):
+    global current_data
+    current_data = initial_data
+    img = PIL.Image.open(img_path)
+    w, h = img.size
     
-    # 建立左右兩欄 (35% 控制, 65% 預覽)
-    col1, col2 = st.columns([35, 65])
+    controls_list = []
+    for i, item in enumerate(current_data):
+        label = widgets.HTML(f"<b style='color: #2c3e50;'>({i+1}) {item['component']}</b>")
+        leg_widgets = []
+        for j, leg in enumerate(item['legs']):
+            x_s = widgets.IntSlider(value=leg[1], min=0, max=1000, description=f'Pin {j+1} X')
+            y_s = widgets.IntSlider(value=leg[0], min=0, max=1000, description=f'Pin {j+1} Y')
+            
+            def make_update(c_idx, l_idx, axis):
+                return lambda change: [current_data[c_idx]['legs'][l_idx].__setitem__(0 if axis=='y' else 1, change['new']), redraw()]
+
+            x_s.observe(make_update(i, j, 'x'), names='value')
+            y_s.observe(make_update(i, j, 'y'), names='value')
+            leg_widgets.append(widgets.HBox([x_s, y_s]))
+        controls_list.append(widgets.VBox([label] + leg_widgets + [widgets.HTML("<hr style='margin: 2px 0;'>")]))
+
+    def redraw():
+        with output:
+            clear_output(wait=True)
+            temp_img = img.copy()
+            d = PIL.ImageDraw.Draw(temp_img)
+            for it in current_data:
+                cy, cx = it['center']
+                for ly, lx in it['legs']:
+                    d.line([(cx*w/1000, cy*h/1000), (lx*w/1000, ly*h/1000)], fill="orange", width=8)
+            temp_img.thumbnail((700, 700))
+            display(temp_img)
+
+    btn = widgets.Button(description="✅ Verify Corrected Pins & Analyze", 
+                         button_style='success', layout={'width': '98%', 'height': '45px'})
+    btn.on_click(lambda x: run_final_analysis(img_path))
     
-    with col1:
-        st.subheader("📍 零件座標微調")
-        for i, item in enumerate(st.session_state.current_data):
-            with st.expander(f"零件 {i+1}: {item['component']}", expanded=True):
-                # 中心點調整
-                st.markdown(f"**中心位置 (X:{item['center'][1]}, Y:{item['center'][0]})**")
-                c_x = st.slider(f"零件{i+1} 中心 X", 0, 1000, item['center'][1], key=f"cx_{i}")
-                c_y = st.slider(f"零件{i+1} 中心 Y", 0, 1000, item['center'][0], key=f"cy_{i}")
-                st.session_state.current_data[i]['center'] = [c_y, c_x]
-                
-                # 引腳調整
-                for j, leg in enumerate(item['legs']):
-                    st.markdown(f"**腳 {j+1} 座標: (X:{leg[1]}, Y:{leg[0]})**")
-                    l_x = st.slider(f"零件{i+1}-腳{j+1} X", 0, 1000, leg[1], key=f"lx_{i}_{j}")
-                    l_y = st.slider(f"零件{i+1}-腳{j+1} Y", 0, 1000, leg[0], key=f"ly_{i}_{j}")
-                    st.session_state.current_data[i]['legs'][j] = [l_y, l_x]
-        
-        analyze_btn = st.button("🚀 遞交 AI 老師分析", use_container_width=True, type="primary")
+    scroll_box = widgets.VBox(controls_list, layout={'max_height': '350px', 'overflow_y': 'scroll', 'border': '1px solid #ddd'})
+    display(widgets.HTML("<h3>1. Correct Pin Locations (Cyan Dot Ground Truth)</h3>"), scroll_box, btn, output)
+    redraw()
 
-    with col2:
-        st.subheader("👁️ 即時佈線預覽")
-        # 繪製並顯示
-        final_view = draw_overlay(raw_img)
-        st.image(final_view, use_container_width=True)
-        
-        # 顯示 AI 分析結果
-        if analyze_btn:
-            with st.spinner("AI 老師睇緊你嘅接線..."):
-                # 這裡放入你原本的 model.generate_content 邏輯
-                # 傳送座標數據 + 圖片
-                st.session_state.analysis_result = "✅ 接線看起來非常專業！請繼續完成剩餘部份。" # 模擬回覆
-                st.success(st.session_state.analysis_result)
-
-elif not student_id:
-    st.info("👈 請先在側邊欄輸入學生編號。")
+# --- RUN ---
+print(f"🚀 Initializing Task 4b Tracker...")
+initial_leads = get_initial_leads(img_path)
+create_ui(img_path, initial_leads)
