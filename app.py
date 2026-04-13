@@ -3,136 +3,147 @@ import pandas as pd
 import json
 import os
 import io
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 # AI & Google Auth Imports
 import vertexai
-from vertexai.generative_models import GenerativeModel, Image as VertexImage, GenerationConfig
+from vertexai.generative_models import GenerativeModel, Image as VertexImage
 from google.oauth2 import service_account
 
-# --- 1. CONFIG & SETUP ---
-st.set_page_config(page_title="AI Circuit Socratic Tutor", layout="wide")
+# --- 1. CONFIG ---
+st.set_page_config(page_title="AI Circuit Socratic Tutor", layout="wide", page_icon="🔌")
 
 @st.cache_resource
 def init_ai():
-    # 請確保在 Streamlit Secrets 放入 creds
+    # 喺 Streamlit Cloud Settings -> Secrets 放入 GCP Service Account JSON
     creds_info = st.secrets["gcp_service_account"]
     creds = service_account.Credentials.from_service_account_info(creds_info)
     vertexai.init(project=creds_info["project_id"], location="us-central1", credentials=creds)
-    return GenerativeModel("gemini-1.5-pro") # 或使用 gemini-2.0-flash-exp
+    return GenerativeModel("gemini-1.5-pro")
 
 model = init_ai()
 
-# --- 2. SESSION STATE ---
+# --- 2. SESSION STATE (狀態持久化) ---
 if 'current_data' not in st.session_state:
-    # 預設數據，實際應用可由 get_initial_leads 產生
+    # 預設數據 (Normalized 0-1000 座標系統)
     st.session_state.current_data = [
-        {"component": "LDR", "center": [500, 500], "legs": [[480, 480], [520, 520]]}
+        {"component": "LDR (光敏電阻)", "center": [500, 500], "legs": [[480, 480], [520, 520]]},
+        {"component": "LED (發光二極管)", "center": [300, 300], "legs": [[280, 280], [320, 320]]}
     ]
 if 'analysis_report' not in st.session_state: st.session_state.analysis_report = None
 
-# --- 3. 核心功能：繪製藍色隔離線與標註 ---
-def process_image_with_logic(base_img, data):
+# --- 3. 核心標註與邏輯函數 ---
+def process_and_draw(base_img, data):
     img = base_img.convert("RGBA")
     w, h = img.size
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     
     inventory_text = ""
-    # 1. 畫零件引線與孔位
     for i, item in enumerate(data):
         cy, cx = item['center']
         comp = item.get('component', f'Part_{i}')
         inventory_text += f"- {comp}: "
         for j, leg in enumerate(item['legs']):
             ly, lx = leg
-            # 橘色引線 (Orange Line)
-            draw.line([(cx*w/1000, cy*h/1000), (lx*w/1000, ly*h/1000)], fill=(255, 165, 0, 200), width=15)
-            # 青色孔位點 (Cyan Dot)
-            draw.ellipse([(lx*w/1000-12, ly*h/1000-12), (lx*w/1000+12, ly*h/1000+12)], fill=(0, 255, 255, 255))
+            # 畫橘色引線
+            draw.line([(cx*w/1000, cy*h/1000), (lx*w/1000, ly*h/1000)], fill=(255, 165, 0, 200), width=12)
+            # 畫青色孔位 (Cyan Ground Truth)
+            draw.ellipse([(lx*w/1000-15, ly*h/1000-15), (lx*w/1000+15, ly*h/1000+15)], fill=(0, 255, 255, 255))
             
             side = "LEFT (a-e)" if lx < 500 else "RIGHT (f-j)"
-            inventory_text += f"Leg{j+1}[{side},y:{ly},x:{lx}]; "
+            inventory_text += f"Pin{j+1}[{side}, y:{ly}, x:{lx}]; "
         inventory_text += "\n"
 
-    # 2. 畫藍色中央隔離線 (Blue Middle Gap)
-    middle_x = w // 2
-    draw.line([(middle_x, 0), (middle_x, h)], fill=(0, 0, 255, 180), width=25)
+    # 關鍵：畫藍色中央隔離線 (定義 Breadboard Gap)
+    mid_x = w // 2
+    draw.line([(mid_x, 0), (mid_x, h)], fill=(0, 0, 255, 180), width=25)
     
-    # 3. 合併
     combined = Image.alpha_composite(img, overlay).convert("RGB")
     return combined, inventory_text
 
-# --- 4. UI LAYOUT ---
-st.title("🧠 AI 電路老師：中央隔離線強化版")
+# --- 4. UI 介面佈局 ---
+st.title("🔌 AI 電路精密診斷站")
 
 with st.sidebar:
-    st.header("設置")
-    student_id = st.text_input("學生編號", "S001")
-    task_id = st.selectbox("任務", ["4b (LDR Control)", "1a (LED Basic)"])
-    if st.button("🔄 重置座標"):
-        st.session_state.current_data = [{"component": "LDR", "center": [500, 500], "legs": [[480, 480], [520, 520]]}]
+    st.header("📋 學生資訊")
+    student_id = st.text_input("學生編號", placeholder="例如: 2026001")
+    task_type = st.selectbox("電路任務", ["Task 4b: LDR 控制電路", "Task 1: LED 基本迴路"])
+    
+    st.divider()
+    if st.button("🔄 重置所有座標"):
+        del st.session_state.current_data
         st.rerun()
 
-img_file = st.camera_input("拍照並開始調校")
+# --- 5. 多功能上傳區 (核心改動) ---
+st.subheader("第一步：獲取電路圖片")
+tab_camera, tab_upload = st.tabs(["📷 即時影相 (Camera)", "📁 上傳檔案 (Upload)"])
 
-if img_file and student_id:
-    raw_img = Image.open(img_file)
+raw_image = None
+
+with tab_camera:
+    cam_file = st.camera_input("請對準麵包板拍攝")
+    if cam_file: raw_image = Image.open(cam_file)
+
+with tab_upload:
+    up_file = st.file_uploader("選擇手機或電腦中的圖片檔案", type=['jpg', 'jpeg', 'png'])
+    if up_file: raw_image = Image.open(up_file)
+
+# --- 6. 調校與分析區 ---
+if raw_image and student_id:
+    col_ctrl, col_view = st.columns([0.4, 0.6])
     
-    col_left, col_right = st.columns([0.4, 0.6])
-    
-    with col_left:
-        st.subheader("🛠️ 座標精確調校")
+    with col_ctrl:
+        st.subheader("🛠️ 座標與接線調校")
+        st.info("💡 貼士：移動 Slider 令青色圈圈完全覆蓋你插喺麵包板上嘅引腳窿。")
+        
         for i, item in enumerate(st.session_state.current_data):
-            with st.expander(f"零件 {i+1}: {item['component']}", expanded=True):
-                # 中心點 (不影響 AI 判斷，但影響橘色線視覺)
-                item['center'][1] = st.slider(f"中心 X {i}", 0, 1000, item['center'][1])
-                item['center'][0] = st.slider(f"中心 Y {i}", 0, 1000, item['center'][0])
+            with st.expander(f"📦 {item['component']}", expanded=True):
+                # 中心點 (Red)
+                st.write("零件中心位置")
+                item['center'][1] = st.slider(f"X (左右) ##cx{i}", 0, 1000, item['center'][1])
+                item['center'][0] = st.slider(f"Y (上下) ##cy{i}", 0, 1000, item['center'][0])
                 
-                # 引腳 (AI 判斷的核心)
+                # 孔位 (Cyan)
                 for j, leg in enumerate(item['legs']):
-                    st.markdown(f"**引腳 {j+1} (Cyan Dot Ground Truth)**")
-                    leg[1] = st.slider(f"引腳{j+1} X {i}", 0, 1000, leg[1])
-                    leg[0] = st.slider(f"引腳{j+1} Y {i}", 0, 1000, leg[0])
+                    st.write(f"引腳 {j+1} 孔位")
+                    leg[1] = st.slider(f"X (左右) ##lx{i}{j}", 0, 1000, leg[1])
+                    leg[0] = st.slider(f"Y (上下) ##ly{i}{j}", 0, 1000, leg[0])
 
-        if st.button("✅ 提交 AI 分析", type="primary", use_container_width=True):
-            combined_img, inv_text = process_image_with_logic(raw_img, st.session_state.current_data)
+        if st.button("✅ 提交 AI 進行邏輯分析", type="primary", use_container_width=True):
+            final_img, inv_text = process_and_draw(raw_image, st.session_state.current_data)
             
             prompt = f"""
-            CRITICAL: Look at the BLUE LINE in the middle. 
-            - LEFT of blue: rows a, b, c, d, e.
-            - RIGHT of blue: rows f, g, h, i, j.
-            
-            Inventory: {inv_text}
-            
-            Task: {task_id}.
-            Analyze if the CYAN DOTS correctly form the circuit loop according to schematic.
-            
-            Format:
-            1. RESULT: [✅ CORRECT] or [❌ INCORRECT]
-            2. ANALYSIS: Max 50 words.
-            3. SOCRATIC QUESTIONS: Guided hints.
+            Identify the circuit topology. 
+            A BLUE LINE marks the middle gap.
+            Verified Data: {inv_text}
+            Check if the circuit correctly follows the rules for {task_type}.
+            Output Format:
+            - RESULT: [✅ CORRECT] or [❌ INCORRECT]
+            - ANALYSIS: Brief technical check.
+            - SOCRATIC: 3 guiding questions.
             """
             
-            # 轉換為 Vertex AI 圖像格式
+            # 轉換為 AI 識別格式
             buf = io.BytesIO()
-            combined_img.save(buf, format="JPEG")
-            vertex_img = VertexImage.from_bytes(buf.getvalue())
+            final_img.save(buf, format="JPEG")
             
-            with st.spinner("AI 正在根據藍色隔離線進行邏輯判斷..."):
-                response = model.generate_content([vertex_img, prompt])
+            with st.spinner("AI 老師正透過藍色隔離線分析左右區域..."):
+                response = model.generate_content([VertexImage.from_bytes(buf.getvalue()), prompt])
                 st.session_state.analysis_report = response.text
 
-    with col_right:
-        st.subheader("🖼️ 標註預覽")
-        preview_img, _ = process_image_with_logic(raw_img, st.session_state.current_data)
-        st.image(preview_img, use_container_width=True, caption="藍色粗線代表麵包板中央凹槽")
+    with col_view:
+        st.subheader("🖼️ 即時標註預覽")
+        # 繪製預覽圖
+        preview_img, _ = process_and_draw(raw_image, st.session_state.current_data)
+        st.image(preview_img, use_container_width=True, caption="藍色線代表麵包板中央隔離帶")
         
         if st.session_state.analysis_report:
-            st.markdown("---")
-            st.subheader("📝 AI 老師回饋")
-            res = st.session_state.analysis_report
-            if "[✅ CORRECT]" in res.upper():
-                st.success(res)
-            else:
-                st.error(res)
+            st.divider()
+            st.markdown(st.session_state.analysis_report)
+
+elif not student_id and raw_image:
+    st.warning("👈 請先在側邊欄輸入學生編號。")
+
+st.divider()
+st.caption("ECCC AI Research 2026 | Streamlit Multi-Input v3.5")
