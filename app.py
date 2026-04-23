@@ -2,138 +2,162 @@ import streamlit as st
 import pandas as pd
 import json
 import os
+import time
 from datetime import datetime, timedelta, timezone
-from PIL import Image as PILImage
-import vertexai
-from vertexai.generative_models import GenerativeModel, Image, GenerationConfig
+import PIL.Image
+from google import genai
+from google.genai import types
 from google.oauth2 import service_account
 
-# --- 1. INITIALIZATION & CONFIG ---
+# --- 1. CONFIG & AUTH ---
 SAVE_FILENAME = "ai_debug_streamlit.csv"
+st.set_page_config(page_title="AI Circuit Tutor 1.5 Pro", layout="wide")
 
 if "gcp_service_account" in st.secrets:
     creds_info = st.secrets["gcp_service_account"]
-    scopes = ["https://www.googleapis.com/auth/cloud-platform"]
-    credentials = service_account.Credentials.from_service_account_info(creds_info, scopes=scopes)
+    credentials = service_account.Credentials.from_service_account_info(creds_info)
     PROJECT_ID = creds_info["project_id"]
-    # Ensure location matches where your model is enabled
-    vertexai.init(project=PROJECT_ID, location="us-central1", credentials=credentials)
+    
+    # Initialize the NEW GenAI Client
+    client = genai.Client(
+        vertexai=True, 
+        project=PROJECT_ID, 
+        location="us-central1", 
+        credentials=credentials
+    )
 else:
     st.error("GCP Secrets not found!")
     st.stop()
 
-# 🟢 FIX: Using a stable model name to avoid "NotFound" errors
-model = GenerativeModel("gemini-3.0-pro") 
-
-st.set_page_config(page_title="AI Circuit Tutor", layout="wide")
-
 # --- 2. SESSION STATE ---
-if 'socratic_round' not in st.session_state: st.session_state.socratic_round = 0
 if 'chat_history' not in st.session_state: st.session_state.chat_history = ""
-if 'analysis_done' not in st.session_state: st.session_state.analysis_done = False
+if 'socratic_round' not in st.session_state: st.session_state.socratic_round = 0
 if 'current_analysis' not in st.session_state: st.session_state.current_analysis = {}
+if 'analysis_done' not in st.session_state: st.session_state.analysis_done = False
 
-# --- 3. UI ---
+# --- 3. UI SIDEBAR ---
 st.title("🔌 AI Circuit Diagnostic Station")
-
 with st.sidebar:
     st.header("Setup")
-    student_num = st.text_input("Student ID")
+    student_num = st.text_input("Student ID", placeholder="e.g. S123")
     task_num = st.number_input("Task #", min_value=1, max_value=10, value=1)
-    mode = st.radio("Mode", ["1: Direct", "2: Socratic"])
-    if st.button("Reset"):
+    mode = st.radio("Mode", ["1: Direct Debug", "2: Socratic Debug"])
+    if st.button("Reset Session"):
         for key in list(st.session_state.keys()): del st.session_state[key]
         st.rerun()
 
-# --- 4. INPUT ---
-st.subheader("📸 Input Image")
-img_file = st.camera_input("Capture") or st.file_uploader("Upload", type=["jpg","png"])
+# --- 4. DUAL IMAGE INPUT ---
+st.subheader("📸 Step 1: Input Circuit Image")
+img_source = st.radio("Select Input Method:", ["Camera", "Upload File"], horizontal=True)
 
-# --- 5. LOGIC ---
+img_file = None
+if img_source == "Camera":
+    img_file = st.camera_input("Capture your breadboard")
+else:
+    img_file = st.file_uploader("Upload image", type=["jpg", "jpeg", "png"])
+
+# --- 5. PROCESSING LOGIC ---
 if img_file and student_num:
     ref_path = f"data2/circuit-{task_num}.jpg"
     
     if not os.path.exists(ref_path):
-        st.error(f"Missing: {ref_path}")
+        st.error(f"Reference file {ref_path} not found.")
     else:
-        # Prepare Images
-        ref_ai = Image.load_from_file(ref_path)
-        student_ai = Image.from_bytes(img_file.getvalue())
+        # Load images
+        ref_img = PIL.Image.open(ref_path)
+        student_img = PIL.Image.open(img_file)
 
         if not st.session_state.analysis_done:
-            # Mode 1: Direct
+            # Mode 1: Direct Debug
             if "1" in mode:
-                with st.spinner("Analyzing..."):
+                with st.spinner("AI is thinking (High Reasoning Mode)..."):
                     prompt = """
-                    Act as an engineer. Compare Image 2 (Student) to Image 1 (Ref).
+                    Analyze Image 2 (Student) vs Image 1 (Reference).
                     RULES:
-                    - Analysis MUST be under 80 words.
-                    - Use complete sentences.
-                    - LED/Resistor order is reversible.
-                    [OUTPUT JSON]
-                    { "match_status": "CORRECT/INCORRECT", "error_analysis": "...", "remediation_hints": "..." }
+                    - Max 80 words for analysis. 
+                    - Must be complete sentences.
+                    - LED/Resistor order in series is reversible.
+                    [OUTPUT FORMAT: JSON ONLY]
+                    { "match_status": "CORRECT", "error_analysis": "...", "remediation_hints": "..." }
                     """
-                    resp = model.generate_content([prompt, ref_ai, student_ai], 
-                           generation_config=GenerationConfig(response_mime_type="application/json"))
-                    st.session_state.current_analysis = json.loads(resp.text)
+                    response = client.models.generate_content(
+                        model="gemini-1.5-pro", # This is the high-reasoning engine
+                        contents=[ref_img, student_img, prompt],
+                        config=types.GenerateContentConfig(
+                            temperature=0.0,
+                            response_mime_type="application/json"
+                        )
+                    )
+                    st.session_state.current_analysis = json.loads(response.text)
                     st.session_state.analysis_done = True
-            
-            # Mode 2: Socratic (Loop handled here)
+
+            # Mode 2: Socratic Debug
             elif "2" in mode:
                 if st.session_state.socratic_round < 3:
-                    st.info(f"Round {st.session_state.socratic_round + 1}")
-                    q_resp = model.generate_content(["Ask 1 Socratic question based on image comparison.", ref_ai, student_ai])
-                    st.write(f"**AI:** {q_resp.text}")
-                    with st.form(f"f{st.session_state.socratic_round}"):
-                        ans = st.text_input("Answer")
-                        if st.form_submit_button("Send"):
-                            st.session_state.chat_history += f"Q:{q_resp.text} A:{ans} | "
+                    st.info(f"Socratic Round {st.session_state.socratic_round + 1}")
+                    q_resp = client.models.generate_content(
+                        model="gemini-1.5-pro",
+                        contents=[ref_img, student_img, "Ask 1 Socratic question to guide the student."]
+                    )
+                    st.write(f"**AI Question:** {q_resp.text}")
+                    with st.form(f"soc_form_{st.session_state.socratic_round}"):
+                        ans = st.text_input("Your Response")
+                        if st.form_submit_button("Submit"):
+                            st.session_state.chat_history += f"Q: {q_resp.text} | A: {ans}\n"
                             st.session_state.socratic_round += 1
                             st.rerun()
                 else:
-                    # Final Socratic Summary
-                    resp = model.generate_content([f"Final Analysis (80 words max) based on history: {st.session_state.chat_history}", ref_ai, student_ai],
-                           generation_config=GenerationConfig(response_mime_type="application/json"))
-                    st.session_state.current_analysis = json.loads(resp.text)
+                    # Final Analysis
+                    prompt = f"Final analysis based on history: {st.session_state.chat_history}. Max 80 words."
+                    response = client.models.generate_content(
+                        model="gemini-1.5-pro",
+                        contents=[ref_img, student_img, prompt],
+                        config=types.GenerateContentConfig(response_mime_type="application/json")
+                    )
+                    st.session_state.current_analysis = json.loads(response.text)
                     st.session_state.analysis_done = True
 
-# --- 6. RESULTS & PRINTING NEW DATA ---
+# --- 6. RESULTS & DISPLAY ---
 if st.session_state.analysis_done:
     data = st.session_state.current_analysis
-    st.success(f"Status: {data['match_status']}")
-    st.write(f"**Analysis:** {data['error_analysis']}")
-
-    # PREPARE NEW ROW
+    st.divider()
+    st.subheader(f"Status: {data['match_status']}")
+    st.write(f"**Diagnosis:** {data['error_analysis']}")
+    
+    # Prepare New Row
     now = datetime.now(timezone.utc) + timedelta(hours=8)
     new_entry = {
         "Student": student_num,
         "Time": now.strftime('%Y-%m-%d %H:%M:%S'),
         "Task": task_num,
         "Status": data['match_status'],
-        "Analysis": data['error_analysis']
+        "Analysis": data['error_analysis'],
+        "Socratic_History": st.session_state.chat_history
     }
 
-    # 🟢 PRINT THE NEWLY SAVED ROW TO SCREEN
-    st.info("### 📝 New Record Preview")
-    st.table([new_entry])
+    # Show new record to user
+    st.markdown("### 📝 New Record to be Saved")
+    st.table(pd.DataFrame([new_entry]))
 
-    if st.button("Confirm & Append to CSV"):
-        # Load and Append
+    if st.button("Confirm and Save to CSV"):
         if os.path.exists(SAVE_FILENAME):
-            df = pd.read_csv(SAVE_FILENAME)
+            master_df = pd.read_csv(SAVE_FILENAME)
         else:
-            df = pd.DataFrame()
+            master_df = pd.DataFrame()
             
-        df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
-        df.to_csv(SAVE_FILENAME, index=False)
-        st.success(f"Saved to {SAVE_FILENAME}")
+        master_df = pd.concat([master_df, pd.DataFrame([new_entry])], ignore_index=True)
+        master_df.to_csv(SAVE_FILENAME, index=False)
+        st.success(f"Data appended to {SAVE_FILENAME}")
         st.balloons()
 
 # --- 7. DATABASE VIEW ---
 st.divider()
 if os.path.exists(SAVE_FILENAME):
-    st.subheader("📊 CSV History")
-    st.dataframe(pd.read_csv(SAVE_FILENAME).tail(5))
+    st.subheader("📊 Latest 5 Entries in CSV")
+    st.dataframe(pd.read_csv(SAVE_FILENAME).tail(5), use_container_width=True)
+
+
+
 
 
 # import streamlit as st
