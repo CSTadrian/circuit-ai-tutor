@@ -11,7 +11,7 @@ from google.oauth2 import service_account
 
 # --- 1. CONFIG & AUTH ---
 SAVE_FILENAME = "ai_debug_streamlit.csv"
-st.set_page_config(page_title="AI Circuit Tutor 1.5 Pro", layout="wide")
+st.set_page_config(page_title="AI Circuit Tutor 3.1 Pro", layout="wide")
 
 if "gcp_service_account" in st.secrets:
     creds_info = st.secrets["gcp_service_account"]
@@ -81,7 +81,7 @@ if img_file and student_num:
                     { "match_status": "CORRECT", "error_analysis": "...", "remediation_hints": "..." }
                     """
                     response = client.models.generate_content(
-                        model="gemini-1.5-pro", # This is the high-reasoning engine
+                        model="gemini-3.1-pro-preview", # This is the high-reasoning engine
                         contents=[ref_img, student_img, prompt],
                         config=types.GenerateContentConfig(
                             temperature=0.0,
