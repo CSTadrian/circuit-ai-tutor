@@ -8,132 +8,113 @@ from google.genai import types
 from google.oauth2 import service_account
 
 # --- 1. CONFIG & AUTH ---
-st.set_page_config(page_title="Circuit AI Debugger", layout="wide")
-st.title("🚀 3.1-PRO Circuit Analysis")
+st.set_page_config(page_title="Live Circuit Debugger", layout="wide")
+st.title("🔬 Live AI Circuit Tutor")
 
-# Load credentials from Streamlit Secrets
+SAVE_FILENAME = "circuit_ai_research_data.csv"
+
+# Authentication
 if "gcp_service_account" in st.secrets:
     creds_info = st.secrets["gcp_service_account"]
     credentials = service_account.Credentials.from_service_account_info(creds_info)
     PROJECT_ID = st.secrets["project_id"]
     client = genai.Client(vertexai=True, project=PROJECT_ID, location="global", credentials=credentials)
 else:
-    st.error("Please configure Google Cloud Secrets in Streamlit!")
+    st.error("GCP Secrets not found.")
     st.stop()
 
-# Paths
-BASE_PATH = "data" 
-CSV_LOG_PATH = os.path.join(BASE_PATH, "circuit_log_0321.csv")
-CSV_PRO_PATH = "ai_debug_results.csv"
+# --- 2. FILE UPLOADER ---
+st.sidebar.header("Upload Section")
+uploaded_file = st.sidebar.file_uploader("Choose a circuit photo...", type=["jpg", "jpeg", "png"])
 
-# --- 2. DATA LOADING ---
-if os.path.exists(CSV_LOG_PATH):
-    working_df = pd.read_csv(CSV_LOG_PATH)
-    st.write(f"Loaded {len(working_df)} photos from log.")
-else:
-    st.error(f"Could not find {CSV_LOG_PATH}")
-    st.stop()
+# Optional: Reference Image (if you want to compare against a specific target)
+ref_file = st.sidebar.file_uploader("Optional: Upload Reference/Schematic", type=["jpg", "jpeg", "png"])
 
-# --- 3. PROCESSING LOOP ---
-if st.button("Start Analysis"):
-    progress_bar = st.progress(0)
-    status_text = st.empty()
+if uploaded_file is not None:
+    student_img = PIL.Image.open(uploaded_file)
     
-    # LOAD EXISTING CSV (to allow appending/updating)
-    if os.path.exists(CSV_PRO_PATH):
-        master_df = pd.read_csv(CSV_PRO_PATH)
-        st.info(f"Existing results found. Appending/Updating {CSV_PRO_PATH}...")
-    else:
-        master_df = pd.DataFrame()
-
-    for idx, row in working_df.iterrows():
-        img_name = row['Filename']
-        task_id = img_name.split('_')[0].replace('Task', '').strip()
-        img_path = os.path.join(BASE_PATH, "0321", img_name)
-        ref_path = os.path.join(BASE_PATH, "data2", f"circuit-{task_id}.jpg")
-
-        status_text.text(f"Processing {img_name} ({idx+1}/{len(working_df)})...")
-
-        try:
-            student_img = PIL.Image.open(img_path)
-            ref_img = PIL.Image.open(ref_path)
-        except Exception as e:
-            st.warning(f"Skip {img_name}: {e}")
-            continue
-
-        prompt = f"""
-            Compare Student Breadboard (Image 2) to Schematic (Image 1) for Task {task_id}.
-            RULES:
-            - Red rail = Positive (+), Blue rail = Negative (-).
-            - Component order in series is CORRECT.
-            OUTPUT FORMAT (Strict):
-            1) STATUS: [Correct ✅ or Wrong ❌]
-            2) WHY: [Concise reason, max 50 words. Complete the sentence.]
-            3) SOCRATIC HINTS: [L1, L2, L3]
-        """
-
-        ai_text, duration = "ERROR", 0
-        try:
-            start_time = time.time()
-            response = client.models.generate_content(
-                model="gemini-3.1-pro-preview",
-                contents=[ref_img, student_img, prompt],
-                config=types.GenerateContentConfig(
-                    thinking_config=types.ThinkingConfig(include_thoughts=True),
-                    temperature=0.0,
-                    max_output_tokens=1000
-                )
-            )
-            duration = time.time() - start_time
-            ai_text = response.text.strip()
-        except Exception as e:
-            ai_text = f"AI Error: {str(e)}"
-
-        # --- UI DISPLAY ---
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.image(student_img, caption=f"Student: {img_name}", use_container_width=True)
-        
-        with col2:
-            is_correct = "✅" in ai_text or "CORRECT" in ai_text.upper()
-            if is_correct:
-                st.success(ai_text)
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        st.image(student_img, caption="Uploaded Circuit", use_container_width=True)
+    
+    if st.button("🔍 Run AI Debugging"):
+        with st.spinner("Analyzing circuit..."):
+            
+            # Prepare Content List
+            content_list = [student_img]
+            if ref_file:
+                ref_img = PIL.Image.open(ref_file)
+                content_list.insert(0, ref_img) # Put reference first if exists
+                prompt_intro = "Compare the Student Breadboard to the provided Reference."
             else:
-                st.error(ai_text)
-            st.caption(f"⏱️ Latency: {duration:.2f}s")
+                prompt_intro = "Analyze this student breadboard circuit for errors."
 
-        # --- SAVE DATA (APPEND/UPDATE LOGIC) ---
-        new_row_data = row.to_dict()
-        new_row_data.update({
-            "ai_output": ai_text, 
-            "latency": f"{duration:.2f}s", 
-            "model": "3.1-pro"
-        })
-        
-        # If the file already exists in our master dataframe, update it. Otherwise, concat.
-        if not master_df.empty and img_name in master_df['Filename'].values:
-            # Locate the index of the existing filename and update that specific row
-            idx_to_update = master_df.index[master_df['Filename'] == img_name].tolist()[0]
-            for key, value in new_row_data.items():
-                master_df.at[idx_to_update, key] = value
-        else:
-            # Append new record
-            master_df = pd.concat([master_df, pd.DataFrame([new_row_data])], ignore_index=True)
-        
-        # Save to CSV after every image to prevent data loss
-        master_df.to_csv(CSV_PRO_PATH, index=False)
-        progress_bar.progress((idx + 1) / len(working_df))
+            prompt = f"""
+                {prompt_intro}
+                
+                RULES:
+                - Red rail = Positive (+), Blue rail = Negative (-).
+                - Component order in series is CORRECT.
+                
+                OUTPUT FORMAT (Strict):
+                1) STATUS: [Correct ✅ or Wrong ❌]
+                2) WHY: [Concise reason, max 50 words. Complete the sentence.]
+                3) SOCRATIC HINTS: [L1, L2, L3]
+            """
 
-    st.balloons()
-    st.success(f"Processing complete. Data saved to {CSV_PRO_PATH}")
-    
-    # Allow user to download the final state
-    st.download_button(
-        label="Download Results CSV",
-        data=master_df.to_csv(index=False),
-        file_name=CSV_PRO_PATH,
-        mime='text/csv'
-    )
+            # --- AI CALL ---
+            try:
+                start_time = time.time()
+                response = client.models.generate_content(
+                    model="gemini-3.1-pro-preview",
+                    contents=content_list,
+                    config=types.GenerateContentConfig(
+                        thinking_config=types.ThinkingConfig(include_thoughts=True),
+                        temperature=0.0,
+                        max_output_tokens=1000
+                    )
+                )
+                duration = time.time() - start_time
+                ai_text = response.text.strip()
+                
+                with col2:
+                    is_correct = "✅" in ai_text or "CORRECT" in ai_text.upper()
+                    if is_correct:
+                        st.success(ai_text)
+                    else:
+                        st.error(ai_text)
+                    st.metric("Latency", f"{duration:.2f}s")
+
+                # --- 3. SAVE TO CSV ---
+                new_data = {
+                    "Timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "Filename": uploaded_file.name,
+                    "ai_output": ai_text,
+                    "latency": f"{duration:.2f}s",
+                    "model": "3.1-pro"
+                }
+                
+                # Append to existing or create new
+                if os.path.exists(SAVE_FILENAME):
+                    master_df = pd.read_csv(SAVE_FILENAME)
+                else:
+                    master_df = pd.DataFrame()
+                
+                master_df = pd.concat([master_df, pd.DataFrame([new_data])], ignore_index=True)
+                master_df.to_csv(SAVE_FILENAME, index=False)
+                
+                st.sidebar.success(f"Result saved to {SAVE_FILENAME}")
+
+            except Exception as e:
+                st.error(f"AI Error: {str(e)}")
+
+# --- 4. VIEW PREVIOUS RESULTS ---
+if os.path.exists(SAVE_FILENAME):
+    with st.expander("View Saved Research Data"):
+        df = pd.read_csv(SAVE_FILENAME)
+        st.dataframe(df)
+        st.download_button("Download CSV", df.to_csv(index=False), file_name=SAVE_FILENAME)
+        
     
 # import streamlit as st
 # import pandas as pd
