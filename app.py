@@ -1,165 +1,145 @@
 import streamlit as st
 import pandas as pd
-import json
+import PIL.Image
 import os
 import time
+import json
 from datetime import datetime, timedelta, timezone
-import PIL.Image
 from google import genai
 from google.genai import types
 from google.oauth2 import service_account
 
 # --- 1. CONFIG & AUTH ---
-SAVE_FILENAME = "ai_debug_streamlit.csv"
-st.set_page_config(page_title="AI Circuit Tutor 3.1 Pro", layout="wide")
+st.set_page_config(page_title="AI Circuit Debugger 3.1", layout="wide")
+st.title("🚀 3.1-PRO High-Reasoning Diagnostic")
 
+SAVE_DIR = "research_captures"
+CSV_PATH = "ai_debug_results_live.csv"
+os.makedirs(SAVE_DIR, exist_ok=True)
+
+# Authentication from Streamlit Secrets
 if "gcp_service_account" in st.secrets:
     creds_info = st.secrets["gcp_service_account"]
     credentials = service_account.Credentials.from_service_account_info(creds_info)
-    PROJECT_ID = creds_info["project_id"]
-    
-    # Initialize the NEW GenAI Client
-    client = genai.Client(
-        vertexai=True, 
-        project=PROJECT_ID, 
-        location="us-central1", 
-        credentials=credentials
-    )
+    PROJECT_ID = st.secrets["project_id"]
+    client = genai.Client(vertexai=True, project=PROJECT_ID, location="global", credentials=credentials)
 else:
-    st.error("GCP Secrets not found!")
+    st.error("Please configure Google Cloud Secrets in Streamlit!")
     st.stop()
 
-# --- 2. SESSION STATE ---
-if 'chat_history' not in st.session_state: st.session_state.chat_history = ""
-if 'socratic_round' not in st.session_state: st.session_state.socratic_round = 0
-if 'current_analysis' not in st.session_state: st.session_state.current_analysis = {}
-if 'analysis_done' not in st.session_state: st.session_state.analysis_done = False
-
-# --- 3. UI SIDEBAR ---
-st.title("🔌 AI Circuit Diagnostic Station")
+# --- 2. SIDEBAR SETUP ---
 with st.sidebar:
-    st.header("Setup")
-    student_num = st.text_input("Student ID", placeholder="e.g. S123")
-    task_num = st.number_input("Task #", min_value=1, max_value=10, value=1)
-    mode = st.radio("Mode", ["1: Direct Debug", "2: Socratic Debug"])
-    if st.button("Reset Session"):
-        for key in list(st.session_state.keys()): del st.session_state[key]
-        st.rerun()
+    st.header("Session Info")
+    task_id = st.number_input("Task Number (x)", min_value=1, max_value=99, value=1)
+    
+    # Optional: Load reference schematic for comparison
+    ref_file = st.file_uploader("Upload Reference Schematic (Image 1)", type=["jpg", "png", "jpeg"])
 
-# --- 4. DUAL IMAGE INPUT ---
-st.subheader("📸 Step 1: Input Circuit Image")
-img_source = st.radio("Select Input Method:", ["Camera", "Upload File"], horizontal=True)
+# --- 3. INPUT METHODS ---
+st.subheader("📸 Step 1: Capture or Upload Student Breadboard")
+tab1, tab2 = st.tabs(["Take Photo", "Upload File"])
 
 img_file = None
-if img_source == "Camera":
-    img_file = st.camera_input("Capture your breadboard")
-else:
-    img_file = st.file_uploader("Upload image", type=["jpg", "jpeg", "png"])
+with tab1:
+    cam_input = st.camera_input("Capture live circuit")
+    if cam_input: img_file = cam_input
+with tab2:
+    up_input = st.file_uploader("Choose existing photo", type=["jpg", "png", "jpeg"])
+    if up_input: img_file = up_input
 
-# --- 5. PROCESSING LOGIC ---
-if img_file and student_num:
-    ref_path = f"data2/circuit-{task_num}.jpg"
-    
-    if not os.path.exists(ref_path):
-        st.error(f"Reference file {ref_path} not found.")
-    else:
-        # Load images
-        ref_img = PIL.Image.open(ref_path)
-        student_img = PIL.Image.open(img_file)
+# --- 4. CORE ANALYSIS LOGIC ---
+if img_file:
+    # Display the student image
+    student_img = PIL.Image.open(img_file)
+    st.image(student_img, caption="Student Breadboard (Image 2)", width=500)
 
-        if not st.session_state.analysis_done:
-            # Mode 1: Direct Debug
-            if "1" in mode:
-                with st.spinner("AI is thinking (High Reasoning Mode)..."):
-                    prompt = """
-                    Analyze Image 2 (Student) vs Image 1 (Reference).
-                    RULES:
-                    - Max 80 words for analysis. 
-                    - Must be complete sentences.
-                    - LED/Resistor order in series is reversible.
-                    [OUTPUT FORMAT: JSON ONLY]
-                    { "match_status": "CORRECT", "error_analysis": "...", "remediation_hints": "..." }
-                    """
-                    response = client.models.generate_content(
-                        model="gemini-3.1-pro-preview",
-                        contents=[ref_img, student_img, prompt],
-                        config=types.GenerateContentConfig(
-                            thinking_config=types.ThinkingConfig(include_thoughts=True),
-                            temperature=0.0
-                            # max_output_tokens=2000 # Keep response short
-                        )
-                    )
-                    st.session_state.current_analysis = json.loads(response.text)
-                    st.session_state.analysis_done = True
-
-            # Mode 2: Socratic Debug
-            elif "2" in mode:
-                if st.session_state.socratic_round < 3:
-                    st.info(f"Socratic Round {st.session_state.socratic_round + 1}")
-                    q_resp = client.models.generate_content(
-                        model="gemini-1.5-pro",
-                        contents=[ref_img, student_img, "Ask 1 Socratic question to guide the student."]
-                    )
-                    st.write(f"**AI Question:** {q_resp.text}")
-                    with st.form(f"soc_form_{st.session_state.socratic_round}"):
-                        ans = st.text_input("Your Response")
-                        if st.form_submit_button("Submit"):
-                            st.session_state.chat_history += f"Q: {q_resp.text} | A: {ans}\n"
-                            st.session_state.socratic_round += 1
-                            st.rerun()
-                else:
-                    # Final Analysis
-                    prompt = f"Final analysis based on history: {st.session_state.chat_history}. Max 80 words."
-                    response = client.models.generate_content(
-                        model="gemini-3.1-pro-preview",
-                        contents=[ref_img, student_img, prompt],
-                        config=types.GenerateContentConfig(
-                            thinking_config=types.ThinkingConfig(include_thoughts=True),
-                            temperature=0.0
-                            # max_output_tokens=2000 # Keep response short
-                        )
-                    )
-                    st.session_state.current_analysis = json.loads(response.text)
-                    st.session_state.analysis_done = True
-
-# --- 6. RESULTS & DISPLAY ---
-if st.session_state.analysis_done:
-    data = st.session_state.current_analysis
-    st.divider()
-    st.subheader(f"Status: {data['match_status']}")
-    st.write(f"**Diagnosis:** {data['error_analysis']}")
-    
-    # Prepare New Row
-    now = datetime.now(timezone.utc) + timedelta(hours=8)
-    new_entry = {
-        "Student": student_num,
-        "Time": now.strftime('%Y-%m-%d %H:%M:%S'),
-        "Task": task_num,
-        "Status": data['match_status'],
-        "Analysis": data['error_analysis'],
-        "Socratic_History": st.session_state.chat_history
-    }
-
-    # Show new record to user
-    st.markdown("### 📝 New Record to be Saved")
-    st.table(pd.DataFrame([new_entry]))
-
-    if st.button("Confirm and Save to CSV"):
-        if os.path.exists(SAVE_FILENAME):
-            master_df = pd.read_csv(SAVE_FILENAME)
+    if st.button("Run 3.1-PRO Analysis"):
+        if not ref_file:
+            st.warning("Please upload a Reference Schematic in the sidebar first!")
         else:
-            master_df = pd.DataFrame()
-            
-        master_df = pd.concat([master_df, pd.DataFrame([new_entry])], ignore_index=True)
-        master_df.to_csv(SAVE_FILENAME, index=False)
-        st.success(f"Data appended to {SAVE_FILENAME}")
-        st.balloons()
+            with st.spinner("AI is thinking (High Reasoning Mode)..."):
+                ref_img = PIL.Image.open(ref_file)
+                
+                # REFINED PROMPT FROM YOUR COLAB CODE
+                prompt = f"""
+                    Compare Student Breadboard (Image 2) to Schematic (Image 1) for Task {task_id}.
+                    
+                    RULES:
+                    - Red rail = Positive (+), Blue rail = Negative (-).
+                    - Component order in series is CORRECT.
+                    
+                    OUTPUT FORMAT (Strict):
+                    1) STATUS: [Correct ✅ or Wrong ❌]
+                    2) WHY: [Concise reason, max 50 words. Complete the sentence.]
+                    3) SOCRATIC HINTS: [L1, L2, L3]
+                """
 
-# --- 7. DATABASE VIEW ---
+                try:
+                    start_time = time.time()
+                    # 🟢 Using the exact model and thinking config from your Colab
+                    response = client.models.generate_content(
+                        model="gemini-3.1-pro-preview",
+                        contents=[ref_img, student_img, prompt],
+                        config=types.GenerateContentConfig(
+                            thinking_config=types.ThinkingConfig(include_thoughts=True),
+                            temperature=0.0
+                        )
+                    )
+                    duration = time.time() - start_time
+                    ai_text = response.text.strip()
+
+                    # --- 5. DATA PREVIEW ---
+                    is_correct = "✅" in ai_text or "CORRECT" in ai_text.upper()
+                    if is_correct:
+                        st.success(ai_text)
+                    else:
+                        st.error(ai_text)
+                    st.caption(f"⏱️ Latency: {duration:.2f}s")
+
+                    # --- 6. SAVE LOGIC (FILENAME & CSV) ---
+                    # Calculate HK Time (UTC +8)
+                    hk_now = datetime.now(timezone.utc) + timedelta(hours=8)
+                    time_str = hk_now.strftime("%Y%m%d_%H%M%S")
+                    
+                    # File name format: task_x_time
+                    filename = f"task_{task_id}_{time_str}.jpg"
+                    save_path = os.path.join(SAVE_DIR, filename)
+                    
+                    # Save Image
+                    student_img.save(save_path)
+                    
+                    # Prepare CSV row
+                    new_entry = {
+                        "Filename": filename,
+                        "Task_ID": task_id,
+                        "Timestamp_HK": hk_now.strftime("%Y-%m-%d %H:%M:%S"),
+                        "ai_output": ai_text,
+                        "latency": f"{duration:.2f}s",
+                        "model": "3.1-pro"
+                    }
+
+                    # Append to CSV
+                    if os.path.exists(CSV_PATH):
+                        master_df = pd.read_csv(CSV_PATH)
+                    else:
+                        master_df = pd.DataFrame()
+                    
+                    master_df = pd.concat([master_df, pd.DataFrame([new_entry])], ignore_index=True)
+                    master_df.to_csv(CSV_PATH, index=False)
+
+                    st.toast(f"Saved: {filename}")
+
+                except Exception as e:
+                    st.error(f"AI Error: {str(e)}")
+
+# --- 7. RECENT RESULTS VIEW ---
 st.divider()
-if os.path.exists(SAVE_FILENAME):
-    st.subheader("📊 Latest 5 Entries in CSV")
-    st.dataframe(pd.read_csv(SAVE_FILENAME).tail(5), use_container_width=True)
+st.subheader("📊 Recent Records")
+if os.path.exists(CSV_PATH):
+    df_view = pd.read_csv(CSV_PATH)
+    st.dataframe(df_view.tail(5), use_container_width=True)
+    st.download_button("Download All Results", df_view.to_csv(index=False), "ai_debug_results.csv")
+
 
 
 
