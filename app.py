@@ -80,6 +80,7 @@ with tab2:
         img_file = up_input
 
 # --- 5. CORE LOGIC ---
+# --- 5. CORE LOGIC ---
 if img_file and student_number:
     base_folder = "data2"
     ref_image_name = f"circuit-{task_number}.jpg"
@@ -88,77 +89,18 @@ if img_file and student_number:
     if not os.path.exists(ref_path):
         st.error(f"Reference image {ref_image_name} not found in '{base_folder}' folder.")
     else:
-        # Load images for AI
-        schematic_img_ai = PILImage.open(ref_path)
-        student_img_ai = PILImage.open(img_file)
+        try:
+            # 🟢 FIX: Open and ensure images are in RGB format
+            schematic_img = PILImage.open(ref_path).convert("RGB")
+            student_img = PILImage.open(img_file).convert("RGB")
 
-        # --- MODE 1: DIRECT DEBUG ---
-        if "1" in option_choice and not st.session_state.analysis_done:
-            with st.spinner("Thinking... (3.1 Pro High Reasoning)"):
-                prompt = f"""
-                You are a Senior Electronic Systems Diagnostic Engineer. Your task is to validate a student's breadboard circuit (Image 2) against a reference schematic (Image 1).
-                Mode: Direct Debug Mode: Provide concise diagnosis and correction.
-                
-                [OUTPUT FORMAT - JSON ONLY]
-                {{
-                  "schematic_netlist": "...",
-                  "student_netlist": "...",
-                  "match_status": "CORRECT" or "INCORRECT",
-                  "error_analysis": "...",
-                  "remediation_hints": "...",
-                  "follow_up_QA": "..."
-                }}
-                """
-
-                response = client.models.generate_content(
-                    model=MODEL_ID,
-                    contents=[prompt, schematic_img_ai, student_img_ai],
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        temperature=0.0,
-                        thinking_config=types.ThinkingConfig(include_thoughts=True)
-                    )
-                )
-                st.session_state.current_analysis = json.loads(response.text)
-                st.session_state.analysis_done = True
-
-        # --- MODE 2: SOCRATIC DEBUG (The Loop) ---
-        elif "2" in option_choice and not st.session_state.analysis_done:
-            if st.session_state.socratic_round < 3:
-                st.subheader(f"Socratic Round {st.session_state.socratic_round + 1} of 3")
-
-                q_prompt = f"""
-                Socratic Debug Mode, Round {st.session_state.socratic_round + 1}.
-                Compare Image 1 (Reference) and Image 2 (Student).
-                Ask ONE guiding question only to help the student find their own error. Do not give the answer.
-                """
-                
-                q_response = client.models.generate_content(
-                    model=MODEL_ID,
-                    contents=[q_prompt, schematic_img_ai, student_img_ai],
-                    config=types.GenerateContentConfig(
-                        temperature=0.0,
-                        thinking_config=types.ThinkingConfig(include_thoughts=True)
-                    )
-                )
-                ai_question = q_response.text
-
-                st.info(f"**AI Question:** {ai_question}")
-
-                with st.form(key=f"round_{st.session_state.socratic_round}"):
-                    student_ans = st.text_input("Your Answer:")
-                    submit_ans = st.form_submit_button("Submit Answer")
-
-                    if submit_ans and student_ans:
-                        st.session_state.chat_history += f"Q: {ai_question}\nA: {student_ans}\n"
-                        st.session_state.socratic_round += 1
-                        st.rerun()
-
-            else:
-                with st.spinner("Finalizing analysis... (3.1 Pro)"):
-                    final_prompt = f"""
-                    Provide final diagnosis and remediation hints after 3 rounds of Socratic dialogue.
-                    Student History: {st.session_state.chat_history}
+            # --- MODE 1: DIRECT DEBUG ---
+            if "1" in option_choice and not st.session_state.analysis_done:
+                with st.spinner("Thinking... (3.1 Pro High Reasoning)"):
+                    prompt = f"""
+                    Compare Student Breadboard (Image 2) to Schematic (Image 1) for Task {task_number}.
+                    You are a Senior Electronic Systems Diagnostic Engineer.
+                    
                     [OUTPUT FORMAT - JSON ONLY]
                     {{
                       "schematic_netlist": "...",
@@ -166,21 +108,75 @@ if img_file and student_number:
                       "match_status": "CORRECT" or "INCORRECT",
                       "error_analysis": "...",
                       "remediation_hints": "...",
-                      "follow_up_QA": "{st.session_state.chat_history}"
+                      "follow_up_QA": "..."
                     }}
                     """
-                    
-                    final_res = client.models.generate_content(
+
+                    # 🟢 FIX: Pass as a clean list. The SDK handles PIL images better this way.
+                    response = client.models.generate_content(
                         model=MODEL_ID,
-                        contents=[final_prompt, schematic_img_ai, student_img_ai],
+                        contents=[prompt, schematic_img, student_img],
                         config=types.GenerateContentConfig(
                             response_mime_type="application/json",
                             temperature=0.0,
                             thinking_config=types.ThinkingConfig(include_thoughts=True)
                         )
                     )
-                    st.session_state.current_analysis = json.loads(final_res.text)
-                    st.session_state.analysis_done = True
+                    
+                    if response.text:
+                        st.session_state.current_analysis = json.loads(response.text)
+                        st.session_state.analysis_done = True
+                    else:
+                        st.error("AI returned an empty response. This might be a safety filter trigger.")
+
+            # --- MODE 2: SOCRATIC DEBUG ---
+            elif "2" in option_choice and not st.session_state.analysis_done:
+                if st.session_state.socratic_round < 3:
+                    st.subheader(f"Socratic Round {st.session_state.socratic_round + 1} of 3")
+
+                    q_prompt = f"Socratic Debug Mode, Round {st.session_state.socratic_round + 1}. Compare Image 1 (Reference) and Image 2 (Student). Ask ONE guiding question only."
+                    
+                    q_response = client.models.generate_content(
+                        model=MODEL_ID,
+                        contents=[q_prompt, schematic_img, student_img],
+                        config=types.GenerateContentConfig(
+                            temperature=0.0,
+                            thinking_config=types.ThinkingConfig(include_thoughts=True)
+                        )
+                    )
+                    ai_question = q_response.text
+                    st.info(f"**AI Question:** {ai_question}")
+
+                    with st.form(key=f"round_{st.session_state.socratic_round}"):
+                        student_ans = st.text_input("Your Answer:")
+                        submit_ans = st.form_submit_button("Submit Answer")
+
+                        if submit_ans and student_ans:
+                            st.session_state.chat_history += f"Q: {ai_question}\nA: {student_ans}\n"
+                            st.session_state.socratic_round += 1
+                            st.rerun()
+                else:
+                    # Final Socratic Analysis
+                    with st.spinner("Finalizing analysis..."):
+                        final_prompt = f"Provide final diagnosis based on history: {st.session_state.chat_history}. Use JSON format."
+                        final_res = client.models.generate_content(
+                            model=MODEL_ID,
+                            contents=[final_prompt, schematic_img, student_img],
+                            config=types.GenerateContentConfig(
+                                response_mime_type="application/json",
+                                temperature=0.0,
+                                thinking_config=types.ThinkingConfig(include_thoughts=True)
+                            )
+                        )
+                        st.session_state.current_analysis = json.loads(final_res.text)
+                        st.session_state.analysis_done = True
+        
+        except Exception as e:
+            st.error(f"Critical Error: {e}")
+            if "429" in str(e):
+                st.warning("Quota exceeded. Please wait a minute and try again.")
+            elif "400" in str(e):
+                st.info("The model might be struggling with the image format. Ensure you are uploading a standard JPG/PNG.")
 
         # --- 6. DISPLAY RESULTS & SAVE TO MASTER DB ---
         if st.session_state.analysis_done:
