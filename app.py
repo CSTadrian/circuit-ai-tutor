@@ -12,6 +12,8 @@ from google.genai import types
 from google.oauth2 import service_account
 
 # --- 1. INITIALIZATION & CONFIG ---
+MASTER_CSV = "master_ai_records.csv"
+
 if "gcp_service_account" in st.secrets:
     creds_info = st.secrets["gcp_service_account"]
     
@@ -24,7 +26,7 @@ if "gcp_service_account" in st.secrets:
     client = genai.Client(
         vertexai=True, 
         project=PROJECT_ID, 
-        location="us-central1", # standard location for Vertex AI endpoints
+        location="us-central1", 
         credentials=credentials
     )
 else:
@@ -34,7 +36,7 @@ else:
 # Set target model string
 MODEL_ID = "gemini-3.1-pro-preview"
 
-st.set_page_config(page_title="AI Circuit Tutor", layout="centered")
+st.set_page_config(page_title="AI Circuit Tutor", layout="wide")
 
 # --- 2. SESSION STATE MANAGEMENT ---
 if 'socratic_round' not in st.session_state:
@@ -46,22 +48,31 @@ if 'analysis_done' not in st.session_state:
 if 'current_analysis' not in st.session_state:
     st.session_state.current_analysis = {}
 
-# --- 3. UI LAYOUT ---
+# --- 3. UI LAYOUT: SIDEBAR ---
 st.title("🔌 AI Circuit Diagnostic Station (3.1 Pro)")
 
 with st.sidebar:
     st.header("Student Setup")
-    student_number = st.text_input("Student Number (1-70)", placeholder="e.g. 42")
+    student_number = st.text_input("Student Number (ID)", placeholder="e.g. 42")
     task_number = st.number_input("Task Number", min_value=1, max_value=10, value=1)
     option_choice = st.radio("Debug Mode", ["1: Direct Debug", "2: Socratic Debug"])
 
     if st.button("Reset Session"):
-        for key in st.session_state.keys():
+        for key in list(st.session_state.keys()):
             del st.session_state[key]
         st.rerun()
 
-# --- 4. IMAGE CAPTURE ---
-img_file = st.camera_input("Capture your breadboard circuit")
+# --- 4. IMAGE CAPTURE OR UPLOAD ---
+st.subheader("📸 Step 1: Input Circuit Image")
+tab1, tab2 = st.tabs(["📷 Take Photo", "📂 Upload File"])
+
+img_file = None
+with tab1:
+    cam_input = st.camera_input("Capture your breadboard circuit")
+    if cam_input: img_file = cam_input
+with tab2:
+    up_input = st.file_uploader("Upload circuit photo", type=["jpg", "png", "jpeg"])
+    if up_input: img_file = up_input
 
 # --- 5. CORE LOGIC ---
 if img_file and student_number:
@@ -72,7 +83,7 @@ if img_file and student_number:
     if not os.path.exists(ref_path):
         st.error(f"Reference image {ref_image_name} not found in '{base_folder}' folder.")
     else:
-        # 🟢 FIX: Use standard PIL Image for the new SDK
+        # Load images for AI
         schematic_img_ai = PILImage.open(ref_path)
         student_img_ai = PILImage.open(img_file)
 
@@ -94,7 +105,6 @@ if img_file and student_number:
                 }}
                 """
 
-                # 🟢 FIX: Implement 3.1 Pro Client & Thinking Config
                 response = client.models.generate_content(
                     model=MODEL_ID,
                     contents=[prompt, schematic_img_ai, student_img_ai],
@@ -118,7 +128,6 @@ if img_file and student_number:
                 Ask ONE guiding question only to help the student find their own error. Do not give the answer.
                 """
                 
-                # 🟢 FIX: Update question generation to 3.1 Pro
                 q_response = client.models.generate_content(
                     model=MODEL_ID,
                     contents=[q_prompt, schematic_img_ai, student_img_ai],
@@ -156,7 +165,6 @@ if img_file and student_number:
                     }}
                     """
                     
-                    # 🟢 FIX: Update final diagnosis to 3.1 Pro
                     final_res = client.models.generate_content(
                         model=MODEL_ID,
                         contents=[final_prompt, schematic_img_ai, student_img_ai],
@@ -169,7 +177,7 @@ if img_file and student_number:
                     st.session_state.current_analysis = json.loads(final_res.text)
                     st.session_state.analysis_done = True
 
-        # --- 6. DISPLAY RESULTS & SAVE ---
+        # --- 6. DISPLAY RESULTS & SAVE TO MASTER DB ---
         if st.session_state.analysis_done:
             data = st.session_state.current_analysis
 
@@ -187,10 +195,9 @@ if img_file and student_number:
             # CSV Logging Logic
             if st.button("Finalize and Save Entry"):
                 now_hkt = datetime.now(timezone.utc) + timedelta(hours=8)
-                timestamp_str = now_hkt.strftime('%Y_%m_%d__%H_%M_%S')
-
+                
                 new_row = {
-                    "Student Number": student_number,
+                    "Student Number": str(student_number).strip(),
                     "Time (HKT)": now_hkt.strftime('%Y-%m-%d %H:%M:%S'),
                     "Task": task_number,
                     "Result": data['match_status'],
@@ -199,14 +206,51 @@ if img_file and student_number:
                     "History": data.get("follow_up_QA", "")
                 }
 
-                st.success(f"Entry for Student {student_number} recorded successfully!")
+                # Save to Master Database
+                if os.path.exists(MASTER_CSV):
+                    master_df = pd.read_csv(MASTER_CSV)
+                else:
+                    master_df = pd.DataFrame()
+
+                master_df = pd.concat([master_df, pd.DataFrame([new_row])], ignore_index=True)
+                master_df.to_csv(MASTER_CSV, index=False)
+
+                st.success(f"Entry for Student {student_number} saved to master database!")
                 st.balloons()
 
-                # Provide a download button for the data
-                df_to_save = pd.DataFrame([new_row])
-                csv = df_to_save.to_csv(index=False).encode('utf-8')
-                st.download_button("Download Record CSV", csv, f"record_{student_number}.csv", "text/csv")
-                
+# --- 7. STUDENT RECORD DOWNLOAD PORTAL ---
+st.divider()
+st.subheader("📥 Student Portal: Download Your Records")
+
+if not student_number:
+    st.info("Please enter your Student Number in the sidebar to view and download your records.")
+elif os.path.exists(MASTER_CSV):
+    # Load master DB and filter
+    full_df = pd.read_csv(MASTER_CSV)
+    
+    # Ensure types match for filtering
+    full_df['Student Number'] = full_df['Student Number'].astype(str).str.strip()
+    student_id_str = str(student_number).strip()
+    
+    student_df = full_df[full_df['Student Number'] == student_id_str]
+
+    if not student_df.empty:
+        st.write(f"Found **{len(student_df)}** record(s) for Student {student_number}:")
+        st.dataframe(student_df, use_container_width=True)
+        
+        # Download strictly the filtered student data
+        csv_data = student_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label=f"Download My Records ({len(student_df)} entries)",
+            data=csv_data,
+            file_name=f"student_{student_number}_history.csv",
+            mime="text/csv"
+        )
+    else:
+        st.warning(f"No records found in the database for Student {student_number} yet.")
+else:
+    st.warning("No database exists yet. Complete an analysis to create the first record.")
+    
 
 
 
