@@ -13,7 +13,6 @@ SAVE_FILENAME = "ai_debug_streamlit.csv"
 
 if "gcp_service_account" in st.secrets:
     creds_info = st.secrets["gcp_service_account"]
-    # Ensure scopes are explicitly defined for Vertex AI
     scopes = ["https://www.googleapis.com/auth/cloud-platform"]
     credentials = service_account.Credentials.from_service_account_info(creds_info, scopes=scopes)
     PROJECT_ID = creds_info["project_id"]
@@ -22,10 +21,9 @@ else:
     st.error("GCP Service Account secrets not found!")
     st.stop()
 
-# 🟢 UPDATE: Moving to 3.0-pro
 model = GenerativeModel("gemini-3.0-pro-preview")
 
-st.set_page_config(page_title="AI Circuit Tutor v3.0", layout="centered")
+st.set_page_config(page_title="AI Circuit Tutor v3.0", layout="wide")
 
 # --- 2. SESSION STATE MANAGEMENT ---
 if 'socratic_round' not in st.session_state:
@@ -51,8 +49,18 @@ with st.sidebar:
             del st.session_state[key]
         st.rerun()
 
-# --- 4. IMAGE CAPTURE ---
-img_file = st.camera_input("Capture your breadboard circuit")
+# --- 4. MULTIMEDIA INPUT (Take Photo OR Upload) ---
+st.subheader("📸 Step 1: Input Circuit Image")
+tab1, tab2 = st.tabs(["Take Photo", "Upload File"])
+
+img_file = None
+with tab1:
+    cam_file = st.camera_input("Capture breadboard")
+    if cam_file: img_file = cam_file
+
+with tab2:
+    up_file = st.file_uploader("Upload breadboard image", type=["jpg", "png", "jpeg"])
+    if up_file: img_file = up_file
 
 # --- 5. CORE LOGIC ---
 if img_file and student_number:
@@ -70,22 +78,20 @@ if img_file and student_number:
         # --- MODE 1: DIRECT DEBUG ---
         if "1" in option_choice and not st.session_state.analysis_done:
             with st.spinner("Analyzing circuit..."):
-                # 🟢 UPDATE: Added strict 50-word limit and completeness instruction
                 prompt = f"""
                 You are a Senior Electronic Systems Diagnostic Engineer. 
                 Compare Student Breadboard (Image 2) to Schematic (Image 1).
                 
                 RULES:
                 - Provide a COMPLETE diagnosis.
-                - TOTAL word limit for 'error_analysis' is 80 words. Please complete the sentence in clear and concise.
-                - Ensure the last sentence is finished and the idea is whole.
+                - TOTAL word limit for 'error_analysis' is 80 words. Please complete the sentence clearly and concisely.
                 - The order of some components (e.g. LED and resistor) is reversible.
-                - The resistor value can be ignored. As long as the resistor is here in the correct place. 
+                - The resistor value can be ignored as long as it is in the correct place. 
 
                 [OUTPUT FORMAT - JSON ONLY]
                 {{
                 "match_status": "CORRECT" or "INCORRECT",
-                "error_analysis": "[Concise diagnosis, complete sentences, max 80 words]",
+                "error_analysis": "[Diagnosis, max 80 words]",
                 "remediation_hints": "[Actionable fix]",
                 "follow_up_QA": "Direct Analysis"
                 }}
@@ -116,11 +122,11 @@ if img_file and student_number:
                 with st.spinner("Finalizing analysis..."):
                     final_prompt = f"""
                     Provide final diagnosis after these Socratic rounds: {st.session_state.chat_history}.
-                    Max 50 words for analysis. 
+                    Max 80 words for analysis. 
                     [OUTPUT FORMAT - JSON ONLY]
                     {{
                     "match_status": "CORRECT" or "INCORRECT",
-                    "error_analysis": "[Final result, max 50 words]",
+                    "error_analysis": "[Final result, max 80 words]",
                     "remediation_hints": "[Remediation]",
                     "follow_up_QA": "{st.session_state.chat_history}"
                     }}
@@ -132,18 +138,18 @@ if img_file and student_number:
                     st.session_state.current_analysis = json.loads(final_res.text)
                     st.session_state.analysis_done = True
 
-# --- 6. DISPLAY RESULTS & APPENDING TO CSV ---
+# --- 6. DISPLAY RESULTS ---
 if st.session_state.analysis_done:
     data = st.session_state.current_analysis
     st.divider()
     status_emoji = "✅" if data['match_status'] == "CORRECT" else "❌"
     st.subheader(f"Result: {data['match_status']} {status_emoji}")
 
-    col1, col2 = st.columns(2)
-    with col1:
+    col_res1, col_res2 = st.columns(2)
+    with col_res1:
         st.markdown("**Analysis**")
         st.write(data['error_analysis'])
-    with col2:
+    with col_res2:
         st.markdown("**Hint**")
         st.info(data['remediation_hints'])
 
@@ -160,7 +166,6 @@ if st.session_state.analysis_done:
             "History": data.get("follow_up_QA", "")
         }
 
-        # 🟢 UPDATE: Appending to "ai_debug_streamlit.csv"
         if os.path.exists(SAVE_FILENAME):
             master_df = pd.read_csv(SAVE_FILENAME)
         else:
@@ -168,12 +173,27 @@ if st.session_state.analysis_done:
 
         master_df = pd.concat([master_df, pd.DataFrame([new_row])], ignore_index=True)
         master_df.to_csv(SAVE_FILENAME, index=False)
-
-        st.success(f"Entry saved to {SAVE_FILENAME}")
+        st.success("Entry saved successfully!")
         st.balloons()
-        st.download_button("Download Latest CSV", master_df.to_csv(index=False), SAVE_FILENAME, "text/csv")
 
- 
+# --- 7. DATA PREVIEW SECTION ---
+st.divider()
+st.subheader("📊 Saved Research Data")
+if os.path.exists(SAVE_FILENAME):
+    display_df = pd.read_csv(SAVE_FILENAME)
+    # Display the last 10 entries for clarity
+    st.dataframe(display_df.tail(10), use_container_width=True)
+    
+    csv_data = display_df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="Download Full CSV",
+        data=csv_data,
+        file_name=SAVE_FILENAME,
+        mime='text/csv'
+    )
+else:
+    st.info("No data saved yet. Complete an analysis to see results here.")
+    
 # import streamlit as st
 # import pandas as pd
 # import json
