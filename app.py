@@ -64,15 +64,20 @@ with st.sidebar:
 
 # --- 4. IMAGE CAPTURE OR UPLOAD ---
 st.subheader("📸 Step 1: Input Circuit Image")
+# Using tabs to separate the two input methods
 tab1, tab2 = st.tabs(["📷 Take Photo", "📂 Upload File"])
 
 img_file = None
+
 with tab1:
     cam_input = st.camera_input("Capture your breadboard circuit")
-    if cam_input: img_file = cam_input
+    if cam_input:
+        img_file = cam_input
+
 with tab2:
     up_input = st.file_uploader("Upload circuit photo", type=["jpg", "png", "jpeg"])
-    if up_input: img_file = up_input
+    if up_input:
+        img_file = up_input
 
 # --- 5. CORE LOGIC ---
 if img_file and student_number:
@@ -225,10 +230,7 @@ st.subheader("📥 Student Portal: Download Your Records")
 if not student_number:
     st.info("Please enter your Student Number in the sidebar to view and download your records.")
 elif os.path.exists(MASTER_CSV):
-    # Load master DB and filter
     full_df = pd.read_csv(MASTER_CSV)
-    
-    # Ensure types match for filtering
     full_df['Student Number'] = full_df['Student Number'].astype(str).str.strip()
     student_id_str = str(student_number).strip()
     
@@ -238,7 +240,6 @@ elif os.path.exists(MASTER_CSV):
         st.write(f"Found **{len(student_df)}** record(s) for Student {student_number}:")
         st.dataframe(student_df, use_container_width=True)
         
-        # Download strictly the filtered student data
         csv_data = student_df.to_csv(index=False).encode('utf-8')
         st.download_button(
             label=f"Download My Records ({len(student_df)} entries)",
