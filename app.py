@@ -16,7 +16,12 @@ SAVE_FILENAME = "circuit_ai_research_data.csv"
 # Authentication
 if "gcp_service_account" in st.secrets:
     creds_info = st.secrets["gcp_service_account"]
-    credentials = service_account.Credentials.from_service_account_info(creds_info)
+    scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+    credentials = service_account.Credentials.from_service_account_info(
+        creds_info, 
+        scopes=scopes
+    )
+    
     PROJECT_ID = st.secrets["project_id"]
     client = genai.Client(vertexai=True, project=PROJECT_ID, location="global", credentials=credentials)
 else:
