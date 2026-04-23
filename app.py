@@ -1,146 +1,212 @@
+# -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
-import PIL.Image
-import os
-import time
 import json
+import os
 from datetime import datetime, timedelta, timezone
+from PIL import Image as PILImage
+
+# --- NEW SDK IMPORTS ---
 from google import genai
 from google.genai import types
 from google.oauth2 import service_account
 
-# --- 1. CONFIG & AUTH ---
-st.set_page_config(page_title="AI Circuit Debugger 3.1", layout="wide")
-st.title("🚀 3.1-PRO High-Reasoning Diagnostic")
-
-SAVE_DIR = "research_captures"
-CSV_PATH = "ai_debug_results_live.csv"
-os.makedirs(SAVE_DIR, exist_ok=True)
-
-# Authentication from Streamlit Secrets
+# --- 1. INITIALIZATION & CONFIG ---
 if "gcp_service_account" in st.secrets:
     creds_info = st.secrets["gcp_service_account"]
-    credentials = service_account.Credentials.from_service_account_info(creds_info)
-    PROJECT_ID = st.secrets["project_id"]
-    client = genai.Client(vertexai=True, project=PROJECT_ID, location="global", credentials=credentials)
+    
+    # Explicit scopes for Streamlit Cloud
+    scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+    credentials = service_account.Credentials.from_service_account_info(creds_info, scopes=scopes)
+    PROJECT_ID = creds_info["project_id"]
+
+    # INITIALIZE NEW GENAI CLIENT
+    client = genai.Client(
+        vertexai=True, 
+        project=PROJECT_ID, 
+        location="us-central1", # standard location for Vertex AI endpoints
+        credentials=credentials
+    )
 else:
-    st.error("Please configure Google Cloud Secrets in Streamlit!")
+    st.error("GCP Service Account secrets not found! Check your Streamlit Cloud settings.")
     st.stop()
 
-# --- 2. SIDEBAR SETUP ---
+# Set target model string
+MODEL_ID = "gemini-3.1-pro-preview"
+
+st.set_page_config(page_title="AI Circuit Tutor", layout="centered")
+
+# --- 2. SESSION STATE MANAGEMENT ---
+if 'socratic_round' not in st.session_state:
+    st.session_state.socratic_round = 0
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = ""
+if 'analysis_done' not in st.session_state:
+    st.session_state.analysis_done = False
+if 'current_analysis' not in st.session_state:
+    st.session_state.current_analysis = {}
+
+# --- 3. UI LAYOUT ---
+st.title("🔌 AI Circuit Diagnostic Station (3.1 Pro)")
+
 with st.sidebar:
-    st.header("Session Info")
-    task_id = st.number_input("Task Number (x)", min_value=1, max_value=99, value=1)
-    
-    # Optional: Load reference schematic for comparison
-    ref_file = st.file_uploader("Upload Reference Schematic (Image 1)", type=["jpg", "png", "jpeg"])
+    st.header("Student Setup")
+    student_number = st.text_input("Student Number (1-70)", placeholder="e.g. 42")
+    task_number = st.number_input("Task Number", min_value=1, max_value=10, value=1)
+    option_choice = st.radio("Debug Mode", ["1: Direct Debug", "2: Socratic Debug"])
 
-# --- 3. INPUT METHODS ---
-st.subheader("📸 Step 1: Capture or Upload Student Breadboard")
-tab1, tab2 = st.tabs(["Take Photo", "Upload File"])
+    if st.button("Reset Session"):
+        for key in st.session_state.keys():
+            del st.session_state[key]
+        st.rerun()
 
-img_file = None
-with tab1:
-    cam_input = st.camera_input("Capture live circuit")
-    if cam_input: img_file = cam_input
-with tab2:
-    up_input = st.file_uploader("Choose existing photo", type=["jpg", "png", "jpeg"])
-    if up_input: img_file = up_input
+# --- 4. IMAGE CAPTURE ---
+img_file = st.camera_input("Capture your breadboard circuit")
 
-# --- 4. CORE ANALYSIS LOGIC ---
-if img_file:
-    # Display the student image
-    student_img = PIL.Image.open(img_file)
-    st.image(student_img, caption="Student Breadboard (Image 2)", width=500)
+# --- 5. CORE LOGIC ---
+if img_file and student_number:
+    base_folder = "data2"
+    ref_image_name = f"circuit-{task_number}.jpg"
+    ref_path = os.path.join(base_folder, ref_image_name)
 
-    if st.button("Run 3.1-PRO Analysis"):
-        if not ref_file:
-            st.warning("Please upload a Reference Schematic in the sidebar first!")
-        else:
-            with st.spinner("AI is thinking (High Reasoning Mode)..."):
-                ref_img = PIL.Image.open(ref_file)
-                
-                # REFINED PROMPT FROM YOUR COLAB CODE
+    if not os.path.exists(ref_path):
+        st.error(f"Reference image {ref_image_name} not found in '{base_folder}' folder.")
+    else:
+        # 🟢 FIX: Use standard PIL Image for the new SDK
+        schematic_img_ai = PILImage.open(ref_path)
+        student_img_ai = PILImage.open(img_file)
+
+        # --- MODE 1: DIRECT DEBUG ---
+        if "1" in option_choice and not st.session_state.analysis_done:
+            with st.spinner("Thinking... (3.1 Pro High Reasoning)"):
                 prompt = f"""
-                    Compare Student Breadboard (Image 2) to Schematic (Image 1) for Task {task_id}.
-                    
-                    RULES:
-                    - Red rail = Positive (+), Blue rail = Negative (-).
-                    - Component order in series is CORRECT.
-                    
-                    OUTPUT FORMAT (Strict):
-                    1) STATUS: [Correct ✅ or Wrong ❌]
-                    2) WHY: [Concise reason, max 50 words. Complete the sentence.]
-                    3) SOCRATIC HINTS: [L1, L2, L3]
+                You are a Senior Electronic Systems Diagnostic Engineer. Your task is to validate a student's breadboard circuit (Image 2) against a reference schematic (Image 1).
+                Mode: Direct Debug Mode: Provide concise diagnosis and correction.
+                
+                [OUTPUT FORMAT - JSON ONLY]
+                {{
+                  "schematic_netlist": "...",
+                  "student_netlist": "...",
+                  "match_status": "CORRECT" or "INCORRECT",
+                  "error_analysis": "...",
+                  "remediation_hints": "...",
+                  "follow_up_QA": "..."
+                }}
                 """
 
-                try:
-                    start_time = time.time()
-                    # 🟢 Using the exact model and thinking config from your Colab
-                    response = client.models.generate_content(
-                        model="gemini-3.1-pro-preview",
-                        contents=[ref_img, student_img, prompt],
+                # 🟢 FIX: Implement 3.1 Pro Client & Thinking Config
+                response = client.models.generate_content(
+                    model=MODEL_ID,
+                    contents=[prompt, schematic_img_ai, student_img_ai],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.0,
+                        thinking_config=types.ThinkingConfig(include_thoughts=True)
+                    )
+                )
+                st.session_state.current_analysis = json.loads(response.text)
+                st.session_state.analysis_done = True
+
+        # --- MODE 2: SOCRATIC DEBUG (The Loop) ---
+        elif "2" in option_choice and not st.session_state.analysis_done:
+            if st.session_state.socratic_round < 3:
+                st.subheader(f"Socratic Round {st.session_state.socratic_round + 1} of 3")
+
+                q_prompt = f"""
+                Socratic Debug Mode, Round {st.session_state.socratic_round + 1}.
+                Compare Image 1 (Reference) and Image 2 (Student).
+                Ask ONE guiding question only to help the student find their own error. Do not give the answer.
+                """
+                
+                # 🟢 FIX: Update question generation to 3.1 Pro
+                q_response = client.models.generate_content(
+                    model=MODEL_ID,
+                    contents=[q_prompt, schematic_img_ai, student_img_ai],
+                    config=types.GenerateContentConfig(
+                        temperature=0.0,
+                        thinking_config=types.ThinkingConfig(include_thoughts=True)
+                    )
+                )
+                ai_question = q_response.text
+
+                st.info(f"**AI Question:** {ai_question}")
+
+                with st.form(key=f"round_{st.session_state.socratic_round}"):
+                    student_ans = st.text_input("Your Answer:")
+                    submit_ans = st.form_submit_button("Submit Answer")
+
+                    if submit_ans and student_ans:
+                        st.session_state.chat_history += f"Q: {ai_question}\nA: {student_ans}\n"
+                        st.session_state.socratic_round += 1
+                        st.rerun()
+
+            else:
+                with st.spinner("Finalizing analysis... (3.1 Pro)"):
+                    final_prompt = f"""
+                    Provide final diagnosis and remediation hints after 3 rounds of Socratic dialogue.
+                    Student History: {st.session_state.chat_history}
+                    [OUTPUT FORMAT - JSON ONLY]
+                    {{
+                      "schematic_netlist": "...",
+                      "student_netlist": "...",
+                      "match_status": "CORRECT" or "INCORRECT",
+                      "error_analysis": "...",
+                      "remediation_hints": "...",
+                      "follow_up_QA": "{st.session_state.chat_history}"
+                    }}
+                    """
+                    
+                    # 🟢 FIX: Update final diagnosis to 3.1 Pro
+                    final_res = client.models.generate_content(
+                        model=MODEL_ID,
+                        contents=[final_prompt, schematic_img_ai, student_img_ai],
                         config=types.GenerateContentConfig(
-                            thinking_config=types.ThinkingConfig(include_thoughts=True),
-                            temperature=0.0
+                            response_mime_type="application/json",
+                            temperature=0.0,
+                            thinking_config=types.ThinkingConfig(include_thoughts=True)
                         )
                     )
-                    duration = time.time() - start_time
-                    ai_text = response.text.strip()
+                    st.session_state.current_analysis = json.loads(final_res.text)
+                    st.session_state.analysis_done = True
 
-                    # --- 5. DATA PREVIEW ---
-                    is_correct = "✅" in ai_text or "CORRECT" in ai_text.upper()
-                    if is_correct:
-                        st.success(ai_text)
-                    else:
-                        st.error(ai_text)
-                    st.caption(f"⏱️ Latency: {duration:.2f}s")
+        # --- 6. DISPLAY RESULTS & SAVE ---
+        if st.session_state.analysis_done:
+            data = st.session_state.current_analysis
 
-                    # --- 6. SAVE LOGIC (FILENAME & CSV) ---
-                    # Calculate HK Time (UTC +8)
-                    hk_now = datetime.now(timezone.utc) + timedelta(hours=8)
-                    time_str = hk_now.strftime("%Y%m%d_%H%M%S")
-                    
-                    # File name format: task_x_time
-                    filename = f"task_{task_id}_{time_str}.jpg"
-                    save_path = os.path.join(SAVE_DIR, filename)
-                    
-                    # Save Image
-                    student_img.save(save_path)
-                    
-                    # Prepare CSV row
-                    new_entry = {
-                        "Filename": filename,
-                        "Task_ID": task_id,
-                        "Timestamp_HK": hk_now.strftime("%Y-%m-%d %H:%M:%S"),
-                        "ai_output": ai_text,
-                        "latency": f"{duration:.2f}s",
-                        "model": "3.1-pro"
-                    }
+            st.divider()
+            st.subheader(f"Result: {data['match_status']}")
 
-                    # Append to CSV
-                    if os.path.exists(CSV_PATH):
-                        master_df = pd.read_csv(CSV_PATH)
-                    else:
-                        master_df = pd.DataFrame()
-                    
-                    master_df = pd.concat([master_df, pd.DataFrame([new_entry])], ignore_index=True)
-                    master_df.to_csv(CSV_PATH, index=False)
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**Analysis**")
+                st.write(data['error_analysis'])
+            with col2:
+                st.markdown("**Hint**")
+                st.info(data['remediation_hints'])
 
-                    st.toast(f"Saved: {filename}")
+            # CSV Logging Logic
+            if st.button("Finalize and Save Entry"):
+                now_hkt = datetime.now(timezone.utc) + timedelta(hours=8)
+                timestamp_str = now_hkt.strftime('%Y_%m_%d__%H_%M_%S')
 
-                except Exception as e:
-                    st.error(f"AI Error: {str(e)}")
+                new_row = {
+                    "Student Number": student_number,
+                    "Time (HKT)": now_hkt.strftime('%Y-%m-%d %H:%M:%S'),
+                    "Task": task_number,
+                    "Result": data['match_status'],
+                    "Analysis": data['error_analysis'],
+                    "Option": option_choice,
+                    "History": data.get("follow_up_QA", "")
+                }
 
-# --- 7. RECENT RESULTS VIEW ---
-st.divider()
-st.subheader("📊 Recent Records")
-if os.path.exists(CSV_PATH):
-    df_view = pd.read_csv(CSV_PATH)
-    st.dataframe(df_view.tail(5), use_container_width=True)
-    st.download_button("Download All Results", df_view.to_csv(index=False), "ai_debug_results.csv")
+                st.success(f"Entry for Student {student_number} recorded successfully!")
+                st.balloons()
 
-
+                # Provide a download button for the data
+                df_to_save = pd.DataFrame([new_row])
+                csv = df_to_save.to_csv(index=False).encode('utf-8')
+                st.download_button("Download Record CSV", csv, f"record_{student_number}.csv", "text/csv")
+                
 
 
 
