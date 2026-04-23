@@ -77,13 +77,15 @@ if img_file and student_number:
                 
                 RULES:
                 - Provide a COMPLETE diagnosis.
-                - TOTAL word limit for 'error_analysis' is 50 words.
+                - TOTAL word limit for 'error_analysis' is 80 words. Please complete the sentence in clear and concise.
                 - Ensure the last sentence is finished and the idea is whole.
+                - The order of some components (e.g. LED and resistor) is reversible.
+                - The resistor value can be ignored. As long as the resistor is here in the correct place. 
 
                 [OUTPUT FORMAT - JSON ONLY]
                 {{
                 "match_status": "CORRECT" or "INCORRECT",
-                "error_analysis": "[Concise diagnosis, complete sentences, max 50 words]",
+                "error_analysis": "[Concise diagnosis, complete sentences, max 80 words]",
                 "remediation_hints": "[Actionable fix]",
                 "follow_up_QA": "Direct Analysis"
                 }}
