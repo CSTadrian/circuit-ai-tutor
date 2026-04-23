@@ -81,11 +81,12 @@ if img_file and student_num:
                     { "match_status": "CORRECT", "error_analysis": "...", "remediation_hints": "..." }
                     """
                     response = client.models.generate_content(
-                        model="gemini-3.1-pro-preview", # This is the high-reasoning engine
+                        model="gemini-3.1-pro-preview",
                         contents=[ref_img, student_img, prompt],
                         config=types.GenerateContentConfig(
-                            temperature=0.0,
-                            response_mime_type="application/json"
+                            thinking_config=types.ThinkingConfig(include_thoughts=True),
+                            temperature=0.0
+                            # max_output_tokens=2000 # Keep response short
                         )
                     )
                     st.session_state.current_analysis = json.loads(response.text)
@@ -110,9 +111,13 @@ if img_file and student_num:
                     # Final Analysis
                     prompt = f"Final analysis based on history: {st.session_state.chat_history}. Max 80 words."
                     response = client.models.generate_content(
-                        model="gemini-1.5-pro",
+                        model="gemini-3.1-pro-preview",
                         contents=[ref_img, student_img, prompt],
-                        config=types.GenerateContentConfig(response_mime_type="application/json")
+                        config=types.GenerateContentConfig(
+                            thinking_config=types.ThinkingConfig(include_thoughts=True),
+                            temperature=0.0
+                            # max_output_tokens=2000 # Keep response short
+                        )
                     )
                     st.session_state.current_analysis = json.loads(response.text)
                     st.session_state.analysis_done = True
