@@ -12,7 +12,6 @@ st.set_page_config(page_title="Circuit AI Debugger", layout="wide")
 st.title("🚀 3.1-PRO Circuit Analysis")
 
 # Load credentials from Streamlit Secrets
-# (Setup this in Streamlit Cloud Dashboard: Settings > Secrets)
 if "gcp_service_account" in st.secrets:
     creds_info = st.secrets["gcp_service_account"]
     credentials = service_account.Credentials.from_service_account_info(creds_info)
@@ -22,8 +21,8 @@ else:
     st.error("Please configure Google Cloud Secrets in Streamlit!")
     st.stop()
 
-# Paths (Streamlit usually uses local paths or GitHub repo paths)
-BASE_PATH = "data" # Update this to your folder in the GitHub repo
+# Paths
+BASE_PATH = "data" 
 CSV_LOG_PATH = os.path.join(BASE_PATH, "circuit_log_0321.csv")
 CSV_PRO_PATH = "ai_debug_results.csv"
 
@@ -40,9 +39,10 @@ if st.button("Start Analysis"):
     progress_bar = st.progress(0)
     status_text = st.empty()
     
-    # Initialize or load master results
+    # LOAD EXISTING CSV (to allow appending/updating)
     if os.path.exists(CSV_PRO_PATH):
         master_df = pd.read_csv(CSV_PRO_PATH)
+        st.info(f"Existing results found. Appending/Updating {CSV_PRO_PATH}...")
     else:
         master_df = pd.DataFrame()
 
@@ -72,7 +72,6 @@ if st.button("Start Analysis"):
             3) SOCRATIC HINTS: [L1, L2, L3]
         """
 
-        # AI Call
         ai_text, duration = "ERROR", 0
         try:
             start_time = time.time()
@@ -103,24 +102,39 @@ if st.button("Start Analysis"):
                 st.error(ai_text)
             st.caption(f"⏱️ Latency: {duration:.2f}s")
 
-        # --- SAVE DATA ---
+        # --- SAVE DATA (APPEND/UPDATE LOGIC) ---
         new_row_data = row.to_dict()
-        new_row_data.update({"ai_output": ai_text, "latency": f"{duration:.2f}s", "model": "3.1-pro"})
+        new_row_data.update({
+            "ai_output": ai_text, 
+            "latency": f"{duration:.2f}s", 
+            "model": "3.1-pro"
+        })
         
-        # Update logic
+        # If the file already exists in our master dataframe, update it. Otherwise, concat.
         if not master_df.empty and img_name in master_df['Filename'].values:
-            master_df.loc[master_df['Filename'] == img_name] = pd.Series(new_row_data)
+            # Locate the index of the existing filename and update that specific row
+            idx_to_update = master_df.index[master_df['Filename'] == img_name].tolist()[0]
+            for key, value in new_row_data.items():
+                master_df.at[idx_to_update, key] = value
         else:
+            # Append new record
             master_df = pd.concat([master_df, pd.DataFrame([new_row_data])], ignore_index=True)
         
+        # Save to CSV after every image to prevent data loss
         master_df.to_csv(CSV_PRO_PATH, index=False)
         progress_bar.progress((idx + 1) / len(working_df))
 
     st.balloons()
-    st.success(f"Full dataset saved to {CSV_PRO_PATH}")
-    st.download_button("Download Results CSV", data=master_df.to_csv(index=False), file_name=CSV_PRO_PATH)
+    st.success(f"Processing complete. Data saved to {CSV_PRO_PATH}")
     
-
+    # Allow user to download the final state
+    st.download_button(
+        label="Download Results CSV",
+        data=master_df.to_csv(index=False),
+        file_name=CSV_PRO_PATH,
+        mime='text/csv'
+    )
+    
 # import streamlit as st
 # import pandas as pd
 # import json
