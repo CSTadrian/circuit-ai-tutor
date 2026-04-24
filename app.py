@@ -24,7 +24,7 @@ if "gcp_service_account" in st.secrets:
     client = genai.Client(
         vertexai=True, 
         project=PROJECT_ID, 
-        location="us-central1", 
+        location="global", 
         credentials=credentials
     )
 else:
