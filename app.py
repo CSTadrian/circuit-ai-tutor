@@ -3,8 +3,7 @@ import streamlit as st
 import pandas as pd
 import json
 import os
-from datetime import datetime, timedelta, timezone
-from PIL import Image as PILImage
+from PIL import Image as PILImage, ImageDraw
 
 # --- NEW SDK IMPORTS ---
 from google import genai
@@ -12,17 +11,16 @@ from google.genai import types
 from google.oauth2 import service_account
 
 # --- 1. INITIALIZATION & CONFIG ---
-MASTER_CSV = "master_ai_records.csv"
+st.set_page_config(page_title="AI Circuit Tutor (Live Annotation)", layout="wide")
+MODEL_ID = "gemini-3.1-pro-preview"
 
+# Authentication
 if "gcp_service_account" in st.secrets:
     creds_info = st.secrets["gcp_service_account"]
-    
-    # Explicit scopes for Streamlit Cloud
     scopes = ["https://www.googleapis.com/auth/cloud-platform"]
     credentials = service_account.Credentials.from_service_account_info(creds_info, scopes=scopes)
     PROJECT_ID = creds_info["project_id"]
 
-    # INITIALIZE NEW GENAI CLIENT
     client = genai.Client(
         vertexai=True, 
         project=PROJECT_ID, 
@@ -33,220 +31,185 @@ else:
     st.error("GCP Service Account secrets not found! Check your Streamlit Cloud settings.")
     st.stop()
 
-# Set target model string
-MODEL_ID = "gemini-3.1-pro-preview"
-
-st.set_page_config(page_title="AI Circuit Tutor", layout="wide")
-
 # --- 2. SESSION STATE MANAGEMENT ---
-if 'socratic_round' not in st.session_state:
-    st.session_state.socratic_round = 0
-if 'chat_history' not in st.session_state:
-    st.session_state.chat_history = ""
-if 'analysis_done' not in st.session_state:
-    st.session_state.analysis_done = False
-if 'current_analysis' not in st.session_state:
-    st.session_state.current_analysis = {}
+if "step" not in st.session_state: st.session_state.step = 1
+if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
+if "raw_student_img" not in st.session_state: st.session_state.raw_student_img = None
+if "raw_schematic_img" not in st.session_state: st.session_state.raw_schematic_img = None
 
-# --- 3. UI LAYOUT: SIDEBAR ---
-st.title("🔌 AI Circuit Diagnostic Station (3.1 Pro)")
+def reset_flow():
+    st.session_state.step = 1
+    st.session_state.components_df = pd.DataFrame()
+
+# --- 3. UI: SIDEBAR SETUP ---
+st.title("🔌 Interactive AI Circuit Debugger (3.1 Pro)")
 
 with st.sidebar:
-    st.header("Student Setup")
-    student_number = st.text_input("Student Number (ID)", placeholder="e.g. 42")
-    task_number = st.number_input("Task Number", min_value=1, max_value=10, value=1)
-    option_choice = st.radio("Debug Mode", ["1: Direct Debug", "2: Socratic Debug"])
+    st.header("Setup & Inputs")
+    task_id = st.text_input("Task/Experiment Name", "Task 4b")
+    feedback_mode = st.radio("Feedback Mode", ["Direct Answer", "Socratic Scaffolding"])
+    
+    st.divider()
+    st.subheader("1. Reference Schematic")
+    schematic_file = st.file_uploader("Upload Schematic", type=["jpg", "png", "jpeg"], on_change=reset_flow)
+    
+    st.subheader("2. Student Breadboard")
+    student_file = st.file_uploader("Upload Student Circuit", type=["jpg", "png", "jpeg"], on_change=reset_flow)
 
-    if st.button("Reset Session"):
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
+    if st.button("Reset Process"):
+        reset_flow()
         st.rerun()
 
-# --- 4. IMAGE CAPTURE OR UPLOAD ---
-st.subheader("📸 Step 1: Input Circuit Image")
-# Using tabs to separate the two input methods
-tab1, tab2 = st.tabs(["📷 Take Photo", "📂 Upload File"])
+# Process uploaded images
+if schematic_file and student_file:
+    st.session_state.raw_schematic_img = PILImage.open(schematic_file).convert("RGB")
+    st.session_state.raw_student_img = PILImage.open(student_file).convert("RGB")
 
-img_file = None
+    # --- MAIN FLOW ---
+    if st.session_state.step == 1:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.image(st.session_state.raw_schematic_img, caption="Reference Schematic", use_container_width=True)
+        with col2:
+            st.image(st.session_state.raw_student_img, caption="Student Breadboard", use_container_width=True)
 
-with tab1:
-    cam_input = st.camera_input("Capture your breadboard circuit")
-    if cam_input:
-        img_file = cam_input
-
-with tab2:
-    up_input = st.file_uploader("Upload circuit photo", type=["jpg", "png", "jpeg"])
-    if up_input:
-        img_file = up_input
-
-# --- 5. CORE LOGIC ---
-# --- 5. CORE LOGIC ---
-if img_file and student_number:
-    base_folder = "data2"
-    ref_image_name = f"circuit-{task_number}.jpg"
-    ref_path = os.path.join(base_folder, ref_image_name)
-
-    if not os.path.exists(ref_path):
-        st.error(f"Reference image {ref_image_name} not found in '{base_folder}' folder.")
-    else:
-        try:
-            # 🟢 FIX: Open and ensure images are in RGB format
-            schematic_img = PILImage.open(ref_path).convert("RGB")
-            student_img = PILImage.open(img_file).convert("RGB")
-
-            # --- MODE 1: DIRECT DEBUG ---
-            if "1" in option_choice and not st.session_state.analysis_done:
-                with st.spinner("Thinking... (3.1 Pro High Reasoning)"):
-                    prompt = f"""
-                    Compare Student Breadboard (Image 2) to Schematic (Image 1) for Task {task_number}.
-                    You are a Senior Electronic Systems Diagnostic Engineer.
-                    
-                    [OUTPUT FORMAT - JSON ONLY]
-                    {{
-                      "schematic_netlist": "...",
-                      "student_netlist": "...",
-                      "match_status": "CORRECT" or "INCORRECT",
-                      "error_analysis": "...",
-                      "remediation_hints": "...",
-                      "follow_up_QA": "..."
-                    }}
-                    """
-
-                    # 🟢 FIX: Pass as a clean list. The SDK handles PIL images better this way.
-                    response = client.models.generate_content(
+        if st.button("🔍 Step 1: AI Lead Detection", type="primary"):
+            with st.spinner("AI is analyzing components and metal legs..."):
+                prompt_seg = """
+                Identify each electronic component (e.g., LDR, Resistor, Transistor, Button).
+                For each, return:
+                - 'center': [y, x] coordinate of the component body (scale 0-1000).
+                - 'legs': A list of [y, x] coordinates for every metal leg/wire end (scale 0-1000).
+                """
+                
+                try:
+                    resp = client.models.generate_content(
                         model=MODEL_ID,
-                        contents=[prompt, schematic_img, student_img],
+                        contents=[st.session_state.raw_student_img, prompt_seg],
                         config=types.GenerateContentConfig(
                             response_mime_type="application/json",
-                            temperature=0.0,
-                            thinking_config=types.ThinkingConfig(include_thoughts=True)
+                            response_schema={
+                                "type": "ARRAY",
+                                "items": {
+                                    "type": "OBJECT",
+                                    "properties": {
+                                        "name": {"type": "STRING"},
+                                        "center": {"type": "ARRAY", "items": {"type": "INTEGER"}},
+                                        "legs": {"type": "ARRAY", "items": {"type": "ARRAY", "items": {"type": "INTEGER"}}}
+                                    }
+                                }
+                            }
                         )
                     )
                     
-                    if response.text:
-                        st.session_state.current_analysis = json.loads(response.text)
-                        st.session_state.analysis_done = True
-                    else:
-                        st.error("AI returned an empty response. This might be a safety filter trigger.")
-
-            # --- MODE 2: SOCRATIC DEBUG ---
-            elif "2" in option_choice and not st.session_state.analysis_done:
-                if st.session_state.socratic_round < 3:
-                    st.subheader(f"Socratic Round {st.session_state.socratic_round + 1} of 3")
-
-                    q_prompt = f"Socratic Debug Mode, Round {st.session_state.socratic_round + 1}. Compare Image 1 (Reference) and Image 2 (Student). Ask ONE guiding question only."
+                    # Flatten JSON to DataFrame for easy Streamlit editing
+                    records = []
+                    # Handle varying SDK return formats (dict vs object)
+                    parsed_data = resp.parsed if hasattr(resp, 'parsed') else json.loads(resp.text)
                     
-                    q_response = client.models.generate_content(
-                        model=MODEL_ID,
-                        contents=[q_prompt, schematic_img, student_img],
-                        config=types.GenerateContentConfig(
-                            temperature=0.0,
-                            thinking_config=types.ThinkingConfig(include_thoughts=True)
-                        )
-                    )
-                    ai_question = q_response.text
-                    st.info(f"**AI Question:** {ai_question}")
+                    for comp_idx, item in enumerate(parsed_data):
+                        # Ensure we handle missing keys safely
+                        name = item.get('name', f"Component_{comp_idx}")
+                        cy, cx = item.get('center', [500, 500])
+                        for leg_idx, (ly, lx) in enumerate(item.get('legs', [])):
+                            records.append({
+                                "Component": f"{name} (Leg {leg_idx+1})",
+                                "Center_X": cx, "Center_Y": cy,
+                                "Leg_X": lx, "Leg_Y": ly
+                            })
+                    
+                    st.session_state.components_df = pd.DataFrame(records)
+                    st.session_state.step = 2
+                    st.rerun()
 
-                    with st.form(key=f"round_{st.session_state.socratic_round}"):
-                        student_ans = st.text_input("Your Answer:")
-                        submit_ans = st.form_submit_button("Submit Answer")
+                except Exception as e:
+                    st.error(f"Detection failed: {e}")
 
-                        if submit_ans and student_ans:
-                            st.session_state.chat_history += f"Q: {ai_question}\nA: {student_ans}\n"
-                            st.session_state.socratic_round += 1
-                            st.rerun()
-                else:
-                    # Final Socratic Analysis
-                    with st.spinner("Finalizing analysis..."):
-                        final_prompt = f"Provide final diagnosis based on history: {st.session_state.chat_history}. Use JSON format."
-                        final_res = client.models.generate_content(
-                            model=MODEL_ID,
-                            contents=[final_prompt, schematic_img, student_img],
-                            config=types.GenerateContentConfig(
-                                response_mime_type="application/json",
-                                temperature=0.0,
-                                thinking_config=types.ThinkingConfig(include_thoughts=True)
-                            )
-                        )
-                        st.session_state.current_analysis = json.loads(final_res.text)
-                        st.session_state.analysis_done = True
+    # --- STEP 2: EDITING AND VERIFICATION ---
+    elif st.session_state.step == 2:
+        st.subheader("⚙️ Step 2: Verify and Adjust Component Leads")
+        st.info("The AI has mapped the components. If a line looks slightly off, adjust the `Leg_X` or `Leg_Y` coordinates (0-1000 scale) in the table below. The image will update immediately.")
+
+        edit_col, img_col = st.columns([1, 1.5])
         
-        except Exception as e:
-            st.error(f"Critical Error: {e}")
-            if "429" in str(e):
-                st.warning("Quota exceeded. Please wait a minute and try again.")
-            elif "400" in str(e):
-                st.info("The model might be struggling with the image format. Ensure you are uploading a standard JPG/PNG.")
+        with edit_col:
+            # Let user edit the coordinates
+            edited_df = st.data_editor(
+                st.session_state.components_df,
+                num_rows="dynamic",
+                use_container_width=True,
+                hide_index=True
+            )
+        
+        with img_col:
+            # Dynamically redraw the image based on the data editor
+            display_img = st.session_state.raw_student_img.copy()
+            draw = PILImageDraw.Draw(display_img)
+            w, h = display_img.size
+            
+            for index, row in edited_df.iterrows():
+                try:
+                    cx, cy = int(row["Center_X"]), int(row["Center_Y"])
+                    lx, ly = int(row["Leg_X"]), int(row["Leg_Y"])
+                    
+                    start_pt = (cx * w / 1000, cy * h / 1000)
+                    end_pt = (lx * w / 1000, ly * h / 1000)
+                    
+                    draw.line([start_pt, end_pt], fill="orange", width=4)
+                    draw.ellipse([end_pt[0]-5, end_pt[1]-5, end_pt[0]+5, end_pt[1]+5], fill="yellow", outline="orange")
+                except Exception:
+                    pass # Ignore rows with invalid/incomplete data during active typing
 
-        # --- 6. DISPLAY RESULTS & SAVE TO MASTER DB ---
-        if st.session_state.analysis_done:
-            data = st.session_state.current_analysis
+            st.image(display_img, caption="Live Updated Breadboard", use_container_width=True)
 
-            st.divider()
-            st.subheader(f"Result: {data['match_status']}")
+        if st.button("✅ Confirm Leads & Analyze Circuit", type="primary"):
+            st.session_state.components_df = edited_df
+            st.session_state.annotated_img = display_img
+            st.session_state.step = 3
+            st.rerun()
 
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("**Analysis**")
-                st.write(data['error_analysis'])
-            with col2:
-                st.markdown("**Hint**")
-                st.info(data['remediation_hints'])
-
-            # CSV Logging Logic
-            if st.button("Finalize and Save Entry"):
-                now_hkt = datetime.now(timezone.utc) + timedelta(hours=8)
+    # --- STEP 3: PEDAGOGICAL ANALYSIS ---
+    elif st.session_state.step == 3:
+        st.subheader("🧠 Step 3: Pedagogical Evaluation")
+        st.image(st.session_state.annotated_img, width=600, caption="Final Evaluated Image")
+        
+        with st.spinner("Comparing Schematic and Breadboard (High Reasoning)..."):
+            if feedback_mode == "Direct Answer":
+                analysis_prompt = f"""
+                Compare the Reference Schematic (Image 1) with the Student's Breadboard (Image 2).
+                The orange lines on Image 2 map the components to their insertion points.
+                This is {task_id}.
                 
-                new_row = {
-                    "Student Number": str(student_number).strip(),
-                    "Time (HKT)": now_hkt.strftime('%Y-%m-%d %H:%M:%S'),
-                    "Task": task_number,
-                    "Result": data['match_status'],
-                    "Analysis": data['error_analysis'],
-                    "Option": option_choice,
-                    "History": data.get("follow_up_QA", "")
-                }
+                Provide a DIRECT, concise diagnosis (max 80 words). Identify specific mistakes (e.g., wrong pin, short circuit) or confirm correct placement.
+                """
+            else:
+                analysis_prompt = f"""
+                Compare the Reference Schematic (Image 1) with the Student's Breadboard (Image 2).
+                The orange lines on Image 2 map the components to their insertion points.
+                This is {task_id}.
+                
+                Provide SOCRATIC SCAFFOLDING. Do NOT give the direct answer.
+                Ask 1 or 2 guided questions to help the student realize their mistake based on the orange markers. If correct, ask a reflection question.
+                """
 
-                # Save to Master Database
-                if os.path.exists(MASTER_CSV):
-                    master_df = pd.read_csv(MASTER_CSV)
-                else:
-                    master_df = pd.DataFrame()
-
-                master_df = pd.concat([master_df, pd.DataFrame([new_row])], ignore_index=True)
-                master_df.to_csv(MASTER_CSV, index=False)
-
-                st.success(f"Entry for Student {student_number} saved to master database!")
-                st.balloons()
-
-# --- 7. STUDENT RECORD DOWNLOAD PORTAL ---
-st.divider()
-st.subheader("📥 Student Portal: Download Your Records")
-
-if not student_number:
-    st.info("Please enter your Student Number in the sidebar to view and download your records.")
-elif os.path.exists(MASTER_CSV):
-    full_df = pd.read_csv(MASTER_CSV)
-    full_df['Student Number'] = full_df['Student Number'].astype(str).str.strip()
-    student_id_str = str(student_number).strip()
-    
-    student_df = full_df[full_df['Student Number'] == student_id_str]
-
-    if not student_df.empty:
-        st.write(f"Found **{len(student_df)}** record(s) for Student {student_number}:")
-        st.dataframe(student_df, use_container_width=True)
-        
-        csv_data = student_df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label=f"Download My Records ({len(student_df)} entries)",
-            data=csv_data,
-            file_name=f"student_{student_number}_history.csv",
-            mime="text/csv"
-        )
-    else:
-        st.warning(f"No records found in the database for Student {student_number} yet.")
+            try:
+                final_response = client.models.generate_content(
+                    model=MODEL_ID,
+                    contents=[st.session_state.raw_schematic_img, st.session_state.annotated_img, analysis_prompt],
+                    config=types.GenerateContentConfig(
+                        temperature=0.0,
+                        thinking_config=types.ThinkingConfig(include_thoughts=True)
+                    )
+                )
+                
+                st.success("Analysis Complete")
+                st.markdown(f"**{feedback_mode} Feedback:**")
+                st.write(final_response.text)
+                
+            except Exception as e:
+                st.error(f"Analysis failed: {e}")
 else:
-    st.warning("No database exists yet. Complete an analysis to create the first record.")
+    st.info("Please upload both the Reference Schematic and the Student Breadboard in the sidebar to begin.")
     
 
 
