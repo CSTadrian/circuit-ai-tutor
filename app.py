@@ -144,7 +144,7 @@ if schematic_file and student_file:
         with img_col:
             # Dynamically redraw the image based on the data editor
             display_img = st.session_state.raw_student_img.copy()
-            draw = PILImageDraw.Draw(display_img)
+            draw = ImageDraw.Draw(display_img)
             w, h = display_img.size
             
             for index, row in edited_df.iterrows():
