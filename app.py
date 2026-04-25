@@ -104,11 +104,9 @@ if schematic_file and student_file:
                     
                     # Flatten JSON to DataFrame for easy Streamlit editing
                     records = []
-                    # Handle varying SDK return formats (dict vs object)
                     parsed_data = resp.parsed if hasattr(resp, 'parsed') else json.loads(resp.text)
                     
                     for comp_idx, item in enumerate(parsed_data):
-                        # Ensure we handle missing keys safely
                         name = item.get('name', f"Component_{comp_idx}")
                         cy, cx = item.get('center', [500, 500])
                         for leg_idx, (ly, lx) in enumerate(item.get('legs', [])):
@@ -125,24 +123,34 @@ if schematic_file and student_file:
                 except Exception as e:
                     st.error(f"Detection failed: {e}")
 
-    # --- STEP 2: EDITING AND VERIFICATION ---
+    # --- STEP 2: EDITING WITH SLIDERS ---
     elif st.session_state.step == 2:
-        st.subheader("⚙️ Step 2: Verify and Adjust Component Leads")
-        st.info("The AI has mapped the components. If a line looks slightly off, adjust the `Leg_X` or `Leg_Y` coordinates (0-1000 scale) in the table below. The image will update immediately.")
+        st.subheader("⚙️ Step 2: Fine-Tune Component Leads")
+        st.info("Use the sliders to precisely align the orange lines with the holes on your breadboard. The image updates instantly.")
 
         edit_col, img_col = st.columns([1, 1.5])
+        updated_data = []
         
         with edit_col:
-            # Let user edit the coordinates
-            edited_df = st.data_editor(
-                st.session_state.components_df,
-                num_rows="dynamic",
-                use_container_width=True,
-                hide_index=True
-            )
+            st.write("### Adjust Coordinates")
+            # Loop through components and create a slider for each
+            for i, row in st.session_state.components_df.iterrows():
+                with st.expander(f"📍 {row['Component']}", expanded=False):
+                    new_lx = st.slider(f"Horizontal (X)", 0, 1000, int(row["Leg_X"]), key=f"x_{i}")
+                    new_ly = st.slider(f"Vertical (Y)", 0, 1000, int(row["Leg_Y"]), key=f"y_{i}")
+                    
+                    updated_data.append({
+                        "Component": row["Component"],
+                        "Center_X": row["Center_X"],
+                        "Center_Y": row["Center_Y"],
+                        "Leg_X": new_lx,
+                        "Leg_Y": new_ly
+                    })
+            
+            edited_df = pd.DataFrame(updated_data)
         
         with img_col:
-            # Dynamically redraw the image based on the data editor
+            # Dynamically redraw the image based on the slider values
             display_img = st.session_state.raw_student_img.copy()
             draw = ImageDraw.Draw(display_img)
             w, h = display_img.size
@@ -158,7 +166,7 @@ if schematic_file and student_file:
                     draw.line([start_pt, end_pt], fill="orange", width=4)
                     draw.ellipse([end_pt[0]-5, end_pt[1]-5, end_pt[0]+5, end_pt[1]+5], fill="yellow", outline="orange")
                 except Exception:
-                    pass # Ignore rows with invalid/incomplete data during active typing
+                    pass
 
             st.image(display_img, caption="Live Updated Breadboard", use_container_width=True)
 
@@ -210,8 +218,6 @@ if schematic_file and student_file:
                 st.error(f"Analysis failed: {e}")
 else:
     st.info("Please upload both the Reference Schematic and the Student Breadboard in the sidebar to begin.")
-    
-
 
 
 
