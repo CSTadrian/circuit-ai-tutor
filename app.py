@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 import json
 import os
-from PIL import Image as PILImage, ImageDraw
+from PIL import Image as PILImage, ImageDraw, ImageFont
 
 # --- NEW SDK IMPORTS ---
 from google import genai
@@ -31,7 +31,43 @@ else:
     st.error("GCP Service Account secrets not found! Check your Streamlit Cloud settings.")
     st.stop()
 
-# --- 2. SESSION STATE MANAGEMENT ---
+# --- 2. HELPER FUNCTIONS ---
+def draw_coordinate_grid(image):
+    """Draws a 0-1000 scale on the top and left edges of the image."""
+    draw = ImageDraw.Draw(image)
+    w, h = image.size
+    
+    # Styling
+    line_color = (255, 0, 0, 150) # Semi-transparent Red
+    text_bg = (0, 0, 0)
+    text_color = (255, 255, 255)
+    
+    for i in range(0, 1001, 50):
+        x_px = i * w / 1000
+        y_px = i * h / 1000
+
+        # --- X-AXIS (Top Edge) ---
+        # Ticks every 50
+        draw.line([(x_px, 0), (x_px, 15)], fill=line_color, width=2)
+        # Labels every 100
+        if i % 100 == 0:
+            label = str(i)
+            # Simple text background for readability
+            draw.rectangle([x_px, 0, x_px + 25, 15], fill=text_bg)
+            draw.text((x_px + 2, 0), label, fill=text_color)
+
+        # --- Y-AXIS (Left Edge) ---
+        # Ticks every 50
+        draw.line([(0, y_px), (15, y_px)], fill=line_color, width=2)
+        # Labels every 100
+        if i % 100 == 0:
+            label = str(i)
+            draw.rectangle([0, y_px, 25, y_px + 12], fill=text_bg)
+            draw.text((2, y_px), label, fill=text_color)
+            
+    return image
+
+# --- 3. SESSION STATE MANAGEMENT ---
 if "step" not in st.session_state: st.session_state.step = 1
 if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
 if "raw_student_img" not in st.session_state: st.session_state.raw_student_img = None
@@ -41,7 +77,7 @@ def reset_flow():
     st.session_state.step = 1
     st.session_state.components_df = pd.DataFrame()
 
-# --- 3. UI: SIDEBAR SETUP ---
+# --- 4. UI: SIDEBAR SETUP ---
 st.title("🔌 AI Circuit Debugger: Series Logic")
 
 with st.sidebar:
@@ -71,7 +107,10 @@ if schematic_file and student_file:
         with col1:
             st.image(st.session_state.raw_schematic_img, caption="Reference Schematic", use_container_width=True)
         with col2:
-            st.image(st.session_state.raw_student_img, caption="Student Breadboard", use_container_width=True)
+            # Show grid even in Step 1 to familiarize students
+            preview_img = st.session_state.raw_student_img.copy()
+            preview_img = draw_coordinate_grid(preview_img)
+            st.image(preview_img, caption="Student Breadboard (with Coordinate Map)", use_container_width=True)
 
         if st.button("🔍 Step 1: AI Lead Detection", type="primary"):
             with st.spinner("AI is analyzing components and metal legs..."):
@@ -125,7 +164,7 @@ if schematic_file and student_file:
     # --- STEP 2: EDITING WITH SLIDERS ---
     elif st.session_state.step == 2:
         st.subheader("⚙️ Step 2: Fine-Tune Component Leads")
-        st.info("Align the orange markers with the breadboard holes. The AI will use these exact coordinates for its logic.")
+        st.info("Align the orange markers with the breadboard holes using the Red Coordinate Map as a guide.")
 
         edit_col, img_col = st.columns([1, 1.5])
         updated_data = []
@@ -149,6 +188,9 @@ if schematic_file and student_file:
         
         with img_col:
             display_img = st.session_state.raw_student_img.copy()
+            # Draw grid FIRST (bottom layer)
+            display_img = draw_coordinate_grid(display_img)
+            
             draw = ImageDraw.Draw(display_img)
             w, h = display_img.size
             
@@ -162,7 +204,7 @@ if schematic_file and student_file:
                     draw.ellipse([end_pt[0]-5, end_pt[1]-5, end_pt[0]+5, end_pt[1]+5], fill="yellow", outline="orange")
                 except Exception: pass
 
-            st.image(display_img, caption="Live Updated Breadboard", use_container_width=True)
+            st.image(display_img, caption="Live Updated Breadboard with Grid", use_container_width=True)
 
         if st.button("✅ Confirm Leads & Analyze Circuit", type="primary"):
             st.session_state.components_df = edited_df
@@ -174,38 +216,29 @@ if schematic_file and student_file:
     elif st.session_state.step == 3:
         st.subheader("🧠 Step 3: Pedagogical Evaluation")
         
-        # Prepare the coordinate text for the AI
         coord_summary = st.session_state.components_df[["Component", "Leg_X", "Leg_Y"]].to_string(index=False)
 
-        with st.spinner("Analyzing circuit and locating errors..."):
+        with st.spinner("Analyzing circuit topology..."):
             context_header = f"""
             SYSTEM DATA (GROUND TRUTH):
             Use these precise coordinates for logic:
             {coord_summary}
             
             ENGINEERING PRINCIPLES:
-            1. SERIES FLEXIBILITY: Swapping component order in a loop is CORRECT.
-            2. OPEN CIRCUIT: A gap in the loop where electricity cannot flow.
-            3. SHORT CIRCUIT: When a component's legs are in the same row, or power goes to ground without a load.
+            1. SERIES FLEXIBILITY: Swapping component order is CORRECT.
+            2. OPEN CIRCUIT: A gap in the loop.
             """
 
             analysis_prompt = context_header + f"""
             Task: {task_id}. Mode: {feedback_mode}.
-            Analyze the circuit. If there is an error (Open Circuit, Short, or Wrong Polarity):
-            1. Provide the feedback text.
-            2. Identify the [y, x] coordinate (0-1000 scale) where the error occurs (e.g., the disconnected hole).
+            Identify errors. Return feedback and the [y, x] coordinate (0-1000) of the error.
             Return a JSON object.
             """
 
             try:
-                # Call Gemini with a JSON Response Schema
                 resp = client.models.generate_content(
                     model=MODEL_ID,
-                    contents=[
-                        st.session_state.raw_schematic_img, 
-                        st.session_state.annotated_img, 
-                        analysis_prompt
-                    ],
+                    contents=[st.session_state.raw_schematic_img, st.session_state.annotated_img, analysis_prompt],
                     config=types.GenerateContentConfig(
                         temperature=0.0,
                         response_mime_type="application/json",
@@ -213,50 +246,38 @@ if schematic_file and student_file:
                             "type": "OBJECT",
                             "properties": {
                                 "feedback": {"type": "STRING"},
-                                "error_locations": {
-                                    "type": "ARRAY", 
-                                    "items": {
-                                        "type": "ARRAY", 
-                                        "items": {"type": "INTEGER"}
-                                    }
-                                }
+                                "error_locations": {"type": "ARRAY", "items": {"type": "ARRAY", "items": {"type": "INTEGER"}}}
                             }
                         }
                     )
                 )
                 
-                # Parse the AI response
                 result = resp.parsed if hasattr(resp, 'parsed') else json.loads(resp.text)
-                feedback_text = result.get("feedback", "No feedback provided.")
+                feedback_text = result.get("feedback", "No feedback.")
                 errors = result.get("error_locations", [])
 
-                # DRAW RED CIRCLES ON THE IMAGE
-                error_img = st.session_state.annotated_img.copy()
-                draw = ImageDraw.Draw(error_img)
-                w, h = error_img.size
+                # DRAW RED CIRCLES ON TOP OF THE GRIDDED IMAGE
+                final_img = st.session_state.annotated_img.copy()
+                draw = ImageDraw.Draw(final_img)
+                w, h = final_img.size
 
                 for err_coord in errors:
                     if len(err_coord) == 2:
                         ey, ex = err_coord
-                        # Convert 0-1000 scale back to pixel scale
                         px, py = ex * w / 1000, ey * h / 1000
-                        # Draw a thick red circle
-                        r = 30 # Circle radius
-                        draw.ellipse([px-r, py-r, px+r, py+r], outline="red", width=8)
+                        r = 30 
+                        draw.ellipse([px-r, py-r, px+r, py+r], outline="red", width=10)
 
-                # Display the result
-                st.image(error_img, width=700, caption="AI Error Diagnosis")
+                st.image(final_img, width=800, caption="Final Diagnosis")
                 st.success("Analysis Complete")
-                st.markdown(f"**{feedback_mode} Feedback:**")
                 st.info(feedback_text)
                 
-                if st.button("Restart Debugger"):
+                if st.button("Start New Task"):
                     reset_flow()
                     st.rerun()
 
             except Exception as e:
                 st.error(f"Analysis failed: {e}")
-
 
 
 
