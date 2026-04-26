@@ -1,189 +1,192 @@
+# -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
-import io
-from datetime import datetime, timedelta, timezone
-from PIL import Image as PILImage, ImageOps
+import json
+from PIL import Image as PILImage, ImageDraw
 
-# Google Auth & Drive Imports
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
-from google.auth.transport.requests import Request
+# --- SDK IMPORTS ---
+from google import genai
+from google.genai import types
+from google.oauth2 import service_account
 
-# --- 1. CONFIGURATION ---
-PARENT_FOLDER_ID = "1gw_UvfQmVx-epCTZwIbVbXlKUKRfaitx"
-SUBFOLDER_NAME = "0321"
-LOG_FILE_NAME = "circuit_log_0321.csv"
+# --- 1. INITIALIZATION & CONFIG ---
+st.set_page_config(page_title="AI Circuit Explorer", layout="wide")
+MODEL_ID = "gemini-2.0-flash-exp" # Or gemini-3.1-pro-preview if available in your region
 
-# The specific task list provided
-TASK_OPTIONS = [
-    "1) turn on LED", "2) use a button", "3a) button -- series", 
-    "3b) button -- parallel", "3c) button -- NOT", "4a) bright-activated LDR", 
-    "4b) dark-activated LDR", "5) light up parallel LED", "6a) capacitor and VR - v1", 
-    "6b) capacitor and VR - v2", 
-    "7) using one slide-switch", "8) using Two slide-switch", "9) diode", 
-    "10) NPN transistor - v1", "11) NPN transistor - v2", "12) IR emitter & detector", 
-    "13) 555 IC", "14) 74LS90 IC", "15) IR with 74LS90"
-]
+# Authentication Logic
+if "gcp_service_account" in st.secrets:
+    creds_info = st.secrets["gcp_service_account"]
+    scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+    credentials = service_account.Credentials.from_service_account_info(creds_info, scopes=scopes)
+    PROJECT_ID = creds_info["project_id"]
 
-st.set_page_config(page_title="Circuit Task Logger", layout="centered", page_icon="🔌")
-
-# --- 2. INITIALIZE DRIVE SERVICE ---
-@st.cache_resource
-def init_drive():
-    oauth_info = st.secrets["google_oauth"]
-    drive_creds = Credentials(
-        token=None,
-        refresh_token=oauth_info["refresh_token"],
-        client_id=oauth_info["client_id"],
-        client_secret=oauth_info["client_secret"],
-        token_uri="https://oauth2.googleapis.com/token",
-        scopes=['https://www.googleapis.com/auth/drive.file']
+    client = genai.Client(
+        vertexai=True, 
+        project=PROJECT_ID, 
+        location="us-central1", # Update based on your project location
+        credentials=credentials
     )
-    if not drive_creds.valid:
-        drive_creds.refresh(Request())
-    return build('drive', 'v3', credentials=drive_creds)
+else:
+    st.error("GCP Service Account secrets not found!")
+    st.stop()
 
-drive_service = init_drive()
+# --- 2. SESSION STATE MANAGEMENT ---
+if "step" not in st.session_state: st.session_state.step = 1
+if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
+if "raw_student_img" not in st.session_state: st.session_state.raw_student_img = None
 
-# --- 3. HELPER FUNCTIONS ---
+def reset_flow():
+    st.session_state.step = 1
+    st.session_state.components_df = pd.DataFrame()
 
-def get_or_create_subfolder():
-    query = f"name = '{SUBFOLDER_NAME}' and '{PARENT_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-    results = drive_service.files().list(q=query, fields="files(id)").execute()
-    files = results.get('files', [])
-    if files:
-        return files[0]['id']
-    else:
-        file_metadata = {'name': SUBFOLDER_NAME, 'parents': [PARENT_FOLDER_ID], 'mimeType': 'application/vnd.google-apps.folder'}
-        folder = drive_service.files().create(body=file_metadata, fields='id').execute()
-        return folder.get('id')
-
-
-
-def process_image(pil_img):
-    # This function now just handles resizing and conversion to bytes
-    pil_img.thumbnail((1600, 1600)) 
-    if pil_img.mode in ("RGBA", "P"): 
-        pil_img = pil_img.convert("RGB")
-    buf = io.BytesIO()
-    pil_img.save(buf, format="JPEG", quality=85) 
-    return buf.getvalue()
-    
-
-def upload_to_drive(file_bytes, file_name, folder_id):
-    media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype='image/jpeg', resumable=True)
-    file_metadata = {'name': file_name, 'parents': [folder_id]}
-    file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-    return file.get('id')
-
-def save_log_csv(new_row_df, folder_id):
-    try:
-        query = f"name = '{LOG_FILE_NAME}' and '{folder_id}' in parents and trashed = false"
-        results = drive_service.files().list(q=query, fields="files(id)").execute()
-        files = results.get('files', [])
-        
-        if files:
-            file_id = files[0]['id']
-            request = drive_service.files().get_media(fileId=file_id)
-            fh = io.BytesIO()
-            downloader = MediaIoBaseDownload(fh, request)
-            done = False
-            while not done: _, done = downloader.next_chunk()
-            fh.seek(0)
-            existing_df = pd.read_csv(fh)
-            updated_df = pd.concat([existing_df, new_row_df], ignore_index=True)
-        else:
-            file_id = None
-            updated_df = new_row_df
-
-        csv_buffer = io.BytesIO()
-        updated_df.to_csv(csv_buffer, index=False)
-        csv_buffer.seek(0)
-        media = MediaIoBaseUpload(csv_buffer, mimetype='text/csv', resumable=True)
-        if file_id:
-            drive_service.files().update(fileId=file_id, media_body=media).execute()
-        else:
-            file_metadata = {'name': LOG_FILE_NAME, 'parents': [folder_id]}
-            drive_service.files().create(body=file_metadata, media_body=media).execute()
-        return True
-    except Exception as e:
-        st.error(f"Log update failed: {e}")
-        return False
-
-# --- 4. UI LAYOUT ---
-st.title("🔌 Circuit Task Logger")
+# --- 3. UI: SIDEBAR SETUP ---
+st.title("🔌 AI Circuit Explorer: Learning by Discovery")
 
 with st.sidebar:
-    st.header("Step 1: Task Info")
-    selected_task = st.selectbox("Select the Task:", TASK_OPTIONS)
+    st.header("1. Select Your Mission")
+    tasks = {
+        "Task A: Light the LED": "Build a circuit where the LED stays ON constantly.",
+        "Task B: The Power Switch": "Use the Slide-Switch to turn one LED ON and OFF.",
+        "Task C: The Alternator": "Use the Slide-Switch to swap between a Red LED and a Green LED."
+    }
+    selected_task_name = st.selectbox("Current Task", list(tasks.keys()), on_change=reset_flow)
+    task_description = tasks[selected_task_name]
     
-    st.write("Step 2: Result")
-    status = st.radio("Circuit Status:", ["✅ Correct", "❌ Wrong"], horizontal=True)
+    st.info(f"**Goal:** {task_description}")
     
-    notes = ""
-    if status == "❌ Wrong":
-        notes = st.text_area("Why is it wrong? (Optional)", placeholder="e.g. Loose wire, LED reversed...")
-    else:
-        notes = st.text_input("Notes (Optional)", placeholder="Everything works!")
+    st.divider()
+    st.subheader("2. Upload Your Work")
+    student_file = st.file_uploader("Upload Photo of Breadboard", type=["jpg", "png", "jpeg"], on_change=reset_flow)
 
-    if st.button("🔄 Reset Form"):
+    if st.button("Reset Process"):
+        reset_flow()
         st.rerun()
 
-# --- CAMERA SELECTION ---
-tabs = st.tabs(["📷 Camera", "🤳 Selfie", "📁 Upload"])
-img_file = None
+# --- MAIN FLOW ---
+if student_file:
+    st.session_state.raw_student_img = PILImage.open(student_file).convert("RGB")
 
-with tabs[0]:
-    cam_file = st.file_uploader("Take Photo", type=['jpg', 'jpeg', 'png'], key="back_cam")
-    if cam_file: img_file = cam_file
-with tabs[1]:
-    selfie_file = st.camera_input("Capture")
-    if selfie_file: img_file = selfie_file
-with tabs[2]:
-    up_file = st.file_uploader("Gallery", type=['jpg', 'jpeg', 'png'], key="gallery")
-    if up_file: img_file = up_file
+    # STEP 1: AI LEAD DETECTION
+    if st.session_state.step == 1:
+        st.image(st.session_state.raw_student_img, caption="Your Circuit", use_container_width=True)
 
-# --- 5. SAVE LOGIC ---
-if img_file:
-    # --- NEW: Fix orientation for the UI display ---
-    raw_img = PILImage.open(img_file)
-    fixed_img = ImageOps.exif_transpose(raw_img)
-    
-    # Display the FIXED image on the platform
-    st.image(fixed_img, caption="Selected Image (Orientation Corrected)", width=300)
-    
-    if st.button("🚀 Click to Save to Drive"):
-        with st.spinner("Saving data and photo..."):
-            # 1. Prepare Folder
-            target_folder_id = get_or_create_subfolder()
-            
-            # 2. Prepare Image (using our already fixed_img)
-            img_bytes = process_image(fixed_img) 
-            now_hkt = datetime.now(timezone.utc) + timedelta(hours=8)
-            timestamp_str = now_hkt.strftime('%Y%m%d_%H%M%S')
-            
-            # Create a filename
-            task_num = selected_task.split(')')[0]
-            file_name = f"Task{task_num}_{timestamp_str}.jpg"
-            
-            # 3. Upload Image
-            drive_id = upload_to_drive(img_bytes, file_name, target_folder_id)
-            
-            if drive_id:
-                # 4. Update CSV
-                new_entry = pd.DataFrame([{
-                    "Timestamp": now_hkt.strftime('%Y-%m-%d %H:%M:%S'),
-                    "Task": selected_task,
-                    "Status": status,
-                    "Notes": notes,
-                    "Filename": file_name,
-                    "Drive_Link": f"https://drive.google.com/open?id={drive_id}"
-                }])
+        if st.button("🔍 Step 1: Detect My Components", type="primary"):
+            with st.spinner("AI is looking for components and legs..."):
+                prompt_seg = """
+                Identify each component on this breadboard. 
+                For every component (Resistor, LED, Slide-Switch, Battery wires), return:
+                - 'name': The name of the part.
+                - 'center': [y, x] of the part body.
+                - 'legs': A list of [y, x] coordinates where the metal legs enter the breadboard holes.
+                Scale all coordinates 0-1000.
+                """
                 
-                if save_log_csv(new_entry, target_folder_id):
-                    st.balloons()
-                    st.success(f"Successfully Saved! Task: {selected_task}")
+                try:
+                    resp = client.models.generate_content(
+                        model=MODEL_ID,
+                        contents=[st.session_state.raw_student_img, prompt_seg],
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            response_schema={
+                                "type": "ARRAY",
+                                "items": {
+                                    "type": "OBJECT",
+                                    "properties": {
+                                        "name": {"type": "STRING"},
+                                        "center": {"type": "ARRAY", "items": {"type": "INTEGER"}},
+                                        "legs": {"type": "ARRAY", "items": {"type": "ARRAY", "items": {"type": "INTEGER"}}}
+                                    }
+                                }
+                            }
+                        )
+                    )
                     
-st.divider()
-st.caption("Circuit Collector | 21st March, 2026")
+                    records = []
+                    parsed_data = resp.parsed if hasattr(resp, 'parsed') else json.loads(resp.text)
+                    for comp_idx, item in enumerate(parsed_data):
+                        name = item.get('name', f"Part_{comp_idx}")
+                        cy, cx = item.get('center', [500, 500])
+                        for leg_idx, (ly, lx) in enumerate(item.get('legs', [])):
+                            records.append({
+                                "Component": f"{name} (Pin {leg_idx+1})",
+                                "Center_X": cx, "Center_Y": cy, "Leg_X": lx, "Leg_Y": ly
+                            })
+                    
+                    st.session_state.components_df = pd.DataFrame(records)
+                    st.session_state.step = 2
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Detection failed: {e}")
+
+    # STEP 2: FINE-TUNING
+    elif st.session_state.step == 2:
+        st.subheader("⚙️ Step 2: Confirm Your Connections")
+        st.info("The AI guessed where your wires are. Adjust the sliders so the orange dots match the exact holes you used.")
+
+        edit_col, img_col = st.columns([1, 1.5])
+        updated_data = []
+        
+        with edit_col:
+            for i, row in st.session_state.components_df.iterrows():
+                with st.expander(f"📍 {row['Component']}", expanded=False):
+                    new_lx = st.slider(f"X (Horiz)", 0, 1000, int(row["Leg_X"]), key=f"x_{i}")
+                    new_ly = st.slider(f"Y (Vert)", 0, 1000, int(row["Leg_Y"]), key=f"y_{i}")
+                    updated_data.append({**row, "Leg_X": new_lx, "Leg_Y": new_ly})
+            edited_df = pd.DataFrame(updated_data)
+        
+        with img_col:
+            display_img = st.session_state.raw_student_img.copy()
+            draw = ImageDraw.Draw(display_img)
+            w, h = display_img.size
+            for _, r in edited_df.iterrows():
+                start = (r["Center_X"] * w / 1000, r["Center_Y"] * h / 1000)
+                end = (r["Leg_X"] * w / 1000, r["Leg_Y"] * h / 1000)
+                draw.line([start, end], fill="orange", width=5)
+                draw.ellipse([end[0]-8, end[1]-8, end[0]+8, end[1]+8], fill="yellow", outline="orange")
+            st.image(display_img, use_container_width=True)
+
+        if st.button("✅ My Map is Correct! Analyze My Logic", type="primary"):
+            st.session_state.components_df = edited_df
+            st.session_state.annotated_img = display_img
+            st.session_state.step = 3
+            st.rerun()
+
+    # STEP 3: SOCRATIC ANALYSIS (No functions revealed)
+    elif st.session_state.step == 3:
+        st.subheader("🧠 Step 3: Experimental Feedback")
+        st.image(st.session_state.annotated_img, width=500)
+        
+        with st.spinner("Thinking like a scientist..."):
+            # SYSTEM 2 PROMPT: Strict instructions to be a Socratic guide
+            analysis_prompt = f"""
+            TASK: {task_description}
+            
+            Analyze the image. The orange lines show where the student has plugged their components.
+            
+            PEDAGOGICAL RULES:
+            1. DO NOT tell the student how a slide-switch works (e.g., do not mention that the middle pin is common).
+            2. DO NOT tell them which pin is 'wrong'.
+            3. Use SOCRATIC questioning. Ask them to trace the path of electricity.
+            4. If the circuit is wrong, point out a 'mystery' (e.g., 'I see electricity enters Row 10, but where does it go after it hits that switch pin?').
+            5. Encourage them to try different slider positions to see what happens.
+            
+            The goal is for the student to use System 2 thinking to discover the switch's internal logic through trial and error.
+            """
+
+            try:
+                final_response = client.models.generate_content(
+                    model=MODEL_ID,
+                    contents=[st.session_state.annotated_img, analysis_prompt],
+                    config=types.GenerateContentConfig(temperature=0.7)
+                )
+                
+                st.chat_message("assistant").write(final_response.text)
+                
+                if st.button("I want to try again / Fix my circuit"):
+                    st.session_state.step = 1
+                    st.rerun()
+                    
+            except Exception as e:
+                st.error(f"Analysis failed: {e}")
+else:
+    st.info("Pick a Task in the sidebar and upload a photo to start your experiment!")
