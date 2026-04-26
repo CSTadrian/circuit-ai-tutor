@@ -1,229 +1,89 @@
-# -*- coding: utf-8 -*-
-import streamlit as st
-import pandas as pd
-import json
-import os
-from PIL import Image as PILImage, ImageDraw
-
-# --- NEW SDK IMPORTS ---
-from google import genai
-from google.genai import types
-from google.oauth2 import service_account
-
-# --- 1. INITIALIZATION & CONFIG ---
-st.set_page_config(page_title="AI Circuit Tutor (Series Flexibility)", layout="wide")
-MODEL_ID = "gemini-3.1-pro-preview"
-
-# Authentication
-if "gcp_service_account" in st.secrets:
-    creds_info = st.secrets["gcp_service_account"]
-    scopes = ["https://www.googleapis.com/auth/cloud-platform"]
-    credentials = service_account.Credentials.from_service_account_info(creds_info, scopes=scopes)
-    PROJECT_ID = creds_info["project_id"]
-
-    client = genai.Client(
-        vertexai=True, 
-        project=PROJECT_ID, 
-        location="global", 
-        credentials=credentials
-    )
-else:
-    st.error("GCP Service Account secrets not found! Check your Streamlit Cloud settings.")
-    st.stop()
-
-# --- 2. SESSION STATE MANAGEMENT ---
-if "step" not in st.session_state: st.session_state.step = 1
-if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
-if "raw_student_img" not in st.session_state: st.session_state.raw_student_img = None
-if "raw_schematic_img" not in st.session_state: st.session_state.raw_schematic_img = None
-
-def reset_flow():
-    st.session_state.step = 1
-    st.session_state.components_df = pd.DataFrame()
-
-# --- 3. UI: SIDEBAR SETUP ---
-st.title("🔌 AI Circuit Debugger: Series Logic")
-
-with st.sidebar:
-    st.header("Setup & Inputs")
-    task_id = st.text_input("Task/Experiment Name", "Task 4b")
-    feedback_mode = st.radio("Feedback Mode", ["Direct Answer", "Socratic Scaffolding"])
-    
-    st.divider()
-    st.subheader("1. Reference Schematic")
-    schematic_file = st.file_uploader("Upload Schematic", type=["jpg", "png", "jpeg"], on_change=reset_flow)
-    
-    st.subheader("2. Student Breadboard")
-    student_file = st.file_uploader("Upload Student Circuit", type=["jpg", "png", "jpeg"], on_change=reset_flow)
-
-    if st.button("Reset Process"):
-        reset_flow()
-        st.rerun()
-
-# Process uploaded images
-if schematic_file and student_file:
-    st.session_state.raw_schematic_img = PILImage.open(schematic_file).convert("RGB")
-    st.session_state.raw_student_img = PILImage.open(student_file).convert("RGB")
-
-    # --- MAIN FLOW ---
-    if st.session_state.step == 1:
-        col1, col2 = st.columns(2)
-        with col1:
-            st.image(st.session_state.raw_schematic_img, caption="Reference Schematic", use_container_width=True)
-        with col2:
-            st.image(st.session_state.raw_student_img, caption="Student Breadboard", use_container_width=True)
-
-        if st.button("🔍 Step 1: AI Lead Detection", type="primary"):
-            with st.spinner("AI is analyzing components and metal legs..."):
-                prompt_seg = """
-                Identify each electronic component (e.g., LDR, Resistor, Transistor, Button, LED, Switch).
-                For each, return:
-                - 'center': [y, x] coordinate of the component body (scale 0-1000).
-                - 'legs': A list of [y, x] coordinates for every metal leg/wire end (scale 0-1000).
-                """
-                
-                try:
-                    resp = client.models.generate_content(
-                        model=MODEL_ID,
-                        contents=[st.session_state.raw_student_img, prompt_seg],
-                        config=types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            response_schema={
-                                "type": "ARRAY",
-                                "items": {
-                                    "type": "OBJECT",
-                                    "properties": {
-                                        "name": {"type": "STRING"},
-                                        "center": {"type": "ARRAY", "items": {"type": "INTEGER"}},
-                                        "legs": {"type": "ARRAY", "items": {"type": "ARRAY", "items": {"type": "INTEGER"}}}
-                                    }
-                                }
-                            }
-                        )
-                    )
-                    
-                    records = []
-                    parsed_data = resp.parsed if hasattr(resp, 'parsed') else json.loads(resp.text)
-                    
-                    for comp_idx, item in enumerate(parsed_data):
-                        name = item.get('name', f"Component_{comp_idx}")
-                        cy, cx = item.get('center', [500, 500])
-                        for leg_idx, (ly, lx) in enumerate(item.get('legs', [])):
-                            records.append({
-                                "Component": f"{name} (Leg {leg_idx+1})",
-                                "Center_X": cx, "Center_Y": cy,
-                                "Leg_X": lx, "Leg_Y": ly
-                            })
-                    
-                    st.session_state.components_df = pd.DataFrame(records)
-                    st.session_state.step = 2
-                    st.rerun()
-
-                except Exception as e:
-                    st.error(f"Detection failed: {e}")
-
-    # --- STEP 2: EDITING WITH SLIDERS ---
-    elif st.session_state.step == 2:
-        st.subheader("⚙️ Step 2: Fine-Tune Component Leads")
-        st.info("Align the orange markers with the breadboard holes. The AI will use these exact coordinates for its logic.")
-
-        edit_col, img_col = st.columns([1, 1.5])
-        updated_data = []
-        
-        with edit_col:
-            st.write("### Adjust Coordinates")
-            for i, row in st.session_state.components_df.iterrows():
-                with st.expander(f"📍 {row['Component']}", expanded=False):
-                    new_lx = st.slider(f"Horizontal (X)", 0, 1000, int(row["Leg_X"]), key=f"x_{i}")
-                    new_ly = st.slider(f"Vertical (Y)", 0, 1000, int(row["Leg_Y"]), key=f"y_{i}")
-                    
-                    updated_data.append({
-                        "Component": row["Component"],
-                        "Center_X": row["Center_X"],
-                        "Center_Y": row["Center_Y"],
-                        "Leg_X": new_lx,
-                        "Leg_Y": new_ly
-                    })
-            
-            edited_df = pd.DataFrame(updated_data)
-        
-        with img_col:
-            display_img = st.session_state.raw_student_img.copy()
-            draw = ImageDraw.Draw(display_img)
-            w, h = display_img.size
-            
-            for index, row in edited_df.iterrows():
-                try:
-                    cx, cy = int(row["Center_X"]), int(row["Center_Y"])
-                    lx, ly = int(row["Leg_X"]), int(row["Leg_Y"])
-                    start_pt = (cx * w / 1000, cy * h / 1000)
-                    end_pt = (lx * w / 1000, ly * h / 1000)
-                    draw.line([start_pt, end_pt], fill="orange", width=4)
-                    draw.ellipse([end_pt[0]-5, end_pt[1]-5, end_pt[0]+5, end_pt[1]+5], fill="yellow", outline="orange")
-                except Exception: pass
-
-            st.image(display_img, caption="Live Updated Breadboard", use_container_width=True)
-
-        if st.button("✅ Confirm Leads & Analyze Circuit", type="primary"):
-            st.session_state.components_df = edited_df
-            st.session_state.annotated_img = display_img
-            st.session_state.step = 3
-            st.rerun()
-
-    # --- STEP 3: TOPOLOGICAL PEDAGOGICAL ANALYSIS ---
+# --- STEP 3: TOPOLOGICAL ANALYSIS WITH VISUAL ERROR HIGHLIGHTING ---
     elif st.session_state.step == 3:
         st.subheader("🧠 Step 3: Pedagogical Evaluation")
-        st.image(st.session_state.annotated_img, width=600, caption="Final Evaluated Image")
         
+        # Prepare the coordinate text for the AI
         coord_summary = st.session_state.components_df[["Component", "Leg_X", "Leg_Y"]].to_string(index=False)
 
-        with st.spinner("Analyzing circuit topology..."):
-            # SYSTEM PROMPT: Instructions for series flexibility
+        with st.spinner("Analyzing circuit and locating errors..."):
             context_header = f"""
             SYSTEM DATA (GROUND TRUTH):
             Use these precise coordinates for logic:
             {coord_summary}
             
             ENGINEERING PRINCIPLES:
-            1. SERIES FLEXIBILITY: In a series circuit, the order of components does not matter (e.g., Battery-Resistor-LED is identical to Battery-LED-Resistor). 
-               Do NOT mark the circuit as incorrect if the sequence differs from the schematic, provided the total series loop is correct.
-            2. BREADBOARD CONNECTION: Rows are horizontal strips. Components in the same row are electrically connected.
-            3. NO SPOILERS: If using Socratic mode, do not explain the pins of a slide-switch.
+            1. SERIES FLEXIBILITY: Swapping component order in a loop is CORRECT.
+            2. OPEN CIRCUIT: A gap in the loop where electricity cannot flow.
+            3. SHORT CIRCUIT: When a component's legs are in the same row, or power goes to ground without a load.
             """
 
-            if feedback_mode == "Direct Answer":
-                analysis_prompt = context_header + f"""
-                Compare the Schematic (Image 1) with the Breadboard (Image 2).
-                This is {task_id}.
-                Diagnosis: Check if a continuous series loop exists. Confirm if polarity (LED) is correct. 
-                If the order is swapped but the loop is closed and components are correct, mark it as CORRECT.
-                """
-            else:
-                analysis_prompt = context_header + f"""
-                Provide SOCRATIC SCAFFOLDING. If the student has swapped component order but the circuit works, 
-                congratulate them and ask if they know why the order doesn't matter in series.
-                If it's truly broken (short circuit/open loop), ask a guided question.
-                """
+            analysis_prompt = context_header + f"""
+            Task: {task_id}. Mode: {feedback_mode}.
+            Analyze the circuit. If there is an error (Open Circuit, Short, or Wrong Polarity):
+            1. Provide the feedback text.
+            2. Identify the [y, x] coordinate (0-1000 scale) where the error occurs (e.g., the disconnected hole).
+            Return a JSON object.
+            """
 
             try:
-                final_response = client.models.generate_content(
+                # Call Gemini with a JSON Response Schema
+                resp = client.models.generate_content(
                     model=MODEL_ID,
                     contents=[
                         st.session_state.raw_schematic_img, 
                         st.session_state.annotated_img, 
                         analysis_prompt
                     ],
-                    config=types.GenerateContentConfig(temperature=0.0)
+                    config=types.GenerateContentConfig(
+                        temperature=0.0,
+                        response_mime_type="application/json",
+                        response_schema={
+                            "type": "OBJECT",
+                            "properties": {
+                                "feedback": {"type": "STRING"},
+                                "error_locations": {
+                                    "type": "ARRAY", 
+                                    "items": {
+                                        "type": "ARRAY", 
+                                        "items": {"type": "INTEGER"}
+                                    }
+                                }
+                            }
+                        }
+                    )
                 )
                 
+                # Parse the AI response
+                result = resp.parsed if hasattr(resp, 'parsed') else json.loads(resp.text)
+                feedback_text = result.get("feedback", "No feedback provided.")
+                errors = result.get("error_locations", [])
+
+                # DRAW RED CIRCLES ON THE IMAGE
+                error_img = st.session_state.annotated_img.copy()
+                draw = ImageDraw.Draw(error_img)
+                w, h = error_img.size
+
+                for err_coord in errors:
+                    if len(err_coord) == 2:
+                        ey, ex = err_coord
+                        # Convert 0-1000 scale back to pixel scale
+                        px, py = ex * w / 1000, ey * h / 1000
+                        # Draw a thick red circle
+                        r = 30 # Circle radius
+                        draw.ellipse([px-r, py-r, px+r, py+r], outline="red", width=8)
+
+                # Display the result
+                st.image(error_img, width=700, caption="AI Error Diagnosis")
                 st.success("Analysis Complete")
                 st.markdown(f"**{feedback_mode} Feedback:**")
-                st.write(final_response.text)
+                st.info(feedback_text)
                 
+                if st.button("Restart Debugger"):
+                    reset_flow()
+                    st.rerun()
+
             except Exception as e:
                 st.error(f"Analysis failed: {e}")
-
-
 
 # import streamlit as st
 # import pandas as pd
