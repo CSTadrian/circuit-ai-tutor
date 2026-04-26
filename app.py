@@ -181,33 +181,46 @@ if schematic_file and student_file:
         st.subheader("🧠 Step 3: Pedagogical Evaluation")
         st.image(st.session_state.annotated_img, width=600, caption="Final Evaluated Image")
         
-        with st.spinner("Comparing Schematic and Breadboard (High Reasoning)..."):
+        # --- NEW: Convert the Fine-Tuned Data to Text for the AI ---
+        # This tells the AI EXACTLY where the pins are, so it doesn't mis-classify.
+        coord_summary = st.session_state.components_df[["Component", "Leg_X", "Leg_Y"]].to_string(index=False)
+
+        with st.spinner("Analyzing with precise coordinates..."):
+            # We add the coordinate table to the prompt
+            context_header = f"""
+            SYSTEM DATA (GROUND TRUTH):
+            The student has fine-tuned the pin locations. Use these coordinates for your logic:
+            {coord_summary}
+            
+            BREADBOARD RULES:
+            - Each numbered row (e.g., Row 8) is a single electrical connection.
+            - If two pins are in the same row, they are connected.
+            - If a component like a Switch is placed horizontally in one row, all its pins are SHORTED.
+            """
+
             if feedback_mode == "Direct Answer":
-                analysis_prompt = f"""
-                Compare the Reference Schematic (Image 1) with the Student's Breadboard (Image 2).
-                The orange lines on Image 2 map the components to their insertion points.
+                analysis_prompt = context_header + f"""
+                Compare the Schematic (Image 1) with the Breadboard (Image 2).
                 This is {task_id}.
-                
-                Provide a DIRECT, concise diagnosis (max 80 words). Identify specific mistakes (e.g., wrong pin, short circuit) or confirm correct placement.
+                Provide a DIRECT diagnosis. Identify if any components are shorted or isolated.
                 """
             else:
-                analysis_prompt = f"""
-                Compare the Reference Schematic (Image 1) with the Student's Breadboard (Image 2).
-                The orange lines on Image 2 map the components to their insertion points.
-                This is {task_id}.
-                
-                Provide SOCRATIC SCAFFOLDING. Do NOT give the direct answer.
-                Ask 1 or 2 guided questions to help the student realize their mistake based on the orange markers. If correct, ask a reflection question.
+                analysis_prompt = context_header + f"""
+                Provide SOCRATIC SCAFFOLDING. Use the coordinates provided to find an error.
+                Ask 1-2 questions. E.g., if a switch is shorted in Row 8, ask: 
+                'I see your switch pins are all in Row 8. How does electricity travel between rows on a breadboard?'
                 """
 
             try:
+                # We send the Schematic, the Annotated Image, AND the Text Prompt
                 final_response = client.models.generate_content(
                     model=MODEL_ID,
-                    contents=[st.session_state.raw_schematic_img, st.session_state.annotated_img, analysis_prompt],
-                    config=types.GenerateContentConfig(
-                        temperature=0.0,
-                        thinking_config=types.ThinkingConfig(include_thoughts=True)
-                    )
+                    contents=[
+                        st.session_state.raw_schematic_img, 
+                        st.session_state.annotated_img, 
+                        analysis_prompt
+                    ],
+                    config=types.GenerateContentConfig(temperature=0.0)
                 )
                 
                 st.success("Analysis Complete")
