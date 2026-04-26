@@ -11,7 +11,7 @@ from google.genai import types
 from google.oauth2 import service_account
 
 # --- 1. INITIALIZATION & CONFIG ---
-st.set_page_config(page_title="AI Circuit Tutor (Live Annotation)", layout="wide")
+st.set_page_config(page_title="AI Circuit Tutor (Series Flexibility)", layout="wide")
 MODEL_ID = "gemini-3.1-pro-preview"
 
 # Authentication
@@ -42,7 +42,7 @@ def reset_flow():
     st.session_state.components_df = pd.DataFrame()
 
 # --- 3. UI: SIDEBAR SETUP ---
-st.title("🔌 Interactive AI Circuit Debugger (3.1 Pro)")
+st.title("🔌 AI Circuit Debugger: Series Logic")
 
 with st.sidebar:
     st.header("Setup & Inputs")
@@ -76,7 +76,7 @@ if schematic_file and student_file:
         if st.button("🔍 Step 1: AI Lead Detection", type="primary"):
             with st.spinner("AI is analyzing components and metal legs..."):
                 prompt_seg = """
-                Identify each electronic component (e.g., LDR, Resistor, Transistor, Button).
+                Identify each electronic component (e.g., LDR, Resistor, Transistor, Button, LED, Switch).
                 For each, return:
                 - 'center': [y, x] coordinate of the component body (scale 0-1000).
                 - 'legs': A list of [y, x] coordinates for every metal leg/wire end (scale 0-1000).
@@ -102,7 +102,6 @@ if schematic_file and student_file:
                         )
                     )
                     
-                    # Flatten JSON to DataFrame for easy Streamlit editing
                     records = []
                     parsed_data = resp.parsed if hasattr(resp, 'parsed') else json.loads(resp.text)
                     
@@ -126,14 +125,13 @@ if schematic_file and student_file:
     # --- STEP 2: EDITING WITH SLIDERS ---
     elif st.session_state.step == 2:
         st.subheader("⚙️ Step 2: Fine-Tune Component Leads")
-        st.info("Use the sliders to precisely align the orange lines with the holes on your breadboard. The image updates instantly.")
+        st.info("Align the orange markers with the breadboard holes. The AI will use these exact coordinates for its logic.")
 
         edit_col, img_col = st.columns([1, 1.5])
         updated_data = []
         
         with edit_col:
             st.write("### Adjust Coordinates")
-            # Loop through components and create a slider for each
             for i, row in st.session_state.components_df.iterrows():
                 with st.expander(f"📍 {row['Component']}", expanded=False):
                     new_lx = st.slider(f"Horizontal (X)", 0, 1000, int(row["Leg_X"]), key=f"x_{i}")
@@ -150,7 +148,6 @@ if schematic_file and student_file:
             edited_df = pd.DataFrame(updated_data)
         
         with img_col:
-            # Dynamically redraw the image based on the slider values
             display_img = st.session_state.raw_student_img.copy()
             draw = ImageDraw.Draw(display_img)
             w, h = display_img.size
@@ -159,14 +156,11 @@ if schematic_file and student_file:
                 try:
                     cx, cy = int(row["Center_X"]), int(row["Center_Y"])
                     lx, ly = int(row["Leg_X"]), int(row["Leg_Y"])
-                    
                     start_pt = (cx * w / 1000, cy * h / 1000)
                     end_pt = (lx * w / 1000, ly * h / 1000)
-                    
                     draw.line([start_pt, end_pt], fill="orange", width=4)
                     draw.ellipse([end_pt[0]-5, end_pt[1]-5, end_pt[0]+5, end_pt[1]+5], fill="yellow", outline="orange")
-                except Exception:
-                    pass
+                except Exception: pass
 
             st.image(display_img, caption="Live Updated Breadboard", use_container_width=True)
 
@@ -176,43 +170,42 @@ if schematic_file and student_file:
             st.session_state.step = 3
             st.rerun()
 
-    # --- STEP 3: PEDAGOGICAL ANALYSIS ---
+    # --- STEP 3: TOPOLOGICAL PEDAGOGICAL ANALYSIS ---
     elif st.session_state.step == 3:
         st.subheader("🧠 Step 3: Pedagogical Evaluation")
         st.image(st.session_state.annotated_img, width=600, caption="Final Evaluated Image")
         
-        # --- NEW: Convert the Fine-Tuned Data to Text for the AI ---
-        # This tells the AI EXACTLY where the pins are, so it doesn't mis-classify.
         coord_summary = st.session_state.components_df[["Component", "Leg_X", "Leg_Y"]].to_string(index=False)
 
-        with st.spinner("Analyzing with precise coordinates..."):
-            # We add the coordinate table to the prompt
+        with st.spinner("Analyzing circuit topology..."):
+            # SYSTEM PROMPT: Instructions for series flexibility
             context_header = f"""
             SYSTEM DATA (GROUND TRUTH):
-            The student has fine-tuned the pin locations. Use these coordinates for your logic:
+            Use these precise coordinates for logic:
             {coord_summary}
             
-            BREADBOARD RULES:
-            - Each numbered row (e.g., Row 8) is a single electrical connection.
-            - If two pins are in the same row, they are connected.
-            - If a component like a Switch is placed horizontally in one row, all its pins are SHORTED.
+            ENGINEERING PRINCIPLES:
+            1. SERIES FLEXIBILITY: In a series circuit, the order of components does not matter (e.g., Battery-Resistor-LED is identical to Battery-LED-Resistor). 
+               Do NOT mark the circuit as incorrect if the sequence differs from the schematic, provided the total series loop is correct.
+            2. BREADBOARD CONNECTION: Rows are horizontal strips. Components in the same row are electrically connected.
+            3. NO SPOILERS: If using Socratic mode, do not explain the pins of a slide-switch.
             """
 
             if feedback_mode == "Direct Answer":
                 analysis_prompt = context_header + f"""
                 Compare the Schematic (Image 1) with the Breadboard (Image 2).
                 This is {task_id}.
-                Provide a DIRECT diagnosis. Identify if any components are shorted or isolated.
+                Diagnosis: Check if a continuous series loop exists. Confirm if polarity (LED) is correct. 
+                If the order is swapped but the loop is closed and components are correct, mark it as CORRECT.
                 """
             else:
                 analysis_prompt = context_header + f"""
-                Provide SOCRATIC SCAFFOLDING. Use the coordinates provided to find an error.
-                Ask 1-2 questions. E.g., if a switch is shorted in Row 8, ask: 
-                'I see your switch pins are all in Row 8. How does electricity travel between rows on a breadboard?'
+                Provide SOCRATIC SCAFFOLDING. If the student has swapped component order but the circuit works, 
+                congratulate them and ask if they know why the order doesn't matter in series.
+                If it's truly broken (short circuit/open loop), ask a guided question.
                 """
 
             try:
-                # We send the Schematic, the Annotated Image, AND the Text Prompt
                 final_response = client.models.generate_content(
                     model=MODEL_ID,
                     contents=[
@@ -229,8 +222,6 @@ if schematic_file and student_file:
                 
             except Exception as e:
                 st.error(f"Analysis failed: {e}")
-else:
-    st.info("Please upload both the Reference Schematic and the Student Breadboard in the sidebar to begin.")
 
 
 
