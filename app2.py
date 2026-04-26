@@ -11,7 +11,7 @@ from google.oauth2 import service_account
 
 # --- 1. INITIALIZATION & CONFIG ---
 st.set_page_config(page_title="AI Circuit Explorer", layout="wide")
-MODEL_ID = "gemini-2.0-flash-exp" # Or gemini-3.1-pro-preview if available in your region
+MODEL_ID = "gemini-3.1-pro-preview" # Or gemini-3.1-pro-preview if available in your region
 
 # Authentication Logic
 if "gcp_service_account" in st.secrets:
