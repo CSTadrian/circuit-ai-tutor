@@ -1,192 +1,284 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
-import pandas as pd
+import streamlit.components.v1 as components
 import json
-from PIL import Image as PILImage, ImageDraw
-
-# --- SDK IMPORTS ---
+import pandas as pd
 from google import genai
 from google.genai import types
 from google.oauth2 import service_account
 
 # --- 1. INITIALIZATION & CONFIG ---
-st.set_page_config(page_title="AI Circuit Explorer", layout="wide")
-MODEL_ID = "gemini-3.1-pro-preview" # Or gemini-3.1-pro-preview if available in your region
+st.set_page_config(page_title="Interactive Circuit Builder", layout="wide")
+MODEL_ID = "gemini-3.1-pro-preview"
 
-# Authentication Logic
-if "gcp_service_account" in st.secrets:
-    creds_info = st.secrets["gcp_service_account"]
-    scopes = ["https://www.googleapis.com/auth/cloud-platform"]
-    credentials = service_account.Credentials.from_service_account_info(creds_info, scopes=scopes)
-    PROJECT_ID = creds_info["project_id"]
+# Setup Session State for the Token Economy
+if "tokens" not in st.session_state: st.session_state.tokens = 5
+if "team_name" not in st.session_state: st.session_state.team_name = "Engineering Alpha"
+if "circuit_data" not in st.session_state: st.session_state.circuit_data = None
 
-    client = genai.Client(
-        vertexai=True, 
-        project=PROJECT_ID, 
-        location="global", # Update based on your project location
-        credentials=credentials
-    )
-else:
-    st.error("GCP Service Account secrets not found!")
-    st.stop()
+# Authentication Setup
+@st.cache_resource
+def get_ai_client():
+    if "gcp_service_account" in st.secrets:
+        creds_info = st.secrets["gcp_service_account"]
+        scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+        credentials = service_account.Credentials.from_service_account_info(creds_info, scopes=scopes)
+        return genai.Client(
+            vertexai=True, 
+            project=creds_info["project_id"], 
+            location="global", 
+            credentials=credentials
+        )
+    return None
 
-# --- 2. SESSION STATE MANAGEMENT ---
-if "step" not in st.session_state: st.session_state.step = 1
-if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
-if "raw_student_img" not in st.session_state: st.session_state.raw_student_img = None
+client = get_ai_client()
 
-def reset_flow():
-    st.session_state.step = 1
-    st.session_state.components_df = pd.DataFrame()
-
-# --- 3. UI: SIDEBAR SETUP ---
-st.title("🔌 AI Circuit Explorer: Learning by Discovery")
-
+# --- 2. SIDEBAR: GAME MANAGEMENT ---
 with st.sidebar:
-    st.header("1. Select Your Mission")
-    tasks = {
-        "Task A: Light the LED": "Build a circuit where the LED stays ON constantly.",
-        "Task B: The Power Switch": "Use the Slide-Switch to turn one LED ON and OFF.",
-        "Task C: The Alternator": "Use the Slide-Switch to swap between a Red LED and a Green LED."
-    }
-    selected_task_name = st.selectbox("Current Task", list(tasks.keys()), on_change=reset_flow)
-    task_description = tasks[selected_task_name]
-    
-    st.info(f"**Goal:** {task_description}")
-    
+    st.header(f"Team: {st.session_state.team_name}")
+    st.metric("Tokens Remaining", st.session_state.tokens)
     st.divider()
-    st.subheader("2. Upload Your Work")
-    student_file = st.file_uploader("Upload Photo of Breadboard", type=["jpg", "png", "jpeg"], on_change=reset_flow)
+    
+    st.markdown("### Mission")
+    st.markdown("Connect the Battery, Resistor, and LED in a continuous series loop.")
+    
+    if st.button("🆘 Buy Socratic Hint (-2 Tokens)"):
+        if st.session_state.tokens >= 2:
+            st.session_state.tokens -= 2
+            st.info("Hint: Electricity must flow from the Battery (+), through the Resistor, into the LED (Anode), and back to the Battery (-).")
+            st.rerun()
+        else:
+            st.error("Not enough tokens!")
 
-    if st.button("Reset Process"):
-        reset_flow()
-        st.rerun()
+# --- 3. THE FRONTEND: JAVASCRIPT CIRCUIT BUILDER ---
+# This HTML block creates a sandbox where students can drag components and draw wires.
+html_code = """
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { margin: 0; padding: 0; font-family: sans-serif; background-color: #f0f2f6; }
+        #canvas-container { position: relative; width: 100%; height: 500px; background: white; border: 2px solid #ccc; overflow: hidden; }
+        .component { position: absolute; width: 80px; height: 80px; background: #eee; border: 2px solid #333; border-radius: 8px; cursor: grab; user-select: none; display: flex; align-items: center; justify-content: center; font-weight: bold; text-align: center; font-size: 12px; box-shadow: 2px 2px 5px rgba(0,0,0,0.2); }
+        .component:active { cursor: grabbing; }
+        .terminal { position: absolute; width: 14px; height: 14px; background: gold; border: 2px solid black; border-radius: 50%; cursor: crosshair; }
+        .terminal:hover { background: red; transform: scale(1.2); }
+        svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        
+        /* Specific Terminals */
+        .term-top { top: -8px; left: 33px; }
+        .term-bottom { bottom: -8px; left: 33px; }
+        .term-left { left: -8px; top: 33px; }
+        .term-right { right: -8px; top: 33px; }
+        
+        #instruction { padding: 10px; background: #e8f0fe; color: #1a73e8; border-bottom: 1px solid #ccc;}
+    </style>
+</head>
+<body>
+    <div id="instruction">Drag blocks to move. Click and drag between gold terminals to draw wires.</div>
+    <div id="canvas-container">
+        <svg id="wire-layer"></svg>
+        
+        <!-- Battery -->
+        <div class="component" id="Battery" style="left: 50px; top: 50px; background: #ffcccc;">
+            Battery
+            <div class="terminal term-top" data-parent="Battery" data-node="Positive" title="Positive (+)"></div>
+            <div class="terminal term-bottom" data-parent="Battery" data-node="Negative" title="Negative (-)"></div>
+        </div>
 
-# --- MAIN FLOW ---
-if student_file:
-    st.session_state.raw_student_img = PILImage.open(student_file).convert("RGB")
+        <!-- LED -->
+        <div class="component" id="LED" style="left: 300px; top: 50px; background: #ccffcc;">
+            LED
+            <div class="terminal term-left" data-parent="LED" data-node="Anode" title="Anode (+)"></div>
+            <div class="terminal term-right" data-parent="LED" data-node="Cathode" title="Cathode (-)"></div>
+        </div>
 
-    # STEP 1: AI LEAD DETECTION
-    if st.session_state.step == 1:
-        st.image(st.session_state.raw_student_img, caption="Your Circuit", use_container_width=True)
+        <!-- Resistor -->
+        <div class="component" id="Resistor" style="left: 175px; top: 250px; background: #ccccff;">
+            Resistor
+            <div class="terminal term-left" data-parent="Resistor" data-node="P1" title="Pin 1"></div>
+            <div class="terminal term-right" data-parent="Resistor" data-node="P2" title="Pin 2"></div>
+        </div>
+    </div>
 
-        if st.button("🔍 Step 1: Detect My Components", type="primary"):
-            with st.spinner("AI is looking for components and legs..."):
-                prompt_seg = """
-                Identify each component on this breadboard. 
-                For every component (Resistor, LED, Slide-Switch, Battery wires), return:
-                - 'name': The name of the part.
-                - 'center': [y, x] of the part body.
-                - 'legs': A list of [y, x] coordinates where the metal legs enter the breadboard holes.
-                Scale all coordinates 0-1000.
-                """
+    <script>
+        // --- Drag and Drop Logic ---
+        let draggedElement = null;
+        let offsetX = 0, offsetY = 0;
+
+        document.querySelectorAll('.component').forEach(el => {
+            el.addEventListener('mousedown', (e) => {
+                if(e.target.classList.contains('terminal')) return; // Don't drag if clicking terminal
+                draggedElement = el;
+                offsetX = e.clientX - el.getBoundingClientRect().left;
+                offsetY = e.clientY - el.getBoundingClientRect().top;
+                el.style.zIndex = 1000;
+            });
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (draggedElement) {
+                const container = document.getElementById('canvas-container').getBoundingClientRect();
+                let newX = e.clientX - container.left - offsetX;
+                let newY = e.clientY - container.top - offsetY;
+                draggedElement.style.left = newX + 'px';
+                draggedElement.style.top = newY + 'px';
+                updateWires();
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (draggedElement) {
+                draggedElement.style.zIndex = 1;
+                draggedElement = null;
+            }
+        });
+
+        // --- Wiring Logic ---
+        let isDrawing = false;
+        let startTerminal = null;
+        let activeLine = null;
+        const svgLayer = document.getElementById('wire-layer');
+        let connections = []; // Stores { from: {comp, node}, to: {comp, node} }
+
+        document.querySelectorAll('.terminal').forEach(term => {
+            term.addEventListener('mousedown', (e) => {
+                isDrawing = true;
+                startTerminal = e.target;
                 
+                activeLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                activeLine.setAttribute('stroke', 'black');
+                activeLine.setAttribute('stroke-width', '4');
+                svgLayer.appendChild(activeLine);
+                e.stopPropagation();
+            });
+
+            term.addEventListener('mouseup', (e) => {
+                if (isDrawing && startTerminal !== e.target) {
+                    // Valid connection made
+                    connections.push({
+                        from: { parent: startTerminal.dataset.parent, node: startTerminal.dataset.node },
+                        to: { parent: e.target.dataset.parent, node: e.target.dataset.node }
+                    });
+                    
+                    // Create permanent visual wire
+                    const permLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    permLine.setAttribute('stroke', 'green');
+                    permLine.setAttribute('stroke-width', '4');
+                    permLine.dataset.fromNode = startTerminal.dataset.parent + '-' + startTerminal.dataset.node;
+                    permLine.dataset.toNode = e.target.dataset.parent + '-' + e.target.dataset.node;
+                    svgLayer.appendChild(permLine);
+                }
+            });
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDrawing && activeLine) {
+                const container = document.getElementById('canvas-container').getBoundingClientRect();
+                const startRect = startTerminal.getBoundingClientRect();
+                const startX = startRect.left + startRect.width/2 - container.left;
+                const startY = startRect.top + startRect.height/2 - container.top;
+                
+                activeLine.setAttribute('x1', startX);
+                activeLine.setAttribute('y1', startY);
+                activeLine.setAttribute('x2', e.clientX - container.left);
+                activeLine.setAttribute('y2', e.clientY - container.top);
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isDrawing) {
+                isDrawing = false;
+                if (activeLine) activeLine.remove();
+                startTerminal = null;
+                updateWires();
+                
+                // Expose the topology to the window object so Streamlit could potentially read it
+                window.parent.postMessage({
+                    type: "circuit_update",
+                    topology: connections
+                }, "*");
+            }
+        });
+
+        function updateWires() {
+            const container = document.getElementById('canvas-container').getBoundingClientRect();
+            document.querySelectorAll('line').forEach(line => {
+                if (!line.dataset.fromNode) return;
+                
+                // Re-calculate positions based on current component locations
+                const fromParts = line.dataset.fromNode.split('-');
+                const toParts = line.dataset.toNode.split('-');
+                
+                const term1 = document.querySelector(`.component#${fromParts[0]} .terminal[data-node="${fromParts[1]}"]`);
+                const term2 = document.querySelector(`.component#${toParts[0]} .terminal[data-node="${toParts[1]}"]`);
+                
+                if(term1 && term2) {
+                    const rect1 = term1.getBoundingClientRect();
+                    const rect2 = term2.getBoundingClientRect();
+                    
+                    line.setAttribute('x1', rect1.left + rect1.width/2 - container.left);
+                    line.setAttribute('y1', rect1.top + rect1.height/2 - container.top);
+                    line.setAttribute('x2', rect2.left + rect2.width/2 - container.left);
+                    line.setAttribute('y2', rect2.top + rect2.height/2 - container.top);
+                }
+            });
+        }
+    </script>
+</body>
+</html>
+"""
+
+st.subheader("🛠️ Hardware Sandbox")
+# Render the interactive HTML canvas
+components.html(html_code, height=550)
+
+# --- 4. DATA BRIDGE & AI EVALUATION ---
+st.markdown("### Step 2: Request AI Scan")
+
+# Because passing data directly out of an iframe in standard Streamlit is restricted,
+# we use a text input for the student to "log" their completed loop to the AI.
+# In a full React component, this would be invisible and automatic.
+topology_input = st.text_area(
+    "Circuit Log", 
+    placeholder="Example: Battery(+) to Resistor(P1), Resistor(P2) to LED(Anode)...",
+    help="Describe your connections here to spend a token and ask the AI."
+)
+
+if st.button("🔍 Analyze Circuit (-1 Token)", type="primary"):
+    if st.session_state.tokens <= 0:
+        st.error("No tokens left! You must debug visually.")
+    elif not topology_input:
+        st.warning("Please describe your connections in the log first.")
+    else:
+        st.session_state.tokens -= 1
+        
+        with st.spinner("AI is analyzing your circuit logic..."):
+            
+            # The new AI Prompt: Focuses on topological logic rather than pixel coordinates.
+            system_prompt = f"""
+            You are a Socratic tutor helping a younger student build a circuit.
+            The student is trying to connect a Battery, a Resistor, and an LED in series.
+            
+            The student has described their wiring as: "{topology_input}"
+            
+            Analyze this logic. 
+            - Are all components in a single closed loop?
+            - Is the polarity correct (Battery + flows towards LED Anode)?
+            - Remember Series Flexibility: Swapping the order of the Resistor and LED is perfectly fine.
+            
+            DO NOT give the direct answer. Provide a Socratic hint explaining the physical reasoning of where the electricity gets "stuck".
+            """
+            
+            if client:
                 try:
                     resp = client.models.generate_content(
                         model=MODEL_ID,
-                        contents=[st.session_state.raw_student_img, prompt_seg],
-                        config=types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            response_schema={
-                                "type": "ARRAY",
-                                "items": {
-                                    "type": "OBJECT",
-                                    "properties": {
-                                        "name": {"type": "STRING"},
-                                        "center": {"type": "ARRAY", "items": {"type": "INTEGER"}},
-                                        "legs": {"type": "ARRAY", "items": {"type": "ARRAY", "items": {"type": "INTEGER"}}}
-                                    }
-                                }
-                            }
-                        )
+                        contents=system_prompt,
                     )
-                    
-                    records = []
-                    parsed_data = resp.parsed if hasattr(resp, 'parsed') else json.loads(resp.text)
-                    for comp_idx, item in enumerate(parsed_data):
-                        name = item.get('name', f"Part_{comp_idx}")
-                        cy, cx = item.get('center', [500, 500])
-                        for leg_idx, (ly, lx) in enumerate(item.get('legs', [])):
-                            records.append({
-                                "Component": f"{name} (Pin {leg_idx+1})",
-                                "Center_X": cx, "Center_Y": cy, "Leg_X": lx, "Leg_Y": ly
-                            })
-                    
-                    st.session_state.components_df = pd.DataFrame(records)
-                    st.session_state.step = 2
-                    st.rerun()
+                    st.success("Analysis Complete")
+                    st.info(f"🤖 Socratic AI says: {resp.text}")
                 except Exception as e:
-                    st.error(f"Detection failed: {e}")
-
-    # STEP 2: FINE-TUNING
-    elif st.session_state.step == 2:
-        st.subheader("⚙️ Step 2: Confirm Your Connections")
-        st.info("The AI guessed where your wires are. Adjust the sliders so the orange dots match the exact holes you used.")
-
-        edit_col, img_col = st.columns([1, 1.5])
-        updated_data = []
-        
-        with edit_col:
-            for i, row in st.session_state.components_df.iterrows():
-                with st.expander(f"📍 {row['Component']}", expanded=False):
-                    new_lx = st.slider(f"X (Horiz)", 0, 1000, int(row["Leg_X"]), key=f"x_{i}")
-                    new_ly = st.slider(f"Y (Vert)", 0, 1000, int(row["Leg_Y"]), key=f"y_{i}")
-                    updated_data.append({**row, "Leg_X": new_lx, "Leg_Y": new_ly})
-            edited_df = pd.DataFrame(updated_data)
-        
-        with img_col:
-            display_img = st.session_state.raw_student_img.copy()
-            draw = ImageDraw.Draw(display_img)
-            w, h = display_img.size
-            for _, r in edited_df.iterrows():
-                start = (r["Center_X"] * w / 1000, r["Center_Y"] * h / 1000)
-                end = (r["Leg_X"] * w / 1000, r["Leg_Y"] * h / 1000)
-                draw.line([start, end], fill="orange", width=5)
-                draw.ellipse([end[0]-8, end[1]-8, end[0]+8, end[1]+8], fill="yellow", outline="orange")
-            st.image(display_img, use_container_width=True)
-
-        if st.button("✅ My Map is Correct! Analyze My Logic", type="primary"):
-            st.session_state.components_df = edited_df
-            st.session_state.annotated_img = display_img
-            st.session_state.step = 3
-            st.rerun()
-
-    # STEP 3: SOCRATIC ANALYSIS (No functions revealed)
-    elif st.session_state.step == 3:
-        st.subheader("🧠 Step 3: Experimental Feedback")
-        st.image(st.session_state.annotated_img, width=500)
-        
-        with st.spinner("Thinking like a scientist..."):
-            # SYSTEM 2 PROMPT: Strict instructions to be a Socratic guide
-            analysis_prompt = f"""
-            TASK: {task_description}
-            
-            Analyze the image. The orange lines show where the student has plugged their components.
-            
-            PEDAGOGICAL RULES:
-            1. DO NOT tell the student how a slide-switch works (e.g., do not mention that the middle pin is common).
-            2. DO NOT tell them which pin is 'wrong'.
-            3. Use SOCRATIC questioning. Ask them to trace the path of electricity.
-            4. If the circuit is wrong, point out a 'mystery' (e.g., 'I see electricity enters Row 10, but where does it go after it hits that switch pin?').
-            5. Encourage them to try different slider positions to see what happens.
-            
-            The goal is for the student to use System 2 thinking to discover the switch's internal logic through trial and error.
-            """
-
-            try:
-                final_response = client.models.generate_content(
-                    model=MODEL_ID,
-                    contents=[st.session_state.annotated_img, analysis_prompt],
-                    config=types.GenerateContentConfig(temperature=0.7)
-                )
-                
-                st.chat_message("assistant").write(final_response.text)
-                
-                if st.button("I want to try again / Fix my circuit"):
-                    st.session_state.step = 1
-                    st.rerun()
-                    
-            except Exception as e:
-                st.error(f"Analysis failed: {e}")
-else:
-    st.info("Pick a Task in the sidebar and upload a photo to start your experiment!")
+                    st.error(f"AI Connection Error: {e}")
+            else:
+                st.error("No valid GCP credentials configured.")
