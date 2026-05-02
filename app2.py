@@ -2,189 +2,168 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import json
-import pandas as pd
 from google import genai
-from google.genai import types
 from google.oauth2 import service_account
 
-# --- 1. INITIALIZATION & CONFIG ---
-st.set_page_config(page_title="Socratic Breadboard Simulator", layout="wide")
+# --- 1. INITIALIZATION ---
+st.set_page_config(page_title="Socratic Breadboard", layout="wide")
 MODEL_ID = "gemini-3.1-pro-preview"
 
-# Initialize Session State
+# Initialize Session State for game mechanics
 if "tokens" not in st.session_state: st.session_state.tokens = 10
-if "feedback_history" not in st.session_state: st.session_state.feedback_history = []
+if "ai_feedback" not in st.session_state: st.session_state.ai_feedback = ""
 
+# Authentication for Gemini
 @st.cache_resource
 def get_ai_client():
     if "gcp_service_account" in st.secrets:
         creds_info = st.secrets["gcp_service_account"]
-        scopes = ["https://www.googleapis.com/auth/cloud-platform"]
-        credentials = service_account.Credentials.from_service_account_info(creds_info, scopes=scopes)
+        credentials = service_account.Credentials.from_service_account_info(
+            creds_info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
         return genai.Client(vertexai=True, project=creds_info["project_id"], location="global", credentials=credentials)
     return None
 
 client = get_ai_client()
 
-# --- 2. SIDEBAR (The Orchestration Layer) ---
-with st.sidebar:
-    st.title("🔌 Circuit Mission")
-    st.metric("Budget (Tokens)", st.session_state.tokens)
-    st.info("Goal: Build a series circuit with a Battery, Resistor, and LED.")
+# --- 2. THE DATA BRIDGE (Query Parameter Logic) ---
+# We check if the URL contains "circuit_data". If it does, the student just clicked "Analyze".
+query_params = st.query_params
+incoming_data = query_params.get("circuit_data")
+
+if incoming_data:
+    # Clear the URL immediately to prevent infinite loops
+    st.query_params.clear()
     
-    if st.button("🔄 Reset Simulator"):
+    # Process the data
+    st.session_state.tokens -= 1
+    try:
+        circuit_topology = json.loads(incoming_data)
+        
+        # --- SOCRATIC AI LOGIC ---
+        # We send the raw hole connections to Gemini to detect "struggle"
+        prompt = f"""
+        You are a Socratic tutor for P4-S3 engineering students.
+        Student's Breadboard Connections (Hole IDs): {circuit_topology}
+        
+        GOAL: The student needs a closed loop (Battery -> Resistor -> LED -> Battery).
+        
+        TASKS:
+        1. Analyze if the circuit is 'Open' (broken path) or 'Short' (bypassing LED).
+        2. If they are struggling, do NOT give the answer.
+        3. Ask a Socratic question about the 'physical flow' of electricity.
+        4. Reference specific Hole IDs if they have tried many times.
+        """
+        
+        if client:
+            response = client.models.generate_content(model=MODEL_ID, contents=prompt)
+            st.session_state.ai_feedback = response.text
+        else:
+            st.session_state.ai_feedback = "AI Error: Check GCP Secrets."
+            
+    except Exception as e:
+        st.error(f"Data Decode Error: {e}")
+
+# --- 3. UI LAYOUT ---
+with st.sidebar:
+    st.title("🔋 Mission Control")
+    st.metric("Tokens Remaining", st.session_state.tokens)
+    if st.button("Reset Game"):
+        st.query_params.clear()
         st.session_state.tokens = 10
-        st.session_state.feedback_history = []
+        st.session_state.ai_feedback = ""
         st.rerun()
 
-    st.markdown("---")
-    st.write("### AI Feedback Log")
-    for msg in st.session_state.feedback_history[-3:]:
-        st.caption(f"🤖 {msg}")
+# Display AI feedback if it exists
+if st.session_state.ai_feedback:
+    st.info(f"🤖 **AI Tutor:** {st.session_state.ai_feedback}")
 
-# --- 3. THE BREADBOARD SIMULATOR (JavaScript/SVG) ---
-# This block handles the real-time interaction and "Struggle Detection" data
-simulator_html = """
+# --- 4. THE INTERACTIVE BREADBOARD (HTML/JS) ---
+# This JS now includes 'URL Redirection' to send data back to Python
+simulator_html = f"""
 <!DOCTYPE html>
 <html>
 <head>
     <style>
-        #bb-container { position: relative; width: 850px; height: 500px; background: #eee; border-radius: 10px; overflow: hidden; border: 3px solid #333; }
-        .breadboard { position: absolute; top: 50px; left: 100px; width: 600px; height: 350px; background: #fff; border: 1px solid #ddd; display: grid; grid-template-columns: repeat(30, 1fr); padding: 10px; gap: 5px; }
-        .hole { width: 12px; height: 12px; background: #ddd; border-radius: 50%; cursor: pointer; }
-        .hole:hover { background: #ffaa00; }
-        .component { position: absolute; padding: 10px; border: 2px solid #000; border-radius: 5px; cursor: move; z-index: 10; font-weight: bold; font-size: 12px; }
-        #battery { top: 50px; left: 10px; background: #ff4b4b; color: white; }
-        #resistor { top: 150px; left: 10px; background: #f0f2f6; }
-        #led { top: 250px; left: 10px; background: #1a73e8; color: white; }
-        svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
-        #controls { position: absolute; bottom: 10px; right: 10px; }
-        button { padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        body {{ font-family: sans-serif; background: #f0f2f6; display: flex; flex-direction: column; align-items: center; }}
+        #canvas {{ width: 800px; height: 400px; background: white; border: 2px solid #333; position: relative; border-radius: 8px; }}
+        .hole {{ width: 10px; height: 10px; background: #ddd; border-radius: 50%; position: absolute; cursor: pointer; }}
+        .hole:hover {{ background: #ffaa00; }}
+        .btn {{ margin-top: 20px; padding: 10px 25px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }}
+        .label {{ position: absolute; font-size: 12px; font-weight: bold; color: #555; }}
     </style>
 </head>
 <body>
-    <div id="bb-container">
-        <svg id="wires"></svg>
-        <div class="component" id="battery" draggable="true">9V BATTERY</div>
-        <div class="component" id="resistor" draggable="true">RESISTOR (220Ω)</div>
-        <div class="component" id="led" draggable="true">LED (RED)</div>
+    <h3>🏗️ Breadboard Sandbox</h3>
+    <div id="canvas">
+        <!-- Labels for Rows/Cols -->
+        <div class="label" style="top: 10px; left: 10px;">9V Battery (+)</div>
+        <div class="label" style="top: 370px; left: 10px;">Ground (-)</div>
         
-        <div class="breadboard" id="board">
-            <!-- Holes generated by JS -->
-        </div>
-
-        <div id="controls">
-            <button onclick="sendTopology()">✅ Analyze My Circuit</button>
-        </div>
+        <svg id="wire-svg" style="position:absolute; width:100%; height:100%; pointer-events:none;"></svg>
     </div>
+    <button class="btn" onclick="sendToStreamlit()">🔍 Analyze My Circuit (-1 Token)</button>
 
     <script>
-        const board = document.getElementById('board');
-        const holes = [];
-        let connections = []; // Track wire nodes
-
-        // Generate Breadboard Holes (simplified grid)
-        for (let i = 0; i < 300; i++) {
-            const hole = document.createElement('div');
-            hole.className = 'hole';
-            hole.id = 'h-' + i;
-            hole.onclick = () => handleHoleClick(i);
-            board.appendChild(hole);
-            holes.push(hole);
-        }
-
+        const canvas = document.getElementById('canvas');
+        const svg = document.getElementById('wire-svg');
+        const connections = [];
         let firstHole = null;
-        function handleHoleClick(id) {
-            if (firstHole === null) {
-                firstHole = id;
-                holes[id].style.background = 'blue';
-            } else {
-                drawWire(firstHole, id);
-                connections.push({from: firstHole, to: id});
-                holes[firstHole].style.background = '#ddd';
-                firstHole = null;
-            }
-        }
 
-        function drawWire(h1, h2) {
-            const svg = document.getElementById('wires');
-            const hole1 = document.getElementById('h-' + h1).getBoundingClientRect();
-            const hole2 = document.getElementById('h-' + h2).getBoundingClientRect();
-            const container = document.getElementById('bb-container').getBoundingClientRect();
+        // Create a basic breadboard grid (10 rows x 30 columns)
+        for (let r = 0; r < 10; r++) {{
+            for (let c = 0; c < 30; c++) {{
+                const hole = document.createElement('div');
+                hole.className = 'hole';
+                const x = 50 + (c * 24);
+                const y = 50 + (r * 30);
+                hole.style.left = x + 'px';
+                hole.style.top = y + 'px';
+                hole.dataset.id = `R${{r}}C${{c}}`;
+                
+                hole.onclick = (e) => {{
+                    if (!firstHole) {{
+                        firstHole = hole;
+                        hole.style.background = 'blue';
+                    }} else {{
+                        const h1 = firstHole.getBoundingClientRect();
+                        const h2 = hole.getBoundingClientRect();
+                        const cRect = canvas.getBoundingClientRect();
+                        
+                        // Record connection
+                        connections.push({{ from: firstHole.dataset.id, to: hole.dataset.id }});
+                        
+                        // Draw Wire
+                        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                        line.setAttribute('x1', h1.left - cRect.left + 5);
+                        line.setAttribute('y1', h1.top - cRect.top + 5);
+                        line.setAttribute('x2', h2.left - cRect.left + 5);
+                        line.setAttribute('y2', h2.top - cRect.top + 5);
+                        line.setAttribute('stroke', '#333');
+                        line.setAttribute('stroke-width', '3');
+                        svg.appendChild(line);
+                        
+                        firstHole.style.background = '#ddd';
+                        firstHole = null;
+                    }}
+                }};
+                canvas.appendChild(hole);
+            }}
+        }}
 
-            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            line.setAttribute('x1', hole1.left - container.left + 6);
-            line.setAttribute('y1', hole1.top - container.top + 6);
-            line.setAttribute('x2', hole2.left - container.left + 6);
-            line.setAttribute('y2', hole2.top - container.top + 6);
-            line.setAttribute('stroke', '#333');
-            line.setAttribute('stroke-width', '3');
-            svg.appendChild(line);
-        }
-
-        function sendTopology() {
-            // Package the data to send back to Streamlit
-            const data = {
-                type: "ANALYZE_REQUEST",
-                connections: connections,
-                timestamp: Date.now()
-            };
-            window.parent.postMessage({
-                isstreamlit: true,
-                type: "streamlit:setComponentValue",
-                value: data
-            }, "*");
-        }
+        function sendToStreamlit() {{
+            if (connections.length === 0) {{
+                alert("Connect some wires first!");
+                return;
+            }}
+            // THE BRIDGE: Push data to the URL so Streamlit can read it
+            const dataString = JSON.stringify(connections);
+            const newUrl = window.parent.location.origin + window.parent.location.pathname + '?circuit_data=' + encodeURIComponent(dataString);
+            window.parent.location.assign(newUrl);
+        }}
     </script>
 </body>
 </html>
 """
 
-# --- 4. STREAMLIT BACKEND & SOCRATIC LOGIC ---
-st.subheader("🛠️ Real-Time Construction Sandbox")
-# The simulator returns data through this component
-result = components.html(simulator_html, height=520)
-
-# Process the AI Scan
-if result:
-    # This logic only runs when the "Analyze" button in JS is clicked
-    st.session_state.tokens -= 1
-    
-    with st.spinner("Analyzing your connection logic..."):
-        # Format the topology for Gemini
-        topology_desc = json.dumps(result.get("connections", []))
-        
-        # Socratic Scaffolding Prompt
-        socratic_prompt = f"""
-        You are a Socratic Engineering Tutor for P4-S3 students.
-        The student is building a series circuit. 
-        Current Topology (Hole IDs): {topology_desc}
-        
-        Your Goal:
-        1. Check if the Battery, Resistor, and LED form a closed loop.
-        2. Identify the SPECIFIC struggle (e.g., Short circuit, Open circuit, or Reversed Polarity).
-        3. DO NOT give the answer. Use Socratic Scaffolding.
-        4. Ask a question that forces them to move from 'Behavioral' (clicking) to 'Cognitive' (logical thinking) engagement.
-        5. If they have used many tokens and are still failing, give a slightly more direct 'Spatial Hint' using the hole IDs.
-        """
-        
-        if client:
-            try:
-                response = client.models.generate_content(model=MODEL_ID, contents=socratic_prompt)
-                ai_hint = response.text
-                st.session_state.feedback_history.append(ai_hint)
-                
-                # Display the hint prominently
-                st.markdown(f"### 🤖 AI Guidance")
-                st.info(ai_hint)
-            except Exception as e:
-                st.error(f"AI Analysis Error: {e}")
-
-# --- 5. EDUCATIONAL FRAMEWORK CONTEXT (For your paper) ---
-with st.expander("ℹ️ Pedagogical Framework (ICAP Model)"):
-    st.write("""
-    - **Active**: Dragging components and drawing wires.
-    - **Constructive**: Explaining the circuit logic to the AI via the 'Analyze' button.
-    - **Interactive**: Responding to the Socratic hints to debug the circuit.
-    - **Game Theory**: The token budget discourages random clicking and forces students to value their 'moves'.
-    """)
+components.html(simulator_html, height=550)
