@@ -128,7 +128,7 @@ simulator_html = f"""
         let isSimulating = false;
 
         function notifyPython() {
-            // No double braces needed!
+            // Now you can use normal { } without Python crashing!
             const circuitData = { comps: comps, wires: wires };
             window.parent.postMessage({
                 isStreamlitMessage: true,
