@@ -154,7 +154,7 @@ simulator_html = f"""
         function handleWire(id) {{
             if (!wiringStart) {{
                 wiringStart = id; document.getElementById(id).classList.add('wiring');
-            } else {{
+            }} else {{
                 if (wiringStart !== id) {{ wires.push({{start: wiringStart, end: id}}); renderWires(); if(isSimulating) simulateCircuit(); }}
                 document.getElementById(wiringStart).classList.remove('wiring');
                 wiringStart = null;
