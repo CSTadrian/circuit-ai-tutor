@@ -5,19 +5,18 @@ import json
 
 st.set_page_config(page_title="Pro-STEM Precision Lab", layout="wide")
 
-# --- ASSETS WITH INTERACTIVE STATES ---
-# We use Python strings to store the SVG templates
+# --- SVG ASSET TEMPLATES ---
 ASSETS_RAW = {
     "LED": {
-        "OFF": '<svg width="40" height="40" viewBox="0 0 40 40"><rect x="9" y="20" width="2" height="20" fill="#aaa"/><rect x="29" y="25" width="2" height="15" fill="#aaa"/><path d="M10 25 Q 10 5 20 5 Q 30 5 30 25 Z" fill="#822" opacity="0.9"/></svg>',
-        "ON": '<svg width="40" height="40" viewBox="0 0 40 40"><rect x="9" y="20" width="2" height="20" fill="#aaa"/><rect x="29" y="25" width="2" height="15" fill="#aaa"/><path d="M10 25 Q 10 5 20 5 Q 30 5 30 25 Z" fill="#f00" filter="drop-shadow(0 0 8px red)"/></svg>'
+        "OFF": '<svg width="40" height="50" viewBox="0 0 40 50"><rect x="9" y="20" width="2" height="30" fill="#aaa"/><rect x="29" y="25" width="2" height="25" fill="#aaa"/><path d="M10 25 Q 10 5 20 5 Q 30 5 30 25 Z" fill="#822" opacity="0.9"/><text x="5" y="48" fill="#666" font-size="8">A</text><text x="33" y="48" fill="#666" font-size="8">K</text></svg>',
+        "ON": '<svg width="40" height="50" viewBox="0 0 40 50"><rect x="9" y="20" width="2" height="30" fill="#aaa"/><rect x="29" y="25" width="2" height="25" fill="#aaa"/><path d="M10 25 Q 10 5 20 5 Q 30 5 30 25 Z" fill="#f00" filter="drop-shadow(0 0 8px red)"/><text x="5" y="48" fill="#666" font-size="8">A</text><text x="33" y="48" fill="#666" font-size="8">K</text></svg>'
     },
-    "RES_5BAND": '<svg width="80" height="20" viewBox="0 0 80 20"><rect x="10" y="9" width="60" height="2" fill="#aaa"/><rect x="20" y="4" width="40" height="12" rx="4" fill="#69a8e6"/><rect x="25" y="4" width="4" height="12" fill="#8b4513"/><rect x="32" y="4" width="4" height="12" fill="#000"/><rect x="39" y="4" width="4" height="12" fill="#000"/><rect x="46" y="4" width="4" height="12" fill="#ff8c00"/><rect x="55" y="4" width="4" height="12" fill="#800080"/></svg>',
+    "RES_5BAND": '<svg width="80" height="20" viewBox="0 0 80 20"><rect x="5" y="9" width="70" height="2" fill="#aaa"/><rect x="20" y="4" width="40" height="12" rx="4" fill="#69a8e6"/><rect x="25" y="4" width="3" height="12" fill="#8b4513"/><rect x="31" y="4" width="3" height="12" fill="#000"/><rect x="37" y="4" width="3" height="12" fill="#000"/><rect x="43" y="4" width="3" height="12" fill="#ff8c00"/><rect x="52" y="4" width="3" height="12" fill="#800080"/></svg>',
     "SWITCH": {
-        "LEFT": '<svg width="60" height="24" viewBox="0 0 60 24"><rect x="10" y="12" width="2" height="12" fill="#aaa"/><rect x="30" y="12" width="2" height="12" fill="#aaa"/><rect x="50" y="12" width="2" height="12" fill="#aaa"/><rect x="5" y="0" width="50" height="16" rx="2" fill="#333"/><rect x="8" y="2" width="18" height="12" rx="1" fill="#666"/></svg>',
-        "RIGHT": '<svg width="60" height="24" viewBox="0 0 60 24"><rect x="10" y="12" width="2" height="12" fill="#aaa"/><rect x="30" y="12" width="2" height="12" fill="#aaa"/><rect x="50" y="12" width="2" height="12" fill="#aaa"/><rect x="5" y="0" width="50" height="16" rx="2" fill="#333"/><rect x="34" y="2" width="18" height="12" rx="1" fill="#666"/></svg>'
+        "LEFT": '<svg width="60" height="24" viewBox="0 0 60 24"><rect x="10" y="12" width="2" height="12" fill="#aaa"/><rect x="30" y="12" width="2" height="12" fill="#aaa"/><rect x="50" y="12" width="2" height="12" fill="#aaa"/><rect x="5" y="0" width="50" height="16" rx="2" fill="#333"/><rect x="8" y="3" width="18" height="10" rx="1" fill="#888"/></svg>',
+        "RIGHT": '<svg width="60" height="24" viewBox="0 0 60 24"><rect x="10" y="12" width="2" height="12" fill="#aaa"/><rect x="30" y="12" width="2" height="12" fill="#aaa"/><rect x="50" y="12" width="2" height="12" fill="#aaa"/><rect x="5" y="0" width="50" height="16" rx="2" fill="#333"/><rect x="34" y="3" width="18" height="10" rx="1" fill="#888"/></svg>'
     },
-    "BATTERY_45V": '<svg width="40" height="60" viewBox="0 0 40 60"><rect x="2" y="2" width="36" height="46" rx="4" fill="#444" stroke="#eee"/><rect x="5" y="5" width="30" height="12" fill="#f39c12"/><rect x="5" y="19" width="30" height="12" fill="#f39c12"/><rect x="5" y="33" width="30" height="12" fill="#f39c12"/><text x="10" y="30" fill="white" font-size="8" font-weight="bold">4.5V</text><rect x="10" y="48" width="2" height="12" fill="#aaa"/><rect x="30" y="48" width="2" height="12" fill="#aaa"/></svg>'
+    "BATTERY": '<svg width="40" height="60" viewBox="0 0 40 60"><rect x="2" y="2" width="36" height="46" rx="4" fill="#333" stroke="#555"/><rect x="6" y="6" width="28" height="10" fill="#f1c40f"/><rect x="6" y="18" width="28" height="10" fill="#f1c40f"/><rect x="6" y="30" width="28" height="10" fill="#f1c40f"/><text x="11" y="40" fill="black" font-size="7" font-weight="bold">4.5V DC</text><rect x="10" y="48" width="2" height="12" fill="#aaa"/><rect x="30" y="48" width="2" height="12" fill="#aaa"/></svg>'
 }
 
 simulator_html = f"""
@@ -29,40 +28,39 @@ simulator_html = f"""
         body {{ font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; margin: 0; overflow: hidden; user-select: none; }}
         #workspace {{ display: flex; height: 100vh; }}
         
-        /* Guide & Palette */
+        /* Palette & UI */
         #palette {{ width: 260px; background: #222; padding: 20px; border-right: 1px solid #444; }}
-        .guide {{ background: #2c3e50; padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 13px; border-left: 4px solid #3498db; }}
         .comp-item {{ background: #333; padding: 12px; margin-bottom: 10px; border-radius: 6px; cursor: pointer; text-align: center; border: 1px solid #444; }}
         .comp-item:hover {{ background: #444; border-color: #3498db; }}
 
         #canvas {{ flex-grow: 1; position: relative; background: #111; overflow: auto; }}
         #toolbar {{ padding: 10px; background: #222; border-bottom: 1px solid #444; display: flex; gap: 10px; }}
-        .tool-btn {{ background: #444; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; }}
+        .tool-btn {{ background: #444; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; }}
         .tool-btn:hover {{ background: #3498db; }}
 
-        /* Precision Breadboard */
+        /* Unified Breadboard Grid */
         .bb-outer {{ 
-            position: absolute; top: 60px; left: 40px; background: #fff; 
+            position: absolute; top: 60px; left: 40px; background: #eee; 
             padding: 25px; border-radius: 12px; display: flex; align-items: flex-start;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5); gap: 8px;
         }}
         .bb-section {{ display: grid; grid-template-rows: repeat(30, var(--grid)); }}
         .rail {{ grid-template-columns: repeat(2, var(--grid)); border-left: 2px solid #ff4444; border-right: 2px solid #4444ff; margin-top: 25px; }}
-        .main-col {{ display: flex; flex-direction: column; margin: 0 10px; }}
+        .main-col {{ display: flex; flex-direction: column; }}
         .main-grid {{ display: grid; grid-template-rows: repeat(30, var(--grid)); grid-template-columns: repeat(5, var(--grid)); }}
-        .trench {{ width: var(--grid); background: #eee; height: 600px; margin-top: 25px; border-left: 1px solid #ddd; border-right: 1px solid #ddd; }}
-        .num-col {{ width: 20px; margin-top: 25px; text-align: center; font-size: 10px; color: #999; }}
+        .trench {{ width: var(--grid); background: #ddd; height: 600px; margin-top: 25px; box-shadow: inset 0 0 5px rgba(0,0,0,0.1); }}
+        .num-col {{ width: 20px; margin-top: 25px; text-align: center; font-size: 10px; color: #888; line-height: 20px; }}
 
         .header-row {{ display: flex; height: 20px; margin-bottom: 5px; }}
-        .header-cell {{ width: var(--grid); text-align: center; font-size: 11px; color: #666; font-weight: bold; }}
+        .header-cell {{ width: var(--grid); text-align: center; font-size: 11px; color: #444; font-weight: bold; }}
 
         .hole {{ 
-            width: 12px; height: 12px; background: #ccc; border-radius: 50%; 
+            width: 12px; height: 12px; background: #bbb; border-radius: 50%; 
             margin: 4px; box-shadow: inset 1px 1px 2px rgba(0,0,0,0.2);
             cursor: pointer; position: relative; z-index: 10;
         }}
-        .hole.occupied {{ background: var(--pale-blue) !important; box-shadow: 0 0 4px var(--pale-blue); }}
-        .hole.wiring {{ background: #00ff00 !important; }}
+        .hole.occupied {{ background: var(--pale-blue) !important; box-shadow: 0 0 5px var(--pale-blue); }}
+        .hole.wiring {{ background: #2ecc71 !important; }}
 
         /* Components */
         .active-comp {{ position: absolute; z-index: 100; cursor: grab; transform-origin: 0 0; }}
@@ -71,21 +69,14 @@ simulator_html = f"""
 
         svg.overlay {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 50; }}
         .wire {{ stroke: #2ecc71; stroke-width: 4; stroke-linecap: round; pointer-events: auto; cursor: crosshair; }}
-        .wire:hover {{ stroke: #e74c3c; }}
     </style>
 </head>
 <body>
     <div id="workspace">
         <div id="palette">
-            <div class="guide">
-                <strong>Guide:</strong><br>
-                • <b>Drag</b> parts to board.<br>
-                • <b>Click</b> holes to wire.<br>
-                • <b>Click Switch</b> to toggle.<br>
-                • <b>Dbl-Click Wire</b> to delete.
-            </div>
-            <div class="comp-item" onclick="spawn('BATTERY')">{ASSETS_RAW['BATTERY_45V']}<br>4.5V Battery</div>
-            <div class="comp-item" onclick="spawn('LED')">{ASSETS_RAW['LED']['OFF']}<br>LED</div>
+            <h4 style="margin-top:0;">Precision Lab</h4>
+            <div class="comp-item" onclick="spawn('BATTERY')">{ASSETS_RAW['BATTERY']}<br>4.5V Battery</div>
+            <div class="comp-item" onclick="spawn('LED')">{ASSETS_RAW['LED']['OFF']}<br>LED (A=Long)</div>
             <div class="comp-item" onclick="spawn('RESISTOR')">{ASSETS_RAW['RES_5BAND']}<br>5-Band Resistor</div>
             <div class="comp-item" onclick="spawn('SWITCH')">{ASSETS_RAW['SWITCH']['LEFT']}<br>Slide Switch</div>
         </div>
@@ -94,11 +85,13 @@ simulator_html = f"""
             <div id="toolbar">
                 <button class="tool-btn" onclick="rotateComp()">↻ Rotate</button>
                 <button class="tool-btn" onclick="deleteComp()" style="background:#c0392b;">✖ Delete</button>
+                <button class="tool-btn" id="sim-btn" onclick="toggleSim()" style="background:#f39c12; color:black; margin-left:auto;">⚡ Stimulate</button>
             </div>
 
             <svg class="overlay" id="wire-layer"></svg>
             
-            <div class="bb-outer">
+            <div class="bb-outer" id="board">
+                <!-- LHS RAIL (Shifted slightly for alignment) -->
                 <div class="bb-section rail" id="rail-L"></div>
                 
                 <div class="main-col">
@@ -134,6 +127,7 @@ simulator_html = f"""
         let drag = null;
         let dragOff = {{x:0, y:0}};
         let wiringStart = null;
+        let isSimulating = false;
 
         function createHoles(id, cols, tag) {{
             const container = document.getElementById(id);
@@ -155,9 +149,7 @@ simulator_html = f"""
 
         const numBox = document.getElementById('nums');
         for(let i=1; i<=30; i++) {{
-            const d = document.createElement('div');
-            d.style.height = "20px"; d.innerText = i;
-            numBox.appendChild(d);
+            const d = document.createElement('div'); d.innerText = i; numBox.appendChild(d);
         }}
 
         function handleWire(id) {{
@@ -176,8 +168,8 @@ simulator_html = f"""
 
         function spawn(type) {{
             const id = 'c' + Date.now();
-            let pins = [{{x:10, y:30}}, {{x:30, y:30}}];
-            if(type === 'RESISTOR') pins = [{{x:10, y:10}}, {{x:70, y:10}}];
+            let pins = [{{x:9, y:50}}, {{x:29, y:50}}]; // Default LED
+            if(type === 'RESISTOR') pins = [{{x:5, y:10}}, {{x:75, y:10}}];
             if(type === 'SWITCH') pins = [{{x:10, y:12}}, {{x:30, y:12}}, {{x:50, y:12}}];
             if(type === 'BATTERY') pins = [{{x:10, y:48}}, {{x:30, y:48}}];
             
@@ -198,8 +190,7 @@ simulator_html = f"""
                         dragOff = {{x:e.clientX - c.x, y:e.clientY - c.y}};
                         renderComps();
                     }};
-                    // Add toggle listener for switch
-                    el.onclick = () => {{
+                    el.onclick = (e) => {{
                         if(c.type === 'SWITCH') {{
                             c.switchPos = c.switchPos === 'LEFT' ? 'RIGHT' : 'LEFT';
                             renderComps();
@@ -210,16 +201,14 @@ simulator_html = f"""
                 
                 el.classList.toggle('selected', selection === c.id);
                 
-                // Update SVG based on state/type
                 if(c.type === 'LED') el.innerHTML = ASSETS.LED[c.state];
                 else if(c.type === 'SWITCH') el.innerHTML = ASSETS.SWITCH[c.switchPos];
                 else if(c.type === 'RESISTOR') el.innerHTML = ASSETS.RES_5BAND;
-                else if(c.type === 'BATTERY') el.innerHTML = ASSETS.BATTERY_45V;
+                else if(c.type === 'BATTERY') el.innerHTML = ASSETS.BATTERY;
 
                 el.style.left = c.x + 'px'; el.style.top = c.y + 'px';
                 el.style.transform = `rotate(${{c.rot}}deg)`;
                 
-                // Refresh Pin Colliders
                 el.querySelectorAll('.pin-collider').forEach(p => p.remove());
                 c.pins.forEach(p => {{
                     const dot = document.createElement('div');
@@ -229,10 +218,10 @@ simulator_html = f"""
                 }});
             }});
             Array.from(layer.children).forEach(child => {{ if(!comps.find(x => x.id === child.id)) child.remove(); }});
-            updateHoleColors();
+            updateHoles();
         }}
 
-        function updateHoleColors() {{
+        function updateHoles() {{
             const holes = Array.from(document.querySelectorAll('.hole'));
             holes.forEach(h => h.classList.remove('occupied'));
             const rect = document.getElementById('canvas').getBoundingClientRect();
@@ -248,7 +237,8 @@ simulator_html = f"""
                         const hRect = h.getBoundingClientRect();
                         const hx = hRect.left - rect.left + 6;
                         const hy = hRect.top - rect.top + 6;
-                        if(Math.abs(px-hx) < 8 && Math.abs(py-hy) < 8) h.classList.add('occupied');
+                        // Slightly larger hit area to ensure Rail connectivity
+                        if(Math.abs(px-hx) < 10 && Math.abs(py-hy) < 10) h.classList.add('occupied');
                     }});
                 }});
             }});
@@ -264,8 +254,8 @@ simulator_html = f"""
 
         document.onmouseup = () => {{
             if(drag) {{
-                drag.x = Math.round(drag.x / GRID) * GRID;
-                drag.y = Math.round(drag.y / GRID) * GRID;
+                drag.x = Math.round(drag.x / 5) * 5; // Finer snapping for alignment
+                drag.y = Math.round(drag.y / 5) * 5;
                 drag = null; renderComps();
             }}
         }};
@@ -284,6 +274,22 @@ simulator_html = f"""
                 l.ondblclick = () => {{ wires.splice(i, 1); renderWires(); }};
                 layer.appendChild(l);
             }});
+        }}
+
+        function toggleSim() {{
+            isSimulating = !isSimulating;
+            const btn = document.getElementById('sim-btn');
+            if(isSimulating) {{
+                btn.innerText = "⏹ Stop Stim";
+                btn.style.background = "#c0392b"; btn.style.color = "white";
+                // Simple visual feedback for simulation
+                comps.forEach(c => {{ if(c.type === 'LED') c.state = 'ON'; }});
+            }} else {{
+                btn.innerText = "⚡ Stimulate";
+                btn.style.background = "#f39c12"; btn.style.color = "black";
+                comps.forEach(c => {{ if(c.type === 'LED') c.state = 'OFF'; }});
+            }}
+            renderComps();
         }}
 
         function rotateComp() {{
