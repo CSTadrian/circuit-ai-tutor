@@ -10,6 +10,16 @@ from google import genai
 from google.genai import types
 from google.oauth2 import service_account
 
+# --- NEW: TASK CONFIGURATION ---
+# Define your tasks and their corresponding filenames in the 'data' folder
+TASKS = {
+    "Task 1: Basic LED Circuit": "task1_led.png",
+    "Task 2: Resistor in Series": "task2_series.png",
+    "Task 3: Parallel LED Setup": "task3_parallel.png",
+    "Task 4: Switch Control": "task4_switch.png"
+}
+DATA_FOLDER = "data"
+
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Pro-STEM Precision Lab", layout="wide")
 
@@ -601,54 +611,88 @@ def get_ai_observation(student_data):
         
 
 # --- 5. MAIN UI LAYOUT ---
+#  USER UPLOAD MODE
+# st.title("⚡ AI Circuit Auditor")
+
+# with st.sidebar:
+#     st.header("Teacher's Goal")
+#     schematic_file = st.file_uploader("Upload Target Schematic", type=["jpg", "png", "jpeg"])
+
+# # --- NEW: REGISTER HTML AS A CUSTOM COMPONENT ---
+# # This forces Streamlit to actually read the postMessages
+# if not os.path.exists("sim_frontend"):
+#     os.makedirs("sim_frontend")
+# with open("sim_frontend/index.html", "w", encoding="utf-8") as f:
+#     f.write(simulator_html)
+
+# # Declare component with a default object structure
+# sim_component = components.declare_component("sim_component", path="sim_frontend")
+# current_sim_data = sim_component(default='{"comps": [], "wires": []}')
+
+# --- 5. MAIN UI LAYOUT ---
 st.title("⚡ AI Circuit Auditor")
 
 with st.sidebar:
-    st.header("Teacher's Goal")
-    schematic_file = st.file_uploader("Upload Target Schematic", type=["jpg", "png", "jpeg"])
+    st.header("Learning Module")
+    
+    # Replacement for file_uploader: Selectbox for tasks
+    selected_task_name = st.selectbox(
+        "Choose a Learning Task", 
+        options=list(TASKS.keys())
+    )
+    
+    # Determine the path to the image
+    target_image_path = os.path.join(DATA_FOLDER, TASKS[selected_task_name])
+    
+    # Display the target schematic to the student
+    if os.path.exists(target_image_path):
+        st.subheader("Target Schematic")
+        st.image(target_image_path, use_container_width=True)
+        # Load the image for the AI later
+        schematic_img = PILImage.open(target_image_path).convert("RGB")
+    else:
+        st.error(f"Image not found: {target_image_path}. Please ensure it exists in the 'data' folder.")
+        schematic_img = None
 
-# --- NEW: REGISTER HTML AS A CUSTOM COMPONENT ---
-# This forces Streamlit to actually read the postMessages
+# --- REGISTER HTML COMPONENT ---
 if not os.path.exists("sim_frontend"):
     os.makedirs("sim_frontend")
 with open("sim_frontend/index.html", "w", encoding="utf-8") as f:
     f.write(simulator_html)
 
-# Declare component with a default object structure
 sim_component = components.declare_component("sim_component", path="sim_frontend")
 current_sim_data = sim_component(default='{"comps": [], "wires": []}')
 
-
 # --- 6. AI AUDIT EXECUTION ---
 if st.button("🔍 Check My Circuit", type="primary"):
-    if not schematic_file:
-        st.warning("Please upload a schematic.")
+    # Change check: Verify schematic_img exists from the selection instead of file_uploader
+    if schematic_img is None:
+        st.warning("No schematic available for this task.")
     else:
-        # Notice we are now directly passing current_sim_data instead of pulling from session state
         user_circuit_description = get_ai_observation(current_sim_data)
         
         st.subheader("👁️ AI Observation")
-        st.info("The AI analyzed your board and sees:")
+        st.info(f"The AI is comparing your board against **{selected_task_name}**:")
         st.markdown(user_circuit_description)
 
-        raw_schematic = PILImage.open(schematic_file).convert("RGB")
-        
         analysis_prompt = f"""
         Compare this schematic to the student's breadboard description.
         
+        TARGET TASK: {selected_task_name}
         STUDENT DATA:
         {user_circuit_description}
         
         Check for:
         1. Complete path from Power (VCC) to Ground (GND).
         2. LED presence and correct polarity.
-        3. Protection resistor presence.
+        3. Protection resistor presence and correct value.
         """
 
         try:
+            # Pass the schematic_img loaded from the folder
             resp = client.models.generate_content(
                 model=MODEL_ID,
-                contents=[raw_schematic, analysis_prompt],
+                contents=[schematic_img, analysis_prompt],
                 config=types.GenerateContentConfig(
                     temperature=0.0,
                     response_mime_type="application/json",
@@ -676,3 +720,61 @@ if st.button("🔍 Check My Circuit", type="primary"):
 
         except Exception as e:
             st.error(f"Audit failed: {e}")
+            
+# # --- 6. AI AUDIT EXECUTION ---
+# if st.button("🔍 Check My Circuit", type="primary"):
+#     if not schematic_file:
+#         st.warning("Please upload a schematic.")
+#     else:
+#         # Notice we are now directly passing current_sim_data instead of pulling from session state
+#         user_circuit_description = get_ai_observation(current_sim_data)
+        
+#         st.subheader("👁️ AI Observation")
+#         st.info("The AI analyzed your board and sees:")
+#         st.markdown(user_circuit_description)
+
+#         raw_schematic = PILImage.open(schematic_file).convert("RGB")
+        
+#         analysis_prompt = f"""
+#         Compare this schematic to the student's breadboard description.
+        
+#         STUDENT DATA:
+#         {user_circuit_description}
+        
+#         Check for:
+#         1. Complete path from Power (VCC) to Ground (GND).
+#         2. LED presence and correct polarity.
+#         3. Protection resistor presence.
+#         """
+
+#         try:
+#             resp = client.models.generate_content(
+#                 model=MODEL_ID,
+#                 contents=[raw_schematic, analysis_prompt],
+#                 config=types.GenerateContentConfig(
+#                     temperature=0.0,
+#                     response_mime_type="application/json",
+#                     response_schema={
+#                         "type": "OBJECT",
+#                         "properties": {
+#                             "is_correct": {"type": "BOOLEAN"},
+#                             "ai_observation": {"type": "STRING"},
+#                             "feedback": {"type": "STRING"}
+#                         },
+#                         "required": ["is_correct", "ai_observation", "feedback"]
+#                     }
+#                 )
+#             )
+            
+#             result = resp.parsed
+#             st.divider()
+#             if result.get("is_correct"):
+#                 st.success("✅ **Circuit matches! Well done.**")
+#             else:
+#                 st.error("❌ **Audit failed. See suggestions below.**")
+            
+#             st.write(f"**Interpretation:** {result.get('ai_observation')}")
+#             st.info(f"**Tutor Note:** {result.get('feedback')}")
+
+#         except Exception as e:
+#             st.error(f"Audit failed: {e}")
