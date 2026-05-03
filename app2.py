@@ -337,7 +337,7 @@ simulator_html = f"""
                 l.setAttribute('class', 'wire');
                 
                 // This keeps the wires interactive
-                l.ondblclick = () => { wires.splice(i, 1); renderWires(); saveState(); }};
+                l.ondblclick = () => {{ wires.splice(i, 1); renderWires(); saveState(); }};
                 layer.appendChild(l);
             });
         }}
