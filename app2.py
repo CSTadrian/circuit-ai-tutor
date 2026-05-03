@@ -128,7 +128,7 @@ simulator_html = f"""
         let isSimulating = false;
 
         // --- STREAMLIT BI-DIRECTIONAL BRIDGE ---
-        function notifyPython() {
+        function notifyPython() {{
             // Send BOTH components and wires as a single object
             const circuitData = { comps: comps, wires: wires };
             window.parent.postMessage({
@@ -136,7 +136,7 @@ simulator_html = f"""
                 type: "streamlit:setComponentValue",
                 value: JSON.stringify(circuitData)
             }, '*');
-        }
+        }}
 
         // --- PERSISTENCE LAYER ---
         function saveState() {{
