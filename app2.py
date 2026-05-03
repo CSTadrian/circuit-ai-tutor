@@ -745,6 +745,8 @@ with open("sim_frontend/index.html", "w", encoding="utf-8") as f:
 sim_component = components.declare_component("sim_component", path="sim_frontend")
 current_sim_data = sim_component(default='{"comps": [], "wires": []}')
 
+from datetime import datetime, timedelta, timezone
+
 # --- 6. AI AUDIT EXECUTION ---
 if st.button("🔍 Check My Circuit", type="primary"):
     if schematic_img is None:
@@ -800,29 +802,34 @@ if st.button("🔍 Check My Circuit", type="primary"):
             st.write(f"**Interpretation:** {result.get('ai_observation')}")
             st.info(f"**Tutor Note:** {result.get('feedback')}")
 
-            # --- NEW: SAVE TO DRIVE LOGIC ---
-            with st.spinner("Saving results to Google Drive..."):
-                # 1. Get Hong Kong Time
-                hk_tz = pytz.timezone('Asia/Hong Kong')
-                hk_now = datetime.now(hk_tz)
-                hk_time_str = hk_now.strftime('%Y-%m-%d %H:%M:%S')
-                time_code = hk_now.strftime('%y%m%d_%H%M')
+            # --- SAVE TO DRIVE LOGIC ---
+            with st.spinner("Logging data to Google Drive..."):
+                # 1. Get Hong Kong Time (UTC+8)
+                hk_tz = timezone(timedelta(hours=8))
+                now_hk = datetime.now(hk_tz)
+                
+                # Format for CSV: YYYY-MM-DD HH:MM:SS
+                hk_time_log = now_hk.strftime('%Y-%m-%d %H:%M:%S')
+                
+                # Format for Filename: 260503_1234 (Year Month Day _ Hour Min)
+                time_code = now_hk.strftime('%y%m%d_%H%M')
 
-                # 2. Format Task Number/Name (Removes spaces for cleaner filenames)
-                clean_task = selected_task_name.replace(" ", "")
+                # 2. Prepare Naming (e.g., 01_task1_260503_1234)
+                # Cleaning task name to ensure no spaces in filename
+                clean_task_name = selected_task_name.replace(" ", "").lower()
+                file_name_final = f"{user_id}_{clean_task_name}_{time_code}"
 
-                # 3. Create the formatted filename: 01_task1_260503_1234
-                file_prefix = f"{user_id}_{clean_task}_{time_code}"
-
-                # 4. Push to Drive
+                # 3. Call your drive save function
+                # Note: 'result' is the AI output dictionary
                 save_to_drive(
                     user_id=user_id, 
-                    hk_time_str=hk_time_str, 
+                    hk_time_str=hk_time_log, 
                     task_name=selected_task_name, 
                     ai_result_dict=result, 
-                    file_prefix=file_prefix,
+                    file_prefix=file_name_final,
                     sim_data=current_sim_data
                 )
+                st.toast(f"Data saved for User {user_id}", icon="💾")
                 
         except Exception as e:
             st.error(f"Audit failed: {e}")
