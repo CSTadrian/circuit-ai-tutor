@@ -33,7 +33,7 @@ ASSETS_RAW = {
 
 # --- 2. VIRTUAL SIMULATOR (HTML/JS) ---
 # Notice the addition of the Streamlit protocol handshake in JS
-simulator_html = f"""
+simulator_html = """
 <!DOCTYPE html>
 <html>
 <head>
