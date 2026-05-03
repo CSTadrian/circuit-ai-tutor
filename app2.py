@@ -186,7 +186,7 @@ simulator_html = f"""
         const numBox = document.getElementById('nums');
         for(let i=1; i<=30; i++) {{ const d = document.createElement('div'); d.innerText = i; numBox.appendChild(d); }}
 
-        function getTrack(holeId) {
+        function getTrack(holeId) {{
             if(!holeId) return null;
             // Split the ID (e.g., "h_ML_4_1" -> ["h", "ML", "4", "1"])
             const p = holeId.split('_'); 
@@ -195,19 +195,19 @@ simulator_html = f"""
             const col = parseInt(p[3]);
         
             // LHS Rails (RL)
-            if (type === 'RL') return `${row}_${col === 0 ? 'red_l' : 'blue_l'}`;
+            if (type === 'RL') return `${{row}}_${{col === 0 ? 'red_l' : 'blue_l'}}`;
             
             // RHS Rails (RR)
-            if (type === 'RR') return `${row}_${col === 0 ? 'red_r' : 'blue_r'}`;
+            if (type === 'RR') return `${{row}}_${{col === 0 ? 'red_r' : 'blue_r'}}`;
             
             // Main Left (ML) -> Columns a, b, c, d, e (ASCII 97, 98, 99, 100, 101)
-            if (type === 'ML') return `${row}${String.fromCharCode(97 + col)}`;
+            if (type === 'ML') return `${{row}}${{String.fromCharCode(97 + col)}}`;
             
             // Main Right (MR) -> Columns f, g, h, i, j (ASCII 102, 103, 104, 105, 106)
-            if (type === 'MR') return `${row}${String.fromCharCode(102 + col)}`;
+            if (type === 'MR') return `${{row}}${{String.fromCharCode(102 + col)}}`;
             
             return holeId;
-        }
+        }}
 
         function handleWire(id) {{
             if (!wiringStart) {{
