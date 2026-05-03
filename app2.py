@@ -21,24 +21,25 @@ def get_ai_client():
 
 client = get_ai_client()
 
-# --- 2. VECTOR ASSETS (Aligned to 20px Grid) ---
-# Leg to leg is exactly 20px gap. SVGs are mostly 40x40 or 40x20. 
-# The legs are positioned at x=10 and x=30 to perfectly snap to grid holes.
+# --- 2. VECTOR ASSETS (Grid Aligned to 20px) ---
 ASSETS = {
-    # LED: Clear long leg (anode) and short leg (cathode)
-    "LED_OFF": '<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="15" width="2" height="25" fill="#aaa"/><rect x="29" y="15" width="2" height="20" fill="#aaa"/><path d="M10 20 Q 10 5 20 5 Q 30 5 30 20 Z" fill="#882222" opacity="0.9"/><circle cx="20" cy="12" r="4" fill="white" opacity="0.2"/></svg>',
+    # LED: Clear long leg (anode) and short leg (cathode), 20px gap.
+    "LED_OFF": '<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="20" width="2" height="20" fill="#aaa"/><rect x="29" y="25" width="2" height="15" fill="#aaa"/><path d="M10 25 Q 10 5 20 5 Q 30 5 30 25 Z" fill="#882222" opacity="0.9"/><circle cx="20" cy="12" r="4" fill="white" opacity="0.2"/></svg>',
     
-    "LED_ON": '<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#ffaaaa"/><stop offset="100%" stop-color="#ff0000"/></radialGradient></defs><rect x="9" y="15" width="2" height="25" fill="#aaa"/><rect x="29" y="15" width="2" height="20" fill="#aaa"/><path d="M10 20 Q 10 5 20 5 Q 30 5 30 20 Z" fill="url(#glow)" filter="drop-shadow(0px 0px 8px red)"/><circle cx="20" cy="12" r="4" fill="white" opacity="0.8"/></svg>',
+    "LED_ON": '<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#ffaaaa"/><stop offset="100%" stop-color="#ff0000"/></radialGradient></defs><rect x="9" y="20" width="2" height="20" fill="#aaa"/><rect x="29" y="25" width="2" height="15" fill="#aaa"/><path d="M10 25 Q 10 5 20 5 Q 30 5 30 25 Z" fill="url(#glow)" filter="drop-shadow(0px 0px 8px red)"/><circle cx="20" cy="12" r="4" fill="white" opacity="0.8"/></svg>',
     
-    # Resistors: 1 gap length (20px between the 2 legs)
-    "RES_300": '<svg width="40" height="20" viewBox="0 0 40 20" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="9" width="22" height="2" fill="#aaa"/><rect x="12" y="6" width="16" height="8" rx="2" fill="#69a8e6"/><rect x="14" y="6" width="2" height="8" fill="#ff8c00"/><rect x="18" y="6" width="2" height="8" fill="#000000"/><rect x="22" y="6" width="2" height="8" fill="#8b4513"/></svg>',
+    "LED_BROKEN": '<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="20" width="2" height="20" fill="#aaa"/><rect x="29" y="25" width="2" height="15" fill="#aaa"/><path d="M10 25 Q 10 5 20 5 Q 30 5 30 25 Z" fill="#333333" opacity="0.9"/><path d="M18 5 L23 12 L17 18 L22 25" stroke="#000" stroke-width="2" fill="none"/></svg>',
     
-    "RES_1K": '<svg width="40" height="20" viewBox="0 0 40 20" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="9" width="22" height="2" fill="#aaa"/><rect x="12" y="6" width="16" height="8" rx="2" fill="#69a8e6"/><rect x="14" y="6" width="2" height="8" fill="#8b4513"/><rect x="18" y="6" width="2" height="8" fill="#000000"/><rect x="22" y="6" width="2" height="8" fill="#ff0000"/></svg>',
+    # Resistors: 80x20. Spans 4 holes (60px gap between pins)
+    "RES_300": '<svg width="80" height="20" viewBox="0 0 80 20" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="9" width="60" height="2" fill="#aaa"/><rect x="20" y="4" width="40" height="12" rx="4" fill="#69a8e6"/><rect x="28" y="4" width="4" height="12" fill="#ff8c00"/><rect x="38" y="4" width="4" height="12" fill="#000000"/><rect x="48" y="4" width="4" height="12" fill="#8b4513"/></svg>',
     
-    # Battery: 1 gap length between terminals
-    "BATTERY": '<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="0" width="36" height="25" rx="2" fill="#222" stroke="#e0e0e0" stroke-width="1"/><rect x="2" y="0" width="18" height="25" rx="2" fill="#ff4444"/><text x="6" y="16" fill="white" font-weight="bold" font-size="12">+</text><text x="24" y="16" fill="white" font-weight="bold" font-size="12">-</text><rect x="9" y="25" width="2" height="15" fill="#aaa"/><rect x="29" y="25" width="2" height="15" fill="#aaa"/></svg>',
+    "RES_1K": '<svg width="80" height="20" viewBox="0 0 80 20" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="9" width="60" height="2" fill="#aaa"/><rect x="20" y="4" width="40" height="12" rx="4" fill="#69a8e6"/><rect x="28" y="4" width="4" height="12" fill="#8b4513"/><rect x="38" y="4" width="4" height="12" fill="#000000"/><rect x="48" y="4" width="4" height="12" fill="#ff0000"/></svg>',
     
-    "SWITCH": '<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="10" width="30" height="15" rx="2" fill="#333"/><rect x="15" y="12" width="10" height="11" fill="#555"/><rect x="16" y="14" width="8" height="7" fill="white" opacity="0.8"/><rect x="9" y="0" width="2" height="10" fill="#aaa"/><rect x="29" y="0" width="2" height="10" fill="#aaa"/></svg>',
+    # Switch: 60x20. Spans 3 holes (20px gaps)
+    "SWITCH": '<svg width="60" height="20" viewBox="0 0 60 20" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="9" width="2" height="11" fill="#aaa"/><rect x="30" y="9" width="2" height="11" fill="#aaa"/><rect x="50" y="9" width="2" height="11" fill="#aaa"/><rect x="5" y="0" width="50" height="14" rx="2" fill="#333"/><rect x="15" y="2" width="12" height="10" fill="#555"/></svg>',
+
+    # Battery: 40x60. Perfectly aligned 20px gap for standard holes
+    "BATTERY": '<svg width="40" height="60" viewBox="0 0 40 60" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="36" height="44" rx="2" fill="#222" stroke="#e0e0e0" stroke-width="1"/><rect x="2" y="2" width="18" height="44" rx="2" fill="#ff4444"/><text x="6" y="28" fill="white" font-weight="bold" font-size="14">+</text><text x="24" y="28" fill="white" font-weight="bold" font-size="14">-</text><rect x="9" y="46" width="2" height="14" fill="#aaa"/><rect x="29" y="46" width="2" height="14" fill="#aaa"/></svg>',
 }
 
 # --- 3. STATE MANAGEMENT ---
@@ -119,22 +120,23 @@ simulator_html = f"""
         .hole.wiring-active {{ background: #00ff00 !important; box-shadow: 0 0 10px #00ff00; }}
         .hole.connected {{ background: #add8e6 !important; box-shadow: 0 0 6px #add8e6; }}
         
-        .comp-item {{ background: #444; padding: 10px; margin-bottom: 10px; border-radius: 6px; cursor: pointer; text-align: center; border: 1px solid #555; font-size: 11px; }}
+        .comp-item {{ background: #444; padding: 10px; margin-bottom: 10px; border-radius: 6px; cursor: pointer; text-align: center; border: 1px solid #555; font-size: 11px; display: flex; flex-direction: column; align-items: center; }}
         .comp-item:hover {{ background: #505050; border-color: #007bff; }}
         
-        .active-comp {{ 
-            position: absolute; cursor: grab; z-index: 50;
-            transform-origin: center center;
-            transition: filter 0.1s;
-        }}
+        .active-comp {{ position: absolute; cursor: grab; z-index: 50; transform-origin: top left; transition: filter 0.1s; }}
         .active-comp.floating {{ filter: drop-shadow(4px 8px 6px rgba(0,0,0,0.6)); z-index: 60; opacity: 0.9; }}
-        .active-comp.plugged {{ filter: drop-shadow(1px 2px 2px rgba(0,0,0,0.8)); transform: scale(0.98); }}
+        .active-comp.plugged {{ filter: drop-shadow(1px 2px 2px rgba(0,0,0,0.8)); }}
         .active-comp.selected {{ filter: drop-shadow(0px 0px 6px #007bff) brightness(1.2); }}
         .active-comp:active {{ cursor: grabbing; }}
         
         .pin-collider {{ position: absolute; width: 4px; height: 4px; opacity: 0; pointer-events: none; }}
         
-        svg.wire-layer {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 40; }}
+        svg.overlay-layer {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }}
+        #wire-layer {{ z-index: 40; }}
+        #flow-layer {{ z-index: 45; }}
+
+        .flow-line {{ stroke-dasharray: 10 10; animation: flowAnim 0.5s linear infinite; }}
+        @keyframes flowAnim {{ from {{ stroke-dashoffset: 20; }} to {{ stroke-dashoffset: 0; }} }}
     </style>
 </head>
 <body>
@@ -156,24 +158,21 @@ simulator_html = f"""
                 <button class="tool-btn" onclick="submitCircuit()" style="background:#28a745;">🧠 Ask AI Tutor</button>
             </div>
             
-            <svg class="wire-layer" id="wire-layer"></svg>
+            <svg class="overlay-layer" id="wire-layer"></svg>
+            <svg class="overlay-layer" id="flow-layer"></svg>
             
             <div class="breadboard-container" id="bb">
                 <div class="bb-section bb-rails" id="rail-L"></div>
-                
                 <div class="bb-wrapper">
                     <div class="col-headers"><div>a</div><div>b</div><div>c</div><div>d</div><div>e</div></div>
                     <div class="bb-section bb-main" id="main-L"></div>
                 </div>
-                
                 <div class="row-numbers" id="nums"></div>
                 <div class="trench"></div>
-                
                 <div class="bb-wrapper">
                     <div class="col-headers"><div>f</div><div>g</div><div>h</div><div>i</div><div>j</div></div>
                     <div class="bb-section bb-main" id="main-R"></div>
                 </div>
-                
                 <div class="bb-section bb-rails" id="rail-R"></div>
             </div>
             
@@ -203,9 +202,6 @@ simulator_html = f"""
                     const h = document.createElement('div');
                     h.className = 'hole';
                     h.id = `hole_${{prefix}}_${{r}}_${{c}}`;
-                    h.dataset.row = r;
-                    h.dataset.col = c;
-                    h.dataset.zone = prefix;
                     h.onmousedown = (e) => handleHoleClick(e, h);
                     container.appendChild(h);
                 }}
@@ -219,12 +215,10 @@ simulator_html = f"""
 
         const numContainer = document.getElementById('nums');
         for(let i=1; i<=30; i++) {{
-            const div = document.createElement('div');
-            div.innerText = i;
-            numContainer.appendChild(div);
+            const div = document.createElement('div'); div.innerText = i; numContainer.appendChild(div);
         }}
 
-        // --- 2. HISTORY MANAGEMENT ---
+        // --- 2. HISTORY & UI ---
         function saveState() {{
             history = history.slice(0, historyIndex + 1);
             history.push({{ comps: JSON.parse(JSON.stringify(state)), wires: JSON.parse(JSON.stringify(wires)) }});
@@ -237,13 +231,10 @@ simulator_html = f"""
                 historyIndex--;
                 state = JSON.parse(JSON.stringify(history[historyIndex].comps));
                 wires = JSON.parse(JSON.stringify(history[historyIndex].wires));
-                renderComponents();
-                renderWires();
-                updateUI();
+                renderComponents(); renderWires(); updateUI();
             }}
         }}
 
-        // --- 3. WIRING LOGIC ---
         function handleHoleClick(e, holeEl) {{
             e.stopPropagation();
             if (wiringStartHole === null) {{
@@ -252,8 +243,7 @@ simulator_html = f"""
             }} else {{
                 if (wiringStartHole !== holeEl.id) {{
                     wires.push({{ start: wiringStartHole, end: holeEl.id }});
-                    saveState();
-                    renderWires();
+                    saveState(); renderWires();
                 }}
                 document.getElementById(wiringStartHole).classList.remove('wiring-active');
                 wiringStartHole = null;
@@ -266,13 +256,8 @@ simulator_html = f"""
             const canvasRect = document.getElementById('canvas').getBoundingClientRect();
             
             wires.forEach((w, index) => {{
-                const startEl = document.getElementById(w.start);
-                const endEl = document.getElementById(w.end);
-                if(!startEl || !endEl) return;
-                
-                const sRect = startEl.getBoundingClientRect();
-                const eRect = endEl.getBoundingClientRect();
-                
+                const sRect = document.getElementById(w.start).getBoundingClientRect();
+                const eRect = document.getElementById(w.end).getBoundingClientRect();
                 const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
                 line.setAttribute('x1', sRect.left - canvasRect.left + 6);
                 line.setAttribute('y1', sRect.top - canvasRect.top + 6);
@@ -281,163 +266,203 @@ simulator_html = f"""
                 line.setAttribute('stroke', '#2ecc71');
                 line.setAttribute('stroke-width', '4');
                 line.setAttribute('stroke-linecap', 'round');
-                
                 line.style.pointerEvents = 'auto';
                 line.style.cursor = 'pointer';
                 line.ondblclick = () => {{ wires.splice(index, 1); saveState(); renderWires(); }};
-                
                 layer.appendChild(line);
             }});
         }}
 
-        // --- 4. COMPONENT LOGIC ---
+        // --- 3. COMPONENT & PIN REGISTRY ---
         function getPinsForComponent(type) {{
-            if (type.includes('RES')) return [{{x: 10, y: 10}}, {{x: 30, y: 10}}];
-            if (type === 'SWITCH') return [{{x: 10, y: 10}}, {{x: 30, y: 10}}];
-            // LEDs and Battery have legs mapping to bottom
-            return [{{x: 10, y: 30}}, {{x: 30, y: 30}}];
+            if (type.includes('RES')) return [{{x: 10, y: 10}}, {{x: 70, y: 10}}]; // 60px gap = 4 holes
+            if (type === 'SWITCH') return [{{x: 10, y: 10}}, {{x: 30, y: 10}}, {{x: 50, y: 10}}]; // 3 holes
+            if (type === 'BATTERY') return [{{x: 10, y: 50}}, {{x: 30, y: 50}}]; // 20px gap, vertical alignment
+            return [{{x: 10, y: 30}}, {{x: 30, y: 30}}]; // LED
         }}
 
         function spawnComp(type) {{
-            const newComp = {{ 
-                id: 'comp_' + Date.now(), 
-                type: type, 
-                x: 100, y: 100, 
-                rot: 0, lit: false,
-                pins: getPinsForComponent(type)
-            }};
-            state.push(newComp);
-            selectedId = newComp.id;
-            saveState();
-            renderComponents();
-            updateUI();
+            state.push({{ id: 'comp_' + Date.now(), type: type, x: 100, y: 100, rot: 0, lit: false, broken: false, pins: getPinsForComponent(type), connectedHoles: [] }});
+            selectedId = state[state.length-1].id;
+            saveState(); renderComponents(); updateUI();
         }}
 
         function renderComponents() {{
             const layer = document.getElementById('component-layer');
-            
             state.forEach(comp => {{
                 let el = document.getElementById(comp.id);
                 if (!el) {{
                     el = document.createElement('div');
-                    el.id = comp.id;
-                    layer.appendChild(el);
+                    el.id = comp.id; layer.appendChild(el);
                     el.onmousedown = (e) => startDrag(e, comp);
                 }}
                 
-                let classes = 'active-comp plugged'; 
-                if (comp.id === selectedId) classes += ' selected';
-                if (draggingElement && draggingElement.id === comp.id) classes = 'active-comp floating selected';
-                el.className = classes;
+                el.className = `active-comp ${{draggingElement?.id === comp.id ? 'floating' : 'plugged'}} ${{comp.id === selectedId ? 'selected' : ''}}`;
                 
-                if(comp.type === 'LED') {{
-                    el.innerHTML = comp.lit ? ASSET_MAP['LED_ON'] : ASSET_MAP['LED_OFF'];
-                }} else {{
-                    el.innerHTML = ASSET_MAP[comp.type];
-                }}
+                if (comp.type === 'LED') {{
+                    el.innerHTML = comp.broken ? ASSET_MAP['LED_BROKEN'] : (comp.lit ? ASSET_MAP['LED_ON'] : ASSET_MAP['LED_OFF']);
+                }} else {{ el.innerHTML = ASSET_MAP[comp.type]; }}
 
-                // Inject collision pins
+                el.querySelectorAll('.pin-collider').forEach(p => p.remove());
                 comp.pins.forEach(p => {{
                     let dot = document.createElement('div');
                     dot.className = 'pin-collider';
-                    dot.style.left = p.x + 'px';
-                    dot.style.top = p.y + 'px';
+                    dot.style.left = p.x + 'px'; dot.style.top = p.y + 'px';
                     el.appendChild(dot);
                 }});
 
-                el.style.left = comp.x + 'px';
-                el.style.top = comp.y + 'px';
+                el.style.left = comp.x + 'px'; el.style.top = comp.y + 'px';
+                // Transform origin adjusted to absolute center for consistent rotation
+                el.style.transformOrigin = `center center`; 
                 el.style.transform = `rotate(${{comp.rot}}deg)`;
             }});
-
-            Array.from(layer.children).forEach(child => {{
-                if (!state.find(c => c.id === child.id)) child.remove();
-            }});
             
-            updateConnectedHoles();
+            Array.from(layer.children).forEach(child => {{ if (!state.find(c => c.id === child.id)) child.remove(); }});
+            updateConnections();
         }}
 
-        // Calculate Hole Glow based on Pin overlap
-        function updateConnectedHoles() {{
+        // --- 4. PHYSICS & GRAPH LOGIC ---
+        function updateConnections() {{
             const holes = Array.from(document.querySelectorAll('.hole'));
             holes.forEach(h => h.classList.remove('connected'));
-            
-            // Only evaluate plugged components
-            const colliders = document.querySelectorAll('.active-comp.plugged .pin-collider');
-            colliders.forEach(col => {{
-                const cRect = col.getBoundingClientRect();
-                holes.forEach(h => {{
-                    const hRect = h.getBoundingClientRect();
-                    // Tolerance of 8px for snapping distance check
-                    if (Math.abs(cRect.x - hRect.x) < 8 && Math.abs(cRect.y - hRect.y) < 8) {{
-                        h.classList.add('connected');
-                    }}
+            const canvasRect = document.getElementById('canvas').getBoundingClientRect();
+
+            state.forEach(comp => {{
+                comp.connectedHoles = [];
+                if(draggingElement && draggingElement.id === comp.id) return;
+
+                const colEls = document.getElementById(comp.id).querySelectorAll('.pin-collider');
+                colEls.forEach(colEl => {{
+                    const cRect = colEl.getBoundingClientRect();
+                    const px = cRect.left - canvasRect.left + 2; 
+                    const py = cRect.top - canvasRect.top + 2;
+
+                    let foundHole = null;
+                    holes.forEach(h => {{
+                        const hRect = h.getBoundingClientRect();
+                        if (Math.abs(px - (hRect.left - canvasRect.left + 6)) < 8 && Math.abs(py - (hRect.top - canvasRect.top + 6)) < 8) {{
+                            h.classList.add('connected');
+                            foundHole = h.id;
+                        }}
+                    }});
+                    comp.connectedHoles.push(foundHole);
                 }});
             }});
         }}
 
-        // --- 5. INTERACTION & PHYSICS ---
+        function simulateCircuit() {{
+            updateConnections();
+            let graph = {{}};
+            const addEdge = (u, v, weight) => {{
+                if(!u || !v) return;
+                if(!graph[u]) graph[u] = []; if(!graph[v]) graph[v] = [];
+                graph[u].push({{ to: v, weight }}); graph[v].push({{ to: u, weight }});
+            }};
+
+            // Internal Breadboard Connections
+            for(let r=0; r<30; r++) {{
+                for(let c=0; c<4; c++) {{
+                    addEdge(`hole_LMAIN_${{r}}_${{c}}`, `hole_LMAIN_${{r}}_${{c+1}}`, 0);
+                    addEdge(`hole_RMAIN_${{r}}_${{c}}`, `hole_RMAIN_${{r}}_${{c+1}}`, 0);
+                }}
+                if(r<29) {{
+                    addEdge(`hole_LRAIL_${{r}}_0`, `hole_LRAIL_${{r+1}}_0`, 0);
+                    addEdge(`hole_LRAIL_${{r}}_1`, `hole_LRAIL_${{r+1}}_1`, 0);
+                    addEdge(`hole_RRAIL_${{r}}_0`, `hole_RRAIL_${{r+1}}_0`, 0);
+                    addEdge(`hole_RRAIL_${{r}}_1`, `hole_RRAIL_${{r+1}}_1`, 0);
+                }}
+            }}
+
+            wires.forEach(w => addEdge(w.start, w.end, 0));
+
+            let startHole = null, endHole = null;
+            state.forEach(c => {{
+                if(c.connectedHoles.includes(null) || c.connectedHoles.length === 0) return;
+                if(c.type === 'BATTERY') {{ startHole = c.connectedHoles[0]; endHole = c.connectedHoles[1]; }}
+                else if(c.type.includes('RES')) addEdge(c.connectedHoles[0], c.connectedHoles[1], 100);
+                else if(c.type === 'SWITCH') {{ addEdge(c.connectedHoles[0], c.connectedHoles[1], 0); addEdge(c.connectedHoles[1], c.connectedHoles[2], 0); }}
+                else if(c.type === 'LED') addEdge(c.connectedHoles[0], c.connectedHoles[1], 10);
+            }});
+
+            if(!startHole || !endHole) return {{ success: false }};
+
+            // BFS Traversal
+            let queue = [{{ id: startHole, path: [startHole], weight: 0 }}];
+            let visited = new Set();
+            let validPath = null;
+
+            while(queue.length > 0) {{
+                let curr = queue.shift();
+                if(curr.id === endHole) {{ validPath = curr; break; }}
+                if(visited.has(curr.id)) continue;
+                visited.add(curr.id);
+
+                (graph[curr.id] || []).forEach(edge => {{
+                    if(!visited.has(edge.to)) queue.push({{ id: edge.to, path: [...curr.path, edge.to], weight: curr.weight + edge.weight }});
+                }});
+            }}
+            return validPath ? {{ success: true, pathNodes: validPath.path, weight: validPath.weight }} : {{ success: false }};
+        }}
+
+        function drawFlow(pathNodes) {{
+            const layer = document.getElementById('flow-layer'); layer.innerHTML = '';
+            const canvasRect = document.getElementById('canvas').getBoundingClientRect();
+            let pathData = "";
+
+            for(let i=0; i<pathNodes.length; i++) {{
+                const h = document.getElementById(pathNodes[i]);
+                if(!h) continue;
+                const r = h.getBoundingClientRect();
+                const x = r.left - canvasRect.left + 6;
+                const y = r.top - canvasRect.top + 6;
+                pathData += (i === 0 ? `M ${{x}} ${{y}} ` : `L ${{x}} ${{y}} `);
+            }}
+
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', pathData); path.setAttribute('fill', 'none');
+            path.setAttribute('stroke', '#ffff00'); path.setAttribute('stroke-width', '4');
+            path.setAttribute('stroke-linecap', 'round'); path.setAttribute('stroke-linejoin', 'round');
+            path.style.filter = 'drop-shadow(0 0 5px #ffff00)';
+            path.classList.add('flow-line');
+            layer.appendChild(path);
+        }}
+
+        // --- 5. INTERACTION LOGIC ---
         function startDrag(e, comp) {{
-            if (e.button !== 0) return;
-            e.stopPropagation();
-            selectedId = comp.id;
-            draggingElement = comp;
-            dragOffset.x = e.clientX - comp.x;
-            dragOffset.y = e.clientY - comp.y;
-            
+            if (e.button !== 0) return; e.stopPropagation();
+            selectedId = comp.id; draggingElement = comp;
+            dragOffset.x = e.clientX - comp.x; dragOffset.y = e.clientY - comp.y;
             if (isSimulating) toggleSimulation(); 
-            
-            renderComponents();
-            updateUI();
+            renderComponents(); updateUI();
         }}
 
         document.onmousemove = (e) => {{
             if (!draggingElement) return;
-            let rawX = e.clientX - dragOffset.x;
-            let rawY = e.clientY - dragOffset.y;
-            const el = document.getElementById(draggingElement.id);
-            el.style.left = rawX + 'px';
-            el.style.top = rawY + 'px';
+            document.getElementById(draggingElement.id).style.left = (e.clientX - dragOffset.x) + 'px';
+            document.getElementById(draggingElement.id).style.top = (e.clientY - dragOffset.y) + 'px';
         }};
 
         document.onmouseup = (e) => {{
             if (!draggingElement) return;
-            let rawX = e.clientX - dragOffset.x;
-            let rawY = e.clientY - dragOffset.y;
-            
-            // Grid Snapping
-            draggingElement.x = Math.round(rawX / GRID) * GRID;
-            draggingElement.y = Math.round(rawY / GRID) * GRID;
-            
-            draggingElement = null;
-            saveState();
-            renderComponents();
+            draggingElement.x = Math.round((e.clientX - dragOffset.x) / GRID) * GRID;
+            draggingElement.y = Math.round((e.clientY - dragOffset.y) / GRID) * GRID;
+            draggingElement = null; saveState(); renderComponents();
         }};
 
         document.getElementById('canvas').onmousedown = (e) => {{
-            if(e.target.id === 'canvas' || e.target.classList.contains('breadboard-container')) {{
-                selectedId = null;
-                renderComponents();
-                updateUI();
-            }}
+            if(e.target.id === 'canvas' || e.target.classList.contains('breadboard-container')) {{ selectedId = null; renderComponents(); updateUI(); }}
         }};
 
-        // --- 6. TOOLBAR & SHORTCUTS ---
         function rotateSelected() {{
             if (!selectedId) return;
             const comp = state.find(c => c.id === selectedId);
-            comp.rot = (comp.rot + 90) % 360;
-            saveState();
-            renderComponents();
+            comp.rot = (comp.rot + 90) % 360; saveState(); renderComponents();
         }}
 
         function deleteSelected() {{
             if (!selectedId) return;
             state = state.filter(c => c.id !== selectedId);
-            selectedId = null;
-            saveState();
-            renderComponents();
-            updateUI();
+            selectedId = null; saveState(); renderComponents(); updateUI();
         }}
 
         document.addEventListener('keydown', (e) => {{
@@ -451,45 +476,37 @@ simulator_html = f"""
             document.getElementById('btn-undo').disabled = historyIndex <= 0;
         }}
 
-        // --- 7. SIMULATION TOGGLE ---
         function toggleSimulation() {{
             isSimulating = !isSimulating;
             const btn = document.getElementById('btn-sim');
-            const leds = state.filter(c => c.type === 'LED');
-            
+            document.getElementById('flow-layer').innerHTML = '';
+
             if (isSimulating) {{
-                const hasBattery = state.some(c => c.type === 'BATTERY');
-                const hasRes = state.some(c => c.type.includes('RES'));
-                
-                if (hasBattery && hasRes && leds.length > 0 && wires.length >= 2) {{
-                    leds.forEach(led => led.lit = true);
-                    btn.innerText = "⏹ Stop Simulation (Complete!)";
-                    btn.style.background = "#28a745";
+                let res = simulateCircuit();
+                if (res.success) {{
+                    const isBurnedOut = res.weight < 50; // Triggers if no resistor exists in path
+                    state.forEach(c => {{ 
+                        if(c.type === 'LED' && res.pathNodes.includes(c.connectedHoles[0])) {{ c.lit = !isBurnedOut; c.broken = isBurnedOut; }}
+                    }});
+                    
+                    if(isBurnedOut) {{
+                        btn.innerText = "⏹ Stop (SHORT CIRCUIT!)"; btn.style.background = "#dc3545";
+                    }} else {{
+                        btn.innerText = "⏹ Stop (Complete!)"; btn.style.background = "#28a745";
+                    }}
+                    drawFlow(res.pathNodes);
                 }} else {{
-                    leds.forEach(led => led.lit = false);
-                    btn.innerText = "⏹ Stop Simulation (Broken)";
-                    btn.style.background = "#dc3545";
+                    state.forEach(c => {{ if(c.type === 'LED') {{c.lit = false; c.broken = false;}} }});
+                    btn.innerText = "⏹ Stop (Broken Path)"; btn.style.background = "#dc3545";
                 }}
             }} else {{
-                leds.forEach(led => led.lit = false);
-                btn.innerText = "⚡ Start Simulation";
-                btn.style.background = "#f39c12";
+                state.forEach(c => {{ if(c.type === 'LED') {{c.lit = false; c.broken = false;}} }});
+                btn.innerText = "⚡ Start Simulation"; btn.style.background = "#f39c12";
             }}
             renderComponents();
         }}
 
-        // --- 8. SUBMISSION ---
-        function submitCircuit() {{
-            const cleanData = {{ 
-                components: state.map(c => ({{ type: c.type, x: c.x, y: c.y, rot: c.rot }})),
-                wires: wires
-            }};
-            const url = window.parent.location.origin + window.parent.location.pathname + '?circuit_data=' + encodeURIComponent(JSON.stringify(cleanData));
-            window.parent.location.assign(url);
-        }}
-
-        saveState();
-        renderComponents();
+        saveState(); renderComponents();
     </script>
 </body>
 </html>
