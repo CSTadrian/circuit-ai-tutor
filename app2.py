@@ -23,22 +23,18 @@ client = get_ai_client()
 
 # --- 2. VECTOR ASSETS (Grid Aligned to 20px) ---
 ASSETS = {
-    # LED: Clear long leg (anode) and short leg (cathode), 20px gap.
     "LED_OFF": '<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="20" width="2" height="20" fill="#aaa"/><rect x="29" y="25" width="2" height="15" fill="#aaa"/><path d="M10 25 Q 10 5 20 5 Q 30 5 30 25 Z" fill="#882222" opacity="0.9"/><circle cx="20" cy="12" r="4" fill="white" opacity="0.2"/></svg>',
     
     "LED_ON": '<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#ffaaaa"/><stop offset="100%" stop-color="#ff0000"/></radialGradient></defs><rect x="9" y="20" width="2" height="20" fill="#aaa"/><rect x="29" y="25" width="2" height="15" fill="#aaa"/><path d="M10 25 Q 10 5 20 5 Q 30 5 30 25 Z" fill="url(#glow)" filter="drop-shadow(0px 0px 8px red)"/><circle cx="20" cy="12" r="4" fill="white" opacity="0.8"/></svg>',
     
     "LED_BROKEN": '<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="20" width="2" height="20" fill="#aaa"/><rect x="29" y="25" width="2" height="15" fill="#aaa"/><path d="M10 25 Q 10 5 20 5 Q 30 5 30 25 Z" fill="#333333" opacity="0.9"/><path d="M18 5 L23 12 L17 18 L22 25" stroke="#000" stroke-width="2" fill="none"/></svg>',
     
-    # Resistors: 80x20. Spans 4 holes (60px gap between pins)
-    "RES_300": '<svg width="80" height="20" viewBox="0 0 80 20" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="9" width="60" height="2" fill="#aaa"/><rect x="20" y="4" width="40" height="12" rx="4" fill="#69a8e6"/><rect x="28" y="4" width="4" height="12" fill="#ff8c00"/><rect x="38" y="4" width="4" height="12" fill="#000000"/><rect x="48" y="4" width="4" height="12" fill="#8b4513"/></svg>',
+    "RES_300": '<svg width="80" height="20" viewBox="0 0 80 20" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="9" width="60" height="2" fill="#aaa"/><rect x="20" y="4" width="40" height="12" rx="4" fill="#69a8e6"/><rect x="28" y="4" width="6" height="12" fill="#ff8c00"/><rect x="40" y="4" width="6" height="12" fill="#000000"/><rect x="52" y="4" width="6" height="12" fill="#8b4513"/></svg>',
     
-    "RES_1K": '<svg width="80" height="20" viewBox="0 0 80 20" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="9" width="60" height="2" fill="#aaa"/><rect x="20" y="4" width="40" height="12" rx="4" fill="#69a8e6"/><rect x="28" y="4" width="4" height="12" fill="#8b4513"/><rect x="38" y="4" width="4" height="12" fill="#000000"/><rect x="48" y="4" width="4" height="12" fill="#ff0000"/></svg>',
+    "RES_1K": '<svg width="80" height="20" viewBox="0 0 80 20" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="9" width="60" height="2" fill="#aaa"/><rect x="20" y="4" width="40" height="12" rx="4" fill="#69a8e6"/><rect x="28" y="4" width="6" height="12" fill="#8b4513"/><rect x="40" y="4" width="6" height="12" fill="#000000"/><rect x="52" y="4" width="6" height="12" fill="#ff0000"/></svg>',
     
-    # Switch: 60x20. Spans 3 holes (20px gaps)
     "SWITCH": '<svg width="60" height="20" viewBox="0 0 60 20" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="9" width="2" height="11" fill="#aaa"/><rect x="30" y="9" width="2" height="11" fill="#aaa"/><rect x="50" y="9" width="2" height="11" fill="#aaa"/><rect x="5" y="0" width="50" height="14" rx="2" fill="#333"/><rect x="15" y="2" width="12" height="10" fill="#555"/></svg>',
 
-    # Battery: 40x60. Perfectly aligned 20px gap for standard holes
     "BATTERY": '<svg width="40" height="60" viewBox="0 0 40 60" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="36" height="44" rx="2" fill="#222" stroke="#e0e0e0" stroke-width="1"/><rect x="2" y="2" width="18" height="44" rx="2" fill="#ff4444"/><text x="6" y="28" fill="white" font-weight="bold" font-size="14">+</text><text x="24" y="28" fill="white" font-weight="bold" font-size="14">-</text><rect x="9" y="46" width="2" height="14" fill="#aaa"/><rect x="29" y="46" width="2" height="14" fill="#aaa"/></svg>',
 }
 
@@ -60,25 +56,7 @@ if "circuit_data" in query_params:
     except Exception as e:
         pass
 
-# --- 4. UI & SIDEBAR ---
-with st.sidebar:
-    st.title("🔋 Pro-STEM Lab")
-    st.metric("AI Tokens", st.session_state.tokens)
-    st.markdown("""
-    **Instructions:**
-    1. Drag components to the board (they lock in).
-    2. Click holes to draw wires.
-    3. Click **Start Simulation** to test current flow!
-    """)
-    if st.button("Reset Lab State"):
-        st.session_state.tokens = 15
-        st.session_state.feedback = ""
-        st.rerun()
-
-if st.session_state.feedback:
-    st.info(f"🤖 **AI Tutor:** {st.session_state.feedback}")
-
-# --- 5. THE SIMULATOR ENGINE ---
+# --- 4. THE SIMULATOR ENGINE ---
 assets_json = json.dumps(ASSETS)
 
 simulator_html = f"""
@@ -86,7 +64,7 @@ simulator_html = f"""
 <html>
 <head>
     <style>
-        :root {{ --grid: 20px; }}
+        :root {{ --grid: 20px; --bb-gap: 2px; }}
         body {{ font-family: 'Segoe UI', sans-serif; background: #222; color: white; margin: 0; overflow: hidden; user-select: none; }}
         #workspace {{ display: flex; height: 100vh; }}
         #palette {{ width: 220px; background: #333; padding: 15px; border-right: 2px solid #444; z-index: 10; box-shadow: 2px 0 5px rgba(0,0,0,0.5); }}
@@ -95,23 +73,20 @@ simulator_html = f"""
         #toolbar {{ position: absolute; top: 15px; left: 15px; background: #333; padding: 8px; border-radius: 8px; display: flex; gap: 10px; z-index: 100; border: 1px solid #555; }}
         .tool-btn {{ background: #444; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; transition: 0.1s; }}
         .tool-btn:hover {{ background: #007bff; }}
-        .tool-btn:disabled {{ background: #2a2a2a; color: #666; cursor: not-allowed; }}
-        #btn-sim {{ background: #f39c12; color: black; }}
-        #btn-sim:hover {{ filter: brightness(1.1); }}
         
         .breadboard-container {{ 
             position: absolute; top: 80px; left: 80px; background: #fdfdfd; 
             border-radius: 8px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            display: flex; gap: var(--grid); border: 2px solid #e0e0e0;
+            display: flex; gap: var(--bb-gap); border: 2px solid #e0e0e0;
         }}
         
         .bb-wrapper {{ display: flex; flex-direction: column; }}
-        .col-headers {{ display: grid; grid-template-columns: repeat(5, var(--grid)); font-size: 11px; color: #555; text-align: center; font-weight: bold; font-family: sans-serif; margin-bottom: 4px; gap: 2px; }}
+        .col-headers {{ display: grid; grid-template-columns: repeat(5, var(--grid)); font-size: 11px; color: #555; text-align: center; font-weight: bold; font-family: sans-serif; margin-bottom: 4px; gap: var(--bb-gap); }}
         
         .bb-section {{ display: grid; grid-template-rows: repeat(30, var(--grid)); position: relative; }}
-        .bb-rails {{ grid-template-columns: repeat(2, var(--grid)); gap: 2px; border-left: 2px solid #ff4444; border-right: 2px solid #4444ff; padding: 0 4px; margin-top: 18px; }}
-        .bb-main {{ grid-template-columns: repeat(5, var(--grid)); gap: 2px; }}
-        .trench {{ width: var(--grid); background: #ddd; box-shadow: inset 2px 0 5px rgba(0,0,0,0.1); margin-top: 18px; }}
+        .bb-rails {{ grid-template-columns: repeat(2, var(--grid)); gap: var(--bb-gap); border-left: 2px solid #ff4444; border-right: 2px solid #4444ff; padding: 0 4px; margin-top: 18px; }}
+        .bb-main {{ grid-template-columns: repeat(5, var(--grid)); gap: var(--bb-gap); }}
+        .trench {{ width: var(--grid); background: #eee; box-shadow: inset 0 0 5px rgba(0,0,0,0.1); margin-top: 18px; }}
         
         .row-numbers {{ display: grid; grid-template-rows: repeat(30, var(--grid)); width: 15px; text-align: center; font-size: 9px; color: #888; align-items: center; font-family: monospace; margin-top: 18px; }}
         
@@ -121,13 +96,9 @@ simulator_html = f"""
         .hole.connected {{ background: #add8e6 !important; box-shadow: 0 0 6px #add8e6; }}
         
         .comp-item {{ background: #444; padding: 10px; margin-bottom: 10px; border-radius: 6px; cursor: pointer; text-align: center; border: 1px solid #555; font-size: 11px; display: flex; flex-direction: column; align-items: center; }}
-        .comp-item:hover {{ background: #505050; border-color: #007bff; }}
         
-        .active-comp {{ position: absolute; cursor: grab; z-index: 50; transform-origin: top left; transition: filter 0.1s; }}
-        .active-comp.floating {{ filter: drop-shadow(4px 8px 6px rgba(0,0,0,0.6)); z-index: 60; opacity: 0.9; }}
-        .active-comp.plugged {{ filter: drop-shadow(1px 2px 2px rgba(0,0,0,0.8)); }}
+        .active-comp {{ position: absolute; cursor: grab; z-index: 50; transform-origin: center center; }}
         .active-comp.selected {{ filter: drop-shadow(0px 0px 6px #007bff) brightness(1.2); }}
-        .active-comp:active {{ cursor: grabbing; }}
         
         .pin-collider {{ position: absolute; width: 4px; height: 4px; opacity: 0; pointer-events: none; }}
         
@@ -154,8 +125,7 @@ simulator_html = f"""
                 <button class="tool-btn" onclick="undo()" id="btn-undo">↶ Undo</button>
                 <button class="tool-btn" onclick="rotateSelected()" id="btn-rot" disabled>↻ Rotate 90°</button>
                 <button class="tool-btn" onclick="deleteSelected()" id="btn-del" disabled style="background:#dc3545;">✖ Delete</button>
-                <button class="tool-btn" onclick="toggleSimulation()" id="btn-sim">⚡ Start Simulation</button>
-                <button class="tool-btn" onclick="submitCircuit()" style="background:#28a745;">🧠 Ask AI Tutor</button>
+                <button class="tool-btn" onclick="toggleSimulation()" id="btn-sim" style="background:#f39c12; color:black;">⚡ Start Simulation</button>
             </div>
             
             <svg class="overlay-layer" id="wire-layer"></svg>
@@ -194,7 +164,6 @@ simulator_html = f"""
         let wiringStartHole = null;
         let isSimulating = false;
 
-        // --- 1. BUILD BREADBOARD & HOLES ---
         function createHoles(containerId, cols, prefix) {{
             const container = document.getElementById(containerId);
             for (let r = 0; r < 30; r++) {{
@@ -218,7 +187,6 @@ simulator_html = f"""
             const div = document.createElement('div'); div.innerText = i; numContainer.appendChild(div);
         }}
 
-        // --- 2. HISTORY & UI ---
         function saveState() {{
             history = history.slice(0, historyIndex + 1);
             history.push({{ comps: JSON.parse(JSON.stringify(state)), wires: JSON.parse(JSON.stringify(wires)) }});
@@ -273,12 +241,11 @@ simulator_html = f"""
             }});
         }}
 
-        // --- 3. COMPONENT & PIN REGISTRY ---
         function getPinsForComponent(type) {{
-            if (type.includes('RES')) return [{{x: 10, y: 10}}, {{x: 70, y: 10}}]; // 60px gap = 4 holes
-            if (type === 'SWITCH') return [{{x: 10, y: 10}}, {{x: 30, y: 10}}, {{x: 50, y: 10}}]; // 3 holes
-            if (type === 'BATTERY') return [{{x: 10, y: 50}}, {{x: 30, y: 50}}]; // 20px gap, vertical alignment
-            return [{{x: 10, y: 30}}, {{x: 30, y: 30}}]; // LED
+            if (type.includes('RES')) return [{{x: 10, y: 10}}, {{x: 70, y: 10}}];
+            if (type === 'SWITCH') return [{{x: 10, y: 10}}, {{x: 30, y: 10}}, {{x: 50, y: 10}}];
+            if (type === 'BATTERY') return [{{x: 10, y: 50}}, {{x: 30, y: 50}}];
+            return [{{x: 10, y: 30}}, {{x: 30, y: 30}}];
         }}
 
         function spawnComp(type) {{
@@ -297,8 +264,7 @@ simulator_html = f"""
                     el.onmousedown = (e) => startDrag(e, comp);
                 }}
                 
-                el.className = `active-comp ${{draggingElement?.id === comp.id ? 'floating' : 'plugged'}} ${{comp.id === selectedId ? 'selected' : ''}}`;
-                
+                el.className = `active-comp ${{comp.id === selectedId ? 'selected' : ''}}`;
                 if (comp.type === 'LED') {{
                     el.innerHTML = comp.broken ? ASSET_MAP['LED_BROKEN'] : (comp.lit ? ASSET_MAP['LED_ON'] : ASSET_MAP['LED_OFF']);
                 }} else {{ el.innerHTML = ASSET_MAP[comp.type]; }}
@@ -312,8 +278,6 @@ simulator_html = f"""
                 }});
 
                 el.style.left = comp.x + 'px'; el.style.top = comp.y + 'px';
-                // Transform origin adjusted to absolute center for consistent rotation
-                el.style.transformOrigin = `center center`; 
                 el.style.transform = `rotate(${{comp.rot}}deg)`;
             }});
             
@@ -321,7 +285,6 @@ simulator_html = f"""
             updateConnections();
         }}
 
-        // --- 4. PHYSICS & GRAPH LOGIC ---
         function updateConnections() {{
             const holes = Array.from(document.querySelectorAll('.hole'));
             holes.forEach(h => h.classList.remove('connected'));
@@ -359,7 +322,6 @@ simulator_html = f"""
                 graph[u].push({{ to: v, weight }}); graph[v].push({{ to: u, weight }});
             }};
 
-            // Internal Breadboard Connections
             for(let r=0; r<30; r++) {{
                 for(let c=0; c<4; c++) {{
                     addEdge(`hole_LMAIN_${{r}}_${{c}}`, `hole_LMAIN_${{r}}_${{c+1}}`, 0);
@@ -386,7 +348,6 @@ simulator_html = f"""
 
             if(!startHole || !endHole) return {{ success: false }};
 
-            // BFS Traversal
             let queue = [{{ id: startHole, path: [startHole], weight: 0 }}];
             let visited = new Set();
             let validPath = null;
@@ -427,7 +388,6 @@ simulator_html = f"""
             layer.appendChild(path);
         }}
 
-        // --- 5. INTERACTION LOGIC ---
         function startDrag(e, comp) {{
             if (e.button !== 0) return; e.stopPropagation();
             selectedId = comp.id; draggingElement = comp;
@@ -449,10 +409,6 @@ simulator_html = f"""
             draggingElement = null; saveState(); renderComponents();
         }};
 
-        document.getElementById('canvas').onmousedown = (e) => {{
-            if(e.target.id === 'canvas' || e.target.classList.contains('breadboard-container')) {{ selectedId = null; renderComponents(); updateUI(); }}
-        }};
-
         function rotateSelected() {{
             if (!selectedId) return;
             const comp = state.find(c => c.id === selectedId);
@@ -464,11 +420,6 @@ simulator_html = f"""
             state = state.filter(c => c.id !== selectedId);
             selectedId = null; saveState(); renderComponents(); updateUI();
         }}
-
-        document.addEventListener('keydown', (e) => {{
-            if (e.key === 'Delete' || e.key === 'Backspace') deleteSelected();
-            if (e.ctrlKey && e.key === 'z') undo();
-        }});
 
         function updateUI() {{
             document.getElementById('btn-rot').disabled = !selectedId;
@@ -484,20 +435,15 @@ simulator_html = f"""
             if (isSimulating) {{
                 let res = simulateCircuit();
                 if (res.success) {{
-                    const isBurnedOut = res.weight < 50; // Triggers if no resistor exists in path
+                    const isBurnedOut = res.weight < 50;
                     state.forEach(c => {{ 
                         if(c.type === 'LED' && res.pathNodes.includes(c.connectedHoles[0])) {{ c.lit = !isBurnedOut; c.broken = isBurnedOut; }}
                     }});
-                    
-                    if(isBurnedOut) {{
-                        btn.innerText = "⏹ Stop (SHORT CIRCUIT!)"; btn.style.background = "#dc3545";
-                    }} else {{
-                        btn.innerText = "⏹ Stop (Complete!)"; btn.style.background = "#28a745";
-                    }}
+                    btn.innerText = isBurnedOut ? "⏹ Stop (SHORT!)" : "⏹ Stop (Running)";
+                    btn.style.background = "#dc3545";
                     drawFlow(res.pathNodes);
                 }} else {{
-                    state.forEach(c => {{ if(c.type === 'LED') {{c.lit = false; c.broken = false;}} }});
-                    btn.innerText = "⏹ Stop (Broken Path)"; btn.style.background = "#dc3545";
+                    btn.innerText = "⏹ Stop (No Loop)";
                 }}
             }} else {{
                 state.forEach(c => {{ if(c.type === 'LED') {{c.lit = false; c.broken = false;}} }});
