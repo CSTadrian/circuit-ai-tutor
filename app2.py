@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import os
 import streamlit as st
 import streamlit.components.v1 as components
 import json
@@ -31,6 +32,7 @@ ASSETS_RAW = {
 }
 
 # --- 2. VIRTUAL SIMULATOR (HTML/JS) ---
+# Notice the addition of the Streamlit protocol handshake in JS
 simulator_html = f"""
 <!DOCTYPE html>
 <html>
@@ -125,10 +127,22 @@ simulator_html = f"""
         let wiringStart = null;
         let isSimulating = false;
 
+        // --- STREAMLIT BI-DIRECTIONAL BRIDGE ---
+        function notifyPython() {
+            // Send BOTH components and wires as a single object
+            const circuitData = { comps: comps, wires: wires };
+            window.parent.postMessage({
+                isStreamlitMessage: true,
+                type: "streamlit:setComponentValue",
+                value: JSON.stringify(circuitData)
+            }, '*');
+        }
+
         // --- PERSISTENCE LAYER ---
         function saveState() {{
             const state = {{ comps, wires }};
             localStorage.setItem('precision_lab_circuit', JSON.stringify(state));
+            notifyPython(); // PUSH STATE TO PYTHON EVERY TIME IT CHANGES!
         }}
 
         function loadState() {{
@@ -139,7 +153,6 @@ simulator_html = f"""
                 wires = state.wires || [];
                 renderComps();
                 renderWires();
-                updateHoles(); // Ensure loaded wires get colored
             }}
         }}
 
@@ -147,6 +160,7 @@ simulator_html = f"""
             if(confirm("Clear the entire board?")) {{
                 comps = []; wires = [];
                 localStorage.removeItem('precision_lab_circuit');
+                saveState();
                 location.reload();
             }}
         }}
@@ -187,8 +201,8 @@ simulator_html = f"""
                 if (wiringStart !== id) {{ 
                     wires.push({{start: wiringStart, end: id}}); 
                     renderWires(); 
-                    updateHoles(); // This updates UI colors and calls simulateCircuit() if active
                     saveState();
+                    if(isSimulating) simulateCircuit(); 
                 }}
                 document.getElementById(wiringStart).classList.remove('wiring');
                 wiringStart = null;
@@ -252,8 +266,6 @@ simulator_html = f"""
             const holes = Array.from(document.querySelectorAll('.hole'));
             holes.forEach(h => h.classList.remove('occupied'));
             const rect = document.getElementById('canvas').getBoundingClientRect();
-            
-            // 1. Process component connections
             comps.forEach(c => {{
                 c.connectedTracks = [];
                 const el = document.getElementById(c.id);
@@ -272,15 +284,6 @@ simulator_html = f"""
                     if(bestHole) {{ bestHole.classList.add('occupied'); c.connectedTracks[idx] = getTrack(bestHole.id); }}
                 }});
             }});
-
-            // 2. Process wire connections
-            wires.forEach(w => {{
-                const sHole = document.getElementById(w.start);
-                const eHole = document.getElementById(w.end);
-                if(sHole) sHole.classList.add('occupied');
-                if(eHole) eHole.classList.add('occupied');
-            }});
-
             if(isSimulating) simulateCircuit();
         }}
 
@@ -300,7 +303,7 @@ simulator_html = f"""
                 l.setAttribute('x1', s.left - rect.left + 6); l.setAttribute('y1', s.top - rect.top + 6);
                 l.setAttribute('x2', e.left - rect.left + 6); l.setAttribute('y2', e.top - rect.top + 6);
                 l.setAttribute('class', 'wire');
-                l.ondblclick = () => {{ wires.splice(i, 1); renderWires(); updateHoles(); saveState(); }};
+                l.ondblclick = () => {{ wires.splice(i, 1); renderWires(); saveState(); if(isSimulating) simulateCircuit(); }};
                 layer.appendChild(l);
             }});
         }}
@@ -309,15 +312,6 @@ simulator_html = f"""
             isSimulating = !isSimulating;
             const btn = document.getElementById('sim-btn');
             
-            // Send current state (BOTH comps and wires) to Streamlit before it reruns
-            const circuitSnapshot = JSON.stringify({{comps: comps, wires: wires}});
-            if (window.parent.postMessage) {{
-                window.parent.postMessage({{
-                    type: 'streamlit:setComponentValue',
-                    value: circuitSnapshot
-                }}, '*');
-            }}
-
             if(isSimulating) {{ 
                 btn.innerText = "⏹ Stop Stim"; btn.style.background = "#c0392b"; btn.style.color = "white"; 
             }} else {{ 
@@ -369,8 +363,27 @@ simulator_html = f"""
         function rotateComp() {{ if(!selection) return; const c = comps.find(x => x.id === selection); c.rot = (c.rot + 90) % 360; renderComps(); saveState(); }}
         function deleteComp() {{ comps = comps.filter(x => x.id !== selection); selection = null; renderComps(); saveState(); }}
 
-        // BOOTSTRAP: Load saved circuit on start
-        window.onload = loadState;
+        // BOOTSTRAP: Load saved circuit and handshake with Streamlit
+        window.onload = function() {{
+            loadState();
+            
+            // Tell Streamlit the component is ready
+            window.parent.postMessage({{
+                isStreamlitMessage: true,
+                type: "streamlit:componentReady",
+                apiVersion: 1
+            }}, "*");
+            
+            // Set the iframe height so it doesn't collapse
+            window.parent.postMessage({{
+                isStreamlitMessage: true,
+                type: "streamlit:setFrameHeight",
+                height: 850
+            }}, "*");
+            
+            // Send initial state on boot
+            notifyPython();
+        }};
     </script>
 </body>
 </html>
@@ -396,51 +409,39 @@ client = get_vertex_client()
 MODEL_ID = "gemini-3.1-pro-preview"
 
 # --- 4. LEARNING ANALYTICS HELPER ---
-def get_track_from_hole(hole_id):
-    """Helper to translate raw JS hole IDs (e.g., h_ML_5_1) into clean Track IDs (e.g., ML_5)"""
-    if not hole_id: 
-        return "Unknown"
-    parts = hole_id.split('_')
-    if len(parts) >= 4:
-        if parts[1] in ['RL', 'RR']:
-            return f"{parts[1]}_{parts[3]}"
-        else:
-            return f"{parts[1]}_{parts[2]}"
-    return hole_id
-
-def get_ai_observation(student_json):
+def get_ai_observation(student_data):
     try:
-        data = json.loads(student_json) if isinstance(student_json, str) else student_json
+        # Load the combined data object
+        data = json.loads(student_data) if isinstance(student_data, str) else student_data
+        comps = data.get('comps', [])
+        wires = data.get('wires', [])
         
-        # Parse the new dict payload structure
-        if isinstance(data, dict):
-            comps_data = data.get("comps", [])
-            wires_data = data.get("wires", [])
-        else:
-            comps_data = data
-            wires_data = []
+        if not comps and not wires:
+            return "The breadboard is empty."
 
-        observations = []
+        observations = ["### Current Breadboard State"]
         
-        # Log Components
-        for comp in comps_data:
+        # 1. Detail Components
+        observations.append("\n**Components:**")
+        for comp in comps:
             ctype = comp.get('type', 'Unknown')
-            val = comp.get('value', '')
-            tracks = comp.get('connectedTracks', [])
-            valid_tracks = [str(t) for t in tracks if t is not None]
-            if valid_tracks:
-                track_str = " & ".join(valid_tracks)
-                observations.append(f"- {ctype} ({val if val else 'No Val'}) pinned to tracks: {track_str}")
+            val = comp.get('value', 'N/A')
+            tracks = [str(t) for t in comp.get('connectedTracks', []) if t]
+            track_str = f" on tracks: {', '.join(tracks)}" if tracks else " (not connected)"
+            observations.append(f"- {ctype} ({val}){track_str}")
+
+        # 2. Detail Wiring (The Netlist)
+        observations.append("\n**Physical Wire Connections:**")
+        if not wires:
+            observations.append("- No wires used.")
+        else:
+            for i, w in enumerate(wires):
+                observations.append(f"- Wire {i+1}: Connects track '{w['start']}' to track '{w['end']}'")
         
-        # Log Wires
-        for w in wires_data:
-            start_track = get_track_from_hole(w.get('start'))
-            end_track = get_track_from_hole(w.get('end'))
-            observations.append(f"- Jumper Wire bridging track {start_track} to track {end_track}")
-            
-        return "\n".join(observations) if observations else "No components or wires detected."
+        return "\n".join(observations)
     except Exception as e:
-        return f"Circuit data format error: {e}"
+        return f"Circuit data parsing error: {e}"
+        
 
 # --- 5. MAIN UI LAYOUT ---
 st.title("⚡ AI Circuit Auditor")
@@ -448,16 +449,25 @@ st.title("⚡ AI Circuit Auditor")
 with st.sidebar:
     st.header("Teacher's Goal")
     schematic_file = st.file_uploader("Upload Target Schematic", type=["jpg", "png", "jpeg"])
-    st.info("💡 **Pro-Tip:** If the AI doesn't see your circuit, click 'Stimulate' first to lock in the state.")
 
-# Grab state from the session (passed via postMessage in the JS bridge)
-current_sim_data = st.session_state.get("last_sim_state", "{}") 
+# --- NEW: REGISTER HTML AS A CUSTOM COMPONENT ---
+# This forces Streamlit to actually read the postMessages
+if not os.path.exists("sim_frontend"):
+    os.makedirs("sim_frontend")
+with open("sim_frontend/index.html", "w", encoding="utf-8") as f:
+    f.write(simulator_html)
+
+# Declare component with a default object structure
+sim_component = components.declare_component("sim_component", path="sim_frontend")
+current_sim_data = sim_component(default='{"comps": [], "wires": []}')
+
 
 # --- 6. AI AUDIT EXECUTION ---
 if st.button("🔍 Check My Circuit", type="primary"):
     if not schematic_file:
         st.warning("Please upload a schematic.")
     else:
+        # Notice we are now directly passing current_sim_data instead of pulling from session state
         user_circuit_description = get_ai_observation(current_sim_data)
         
         st.subheader("👁️ AI Observation")
@@ -509,6 +519,3 @@ if st.button("🔍 Check My Circuit", type="primary"):
 
         except Exception as e:
             st.error(f"Audit failed: {e}")
-
-# --- 7. EMBED SIMULATOR ---
-components.html(simulator_html, height=850)
