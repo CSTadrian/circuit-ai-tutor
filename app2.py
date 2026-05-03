@@ -33,7 +33,7 @@ ASSETS_RAW = {
 
 # --- 2. VIRTUAL SIMULATOR (HTML/JS) ---
 # Notice the addition of the Streamlit protocol handshake in JS
-simulator_html = """
+simulator_html = f"""
 <!DOCTYPE html>
 <html>
 <head>
@@ -127,15 +127,15 @@ simulator_html = """
         let wiringStart = null;
         let isSimulating = false;
 
-        function notifyPython() {
-            // Now you can use normal { } without Python crashing!
-            const circuitData = { comps: comps, wires: wires };
-            window.parent.postMessage({
+        function notifyPython() {{
+            
+            const circuitData = {{ comps: comps, wires: wires }};
+            window.parent.postMessage({{
                 isStreamlitMessage: true,
                 type: "streamlit:setComponentValue",
                 value: JSON.stringify(circuitData)
-            }, '*');
-        }
+            }}, '*');
+        }}
         
         // --- PERSISTENCE LAYER ---
         function saveState() {{
