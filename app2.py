@@ -10,6 +10,87 @@ from google import genai
 from google.genai import types
 from google.oauth2 import service_account
 
+import io
+import json
+import pandas as pd
+from datetime import datetime
+import pytz
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
+from google.auth.transport.requests import Request
+
+# --- GOOGLE DRIVE INITIALIZATION & HELPER FUNCTIONS ---
+PARENT_FOLDER_ID = "15KqnkoChiywtxjahuXRg9NYIi7tdsxyc"
+CSV_FILENAME = "circuit_audit_logs.csv"
+
+@st.cache_resource
+def init_drive():
+    oauth_info = st.secrets["google_oauth"]
+    drive_creds = Credentials(
+        token=None,
+        refresh_token=oauth_info["refresh_token"],
+        client_id=oauth_info["client_id"],
+        client_secret=oauth_info["client_secret"],
+        token_uri="https://oauth2.googleapis.com/token",
+        scopes=['https://www.googleapis.com/auth/drive.file']
+    )
+    if not drive_creds.valid:
+        drive_creds.refresh(Request())
+    return build('drive', 'v3', credentials=drive_creds)
+
+drive_service = init_drive()
+
+def save_to_drive(user_id, hk_time_str, task_name, ai_result_dict, file_prefix, sim_data):
+    # 1. Save the Circuit State Snapshot (JSON)
+    snapshot_bytes = json.dumps(sim_data, indent=2).encode('utf-8')
+    file_metadata = {
+        'name': f"{file_prefix}.json", 
+        'parents': [PARENT_FOLDER_ID]
+    }
+    media = MediaIoBaseUpload(io.BytesIO(snapshot_bytes), mimetype='application/json', resumable=True)
+    drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+
+    # 2. Prepare the new row for the CSV
+    new_row = {
+        "user_id": user_id,
+        "time_clicked": hk_time_str,
+        "task_number": task_name,
+        "ai_results": json.dumps(ai_result_dict), # Store the AI's JSON output
+        "saved_file_name": f"{file_prefix}.json"
+    }
+    df_new = pd.DataFrame([new_row])
+
+    # 3. Check if the CSV already exists in Drive
+    query = f"name='{CSV_FILENAME}' and '{PARENT_FOLDER_ID}' in parents and trashed=false"
+    results = drive_service.files().list(q=query, fields="files(id)").execute()
+    items = results.get('files', [])
+
+    if not items:
+        # Create a new CSV file
+        csv_bytes = df_new.to_csv(index=False).encode('utf-8')
+        csv_metadata = {'name': CSV_FILENAME, 'parents': [PARENT_FOLDER_ID]}
+        csv_media = MediaIoBaseUpload(io.BytesIO(csv_bytes), mimetype='text/csv', resumable=True)
+        drive_service.files().create(body=csv_metadata, media_body=csv_media, fields='id').execute()
+    else:
+        # Download, append, and update existing CSV
+        file_id = items[0]['id']
+        request = drive_service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        fh.seek(0)
+        
+        df_existing = pd.read_csv(fh)
+        df_combined = pd.concat([df_existing, df_new], ignore_index=True)
+        csv_bytes = df_combined.to_csv(index=False).encode('utf-8')
+        
+        csv_media = MediaIoBaseUpload(io.BytesIO(csv_bytes), mimetype='text/csv', resumable=True)
+        drive_service.files().update(fileId=file_id, media_body=csv_media).execute()
+
+
 # --- NEW: TASK CONFIGURATION ---
 # Define your tasks and their corresponding filenames in the 'data' folder
 TASKS = {
@@ -633,26 +714,27 @@ def get_ai_observation(student_data):
 st.title("⚡ AI Circuit Auditor")
 
 with st.sidebar:
-    st.header("Learning Module")
+    st.header("User Settings")
+    # Generate user IDs from 01 to 99
+    user_id = st.selectbox("User ID", options=[f"{i:02d}" for i in range(1, 100)])
+    st.divider()
     
-    # Replacement for file_uploader: Selectbox for tasks
+    st.header("Learning Module")
     selected_task_name = st.selectbox(
         "Choose a Learning Task", 
         options=list(TASKS.keys())
     )
     
-    # Determine the path to the image
     target_image_path = os.path.join(DATA_FOLDER, TASKS[selected_task_name])
     
-    # Display the target schematic to the student
     if os.path.exists(target_image_path):
         st.subheader("Target Schematic")
         st.image(target_image_path, use_container_width=True)
-        # Load the image for the AI later
         schematic_img = PILImage.open(target_image_path).convert("RGB")
     else:
         st.error(f"Image not found: {target_image_path}. Please ensure it exists in the 'data' folder.")
         schematic_img = None
+        
 
 # --- REGISTER HTML COMPONENT ---
 if not os.path.exists("sim_frontend"):
@@ -665,7 +747,6 @@ current_sim_data = sim_component(default='{"comps": [], "wires": []}')
 
 # --- 6. AI AUDIT EXECUTION ---
 if st.button("🔍 Check My Circuit", type="primary"):
-    # Change check: Verify schematic_img exists from the selection instead of file_uploader
     if schematic_img is None:
         st.warning("No schematic available for this task.")
     else:
@@ -689,26 +770,27 @@ if st.button("🔍 Check My Circuit", type="primary"):
         """
 
         try:
-            # Pass the schematic_img loaded from the folder
-            resp = client.models.generate_content(
-                model=MODEL_ID,
-                contents=[schematic_img, analysis_prompt],
-                config=types.GenerateContentConfig(
-                    temperature=0.0,
-                    response_mime_type="application/json",
-                    response_schema={
-                        "type": "OBJECT",
-                        "properties": {
-                            "is_correct": {"type": "BOOLEAN"},
-                            "ai_observation": {"type": "STRING"},
-                            "feedback": {"type": "STRING"}
-                        },
-                        "required": ["is_correct", "ai_observation", "feedback"]
-                    }
+            with st.spinner("Analyzing circuit..."):
+                resp = client.models.generate_content(
+                    model=MODEL_ID,
+                    contents=[schematic_img, analysis_prompt],
+                    config=types.GenerateContentConfig(
+                        temperature=0.0,
+                        response_mime_type="application/json",
+                        response_schema={
+                            "type": "OBJECT",
+                            "properties": {
+                                "is_correct": {"type": "BOOLEAN"},
+                                "ai_observation": {"type": "STRING"},
+                                "feedback": {"type": "STRING"}
+                            },
+                            "required": ["is_correct", "ai_observation", "feedback"]
+                        }
+                    )
                 )
-            )
-            
+                
             result = resp.parsed
+            
             st.divider()
             if result.get("is_correct"):
                 st.success("✅ **Circuit matches! Well done.**")
@@ -718,7 +800,29 @@ if st.button("🔍 Check My Circuit", type="primary"):
             st.write(f"**Interpretation:** {result.get('ai_observation')}")
             st.info(f"**Tutor Note:** {result.get('feedback')}")
 
+            # --- NEW: SAVE TO DRIVE LOGIC ---
+            with st.spinner("Saving results to Google Drive..."):
+                # 1. Get Hong Kong Time
+                hk_tz = pytz.timezone('Asia/Hong Kong')
+                hk_now = datetime.now(hk_tz)
+                hk_time_str = hk_now.strftime('%Y-%m-%d %H:%M:%S')
+                time_code = hk_now.strftime('%y%m%d_%H%M')
+
+                # 2. Format Task Number/Name (Removes spaces for cleaner filenames)
+                clean_task = selected_task_name.replace(" ", "")
+
+                # 3. Create the formatted filename: 01_task1_260503_1234
+                file_prefix = f"{user_id}_{clean_task}_{time_code}"
+
+                # 4. Push to Drive
+                save_to_drive(
+                    user_id=user_id, 
+                    hk_time_str=hk_time_str, 
+                    task_name=selected_task_name, 
+                    ai_result_dict=result, 
+                    file_prefix=file_prefix,
+                    sim_data=current_sim_data
+                )
+                
         except Exception as e:
             st.error(f"Audit failed: {e}")
-            
-"Audit failed: {e}")
