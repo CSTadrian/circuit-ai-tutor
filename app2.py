@@ -462,7 +462,6 @@ MODEL_ID = "gemini-3.1-pro-preview"
 # --- 4. LEARNING ANALYTICS HELPER ---
 def get_ai_observation(student_data):
     try:
-        # Load the combined data object
         data = json.loads(student_data) if isinstance(student_data, str) else student_data
         comps = data.get('comps', [])
         wires = data.get('wires', [])
@@ -470,24 +469,38 @@ def get_ai_observation(student_data):
         if not comps and not wires:
             return "The breadboard is empty."
 
-        observations = ["### Current Breadboard State"]
-        
-        # 1. Detail Components
-        observations.append("\n**Components:**")
+        # Helper to translate the internal IDs to your new format
+        def translate_id(holeId):
+            if not holeId or 'h_' not in holeId: return holeId
+            p = holeId.split('_')
+            # p[1] is type (RL, ML, etc), p[2] is row (0-29), p[3] is col
+            row = int(p[2]) + 1
+            col = int(p[3])
+            
+            if p[1] == 'RL': return f"{row}_{'red_l' if col == 0 else 'blue_l'}"
+            if p[1] == 'RR': return f"{row}_{'red_r' if col == 0 else 'blue_r'}"
+            if p[1] == 'ML': return f"{row}{chr(97 + col)}" # a, b, c, d, e
+            if p[1] == 'MR': return f"{row}{chr(102 + col)}" # f, g, h, i, j
+            return holeId
+
+        observations = ["### Current Breadboard State", "\n**Components:**"]
         for comp in comps:
             ctype = comp.get('type', 'Unknown')
             val = comp.get('value', 'N/A')
-            tracks = [str(t) for t in comp.get('connectedTracks', []) if t]
+            # Translate tracks for components
+            tracks = [translate_id(str(t)) for t in comp.get('connectedTracks', []) if t]
             track_str = f" on tracks: {', '.join(tracks)}" if tracks else " (not connected)"
             observations.append(f"- {ctype} ({val}){track_str}")
 
-        # 2. Detail Wiring (The Netlist)
         observations.append("\n**Physical Wire Connections:**")
         if not wires:
             observations.append("- No wires used.")
         else:
             for i, w in enumerate(wires):
-                observations.append(f"- Wire {i+1}: Connects track '{w['start']}' to track '{w['end']}'")
+                # Translate start and end for wires
+                s = translate_id(w['start'])
+                e = translate_id(w['end'])
+                observations.append(f"- Wire {i+1}: Connects track '{s}' to track '{e}'")
         
         return "\n".join(observations)
     except Exception as e:
