@@ -14,8 +14,8 @@ from google.oauth2 import service_account
 # Define your tasks and their corresponding filenames in the 'data' folder
 TASKS = {
     "Task 1: Basic LED Circuit": "task1_led.png",
-    "Task 2: Resistor in Series": "task2_series.png",
-    "Task 3: Parallel LED Setup": "task3_parallel.png",
+    "Task 2: Resistor in Series": "task2_series_led.png",
+    "Task 3: Parallel LED Setup": "task3_parallel_led.png",
     "Task 4: Switch Control": "task4_switch.png"
 }
 DATA_FOLDER = "data"
