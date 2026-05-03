@@ -3,376 +3,391 @@ import streamlit as st
 import streamlit.components.v1 as components
 import json
 
-# --- 1. CONFIG ---
-st.set_page_config(page_title="Pro-STEM Lab - Precision Alignment", layout="wide")
+st.set_page_config(page_title="Pro-STEM Precision Lab", layout="wide")
 
-# --- 2. VECTOR ASSETS (Grid Aligned to 20px) ---
+# --- 1. VECTOR ASSETS ---
 ASSETS = {
-    "LED_OFF": '<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="20" width="2" height="20" fill="#aaa"/><rect x="29" y="25" width="2" height="15" fill="#aaa"/><path d="M10 25 Q 10 5 20 5 Q 30 5 30 25 Z" fill="#882222" opacity="0.9"/><circle cx="20" cy="12" r="4" fill="white" opacity="0.2"/></svg>',
-    "LED_ON": '<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#ffaaaa"/><stop offset="100%" stop-color="#ff0000"/></radialGradient></defs><rect x="9" y="20" width="2" height="20" fill="#aaa"/><rect x="29" y="25" width="2" height="15" fill="#aaa"/><path d="M10 25 Q 10 5 20 5 Q 30 5 30 25 Z" fill="url(#glow)" filter="drop-shadow(0px 0px 8px red)"/><circle cx="20" cy="12" r="4" fill="white" opacity="0.8"/></svg>',
-    "LED_BROKEN": '<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="20" width="2" height="20" fill="#aaa"/><rect x="29" y="25" width="2" height="15" fill="#aaa"/><path d="M10 25 Q 10 5 20 5 Q 30 5 30 25 Z" fill="#333333" opacity="0.9"/><path d="M18 5 L23 12 L17 18 L22 25" stroke="#000" stroke-width="2" fill="none"/></svg>',
-    "RES_300": '<svg width="80" height="20" viewBox="0 0 80 20" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="9" width="60" height="2" fill="#aaa"/><rect x="20" y="4" width="40" height="12" rx="4" fill="#69a8e6"/><rect x="28" y="4" width="6" height="12" fill="#ff8c00"/><rect x="40" y="4" width="6" height="12" fill="#000000"/><rect x="52" y="4" width="6" height="12" fill="#8b4513"/></svg>',
-    "RES_1K": '<svg width="80" height="20" viewBox="0 0 80 20" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="9" width="60" height="2" fill="#aaa"/><rect x="20" y="4" width="40" height="12" rx="4" fill="#69a8e6"/><rect x="28" y="4" width="6" height="12" fill="#8b4513"/><rect x="40" y="4" width="6" height="12" fill="#000000"/><rect x="52" y="4" width="6" height="12" fill="#ff0000"/></svg>',
-    "SWITCH": '<svg width="60" height="20" viewBox="0 0 60 20" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="9" width="2" height="11" fill="#aaa"/><rect x="30" y="9" width="2" height="11" fill="#aaa"/><rect x="50" y="9" width="2" height="11" fill="#aaa"/><rect x="5" y="0" width="50" height="14" rx="2" fill="#333"/><rect x="15" y="2" width="12" height="10" fill="#555"/></svg>',
-    "BATTERY": '<svg width="40" height="60" viewBox="0 0 40 60" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="36" height="44" rx="2" fill="#222" stroke="#e0e0e0" stroke-width="1"/><rect x="2" y="2" width="18" height="44" rx="2" fill="#ff4444"/><text x="6" y="28" fill="white" font-weight="bold" font-size="14">+</text><text x="24" y="28" fill="white" font-weight="bold" font-size="14">-</text><rect x="9" y="46" width="2" height="14" fill="#aaa"/><rect x="29" y="46" width="2" height="14" fill="#aaa"/></svg>',
+    "LED_OFF": '<svg width="40" height="40" viewBox="0 0 40 40"><rect x="9" y="20" width="2" height="20" fill="#aaa"/><rect x="29" y="25" width="2" height="15" fill="#aaa"/><path d="M10 25 Q 10 5 20 5 Q 30 5 30 25 Z" fill="#882222" opacity="0.9"/></svg>',
+    "LED_ON": '<svg width="40" height="40" viewBox="0 0 40 40"><defs><radialGradient id="glow"><stop offset="0%" stop-color="#ffaaaa"/><stop offset="100%" stop-color="#ff0000"/></radialGradient></defs><rect x="9" y="20" width="2" height="20" fill="#aaa"/><rect x="29" y="25" width="2" height="15" fill="#aaa"/><path d="M10 25 Q 10 5 20 5 Q 30 5 30 25 Z" fill="url(#glow)" filter="drop-shadow(0px 0px 8px red)"/></svg>',
+    "LED_BROKEN": '<svg width="40" height="40" viewBox="0 0 40 40"><rect x="9" y="20" width="2" height="20" fill="#aaa"/><rect x="29" y="25" width="2" height="15" fill="#aaa"/><path d="M10 25 Q 10 5 20 5 Q 30 5 30 25 Z" fill="#333" opacity="0.9"/><path d="M15 10 L25 20 M25 10 L15 20" stroke="white" stroke-width="2"/></svg>',
+    "RES_300": '<svg width="80" height="20" viewBox="0 0 80 20"><rect x="10" y="9" width="60" height="2" fill="#aaa"/><rect x="20" y="4" width="40" height="12" rx="4" fill="#69a8e6"/><rect x="28" y="4" width="6" height="12" fill="#ff8c00"/><rect x="40" y="4" width="6" height="12" fill="#000"/><rect x="52" y="4" width="6" height="12" fill="#8b4513"/></svg>',
+    "SWITCH": '<svg width="60" height="20" viewBox="0 0 60 20"><rect x="10" y="9" width="2" height="11" fill="#aaa"/><rect x="30" y="9" width="2" height="11" fill="#aaa"/><rect x="50" y="9" width="2" height="11" fill="#aaa"/><rect x="5" y="0" width="50" height="14" rx="2" fill="#333"/><rect x="15" y="2" width="12" height="10" fill="#555"/></svg>',
+    "BATTERY": '<svg width="40" height="60" viewBox="0 0 40 60"><rect x="2" y="2" width="36" height="44" rx="2" fill="#222" stroke="#eee" stroke-width="1"/><rect x="2" y="2" width="18" height="44" rx="2" fill="#ff4444"/><text x="6" y="28" fill="white" font-weight="bold" font-size="14">+</text><text x="24" y="28" fill="white" font-weight="bold" font-size="14">-</text><rect x="9" y="46" width="2" height="14" fill="#aaa"/><rect x="29" y="46" width="2" height="14" fill="#aaa"/></svg>',
 }
 
 assets_json = json.dumps(ASSETS)
 
+# --- 2. HTML/JS SIMULATOR ---
 simulator_html = f"""
 <!DOCTYPE html>
 <html>
 <head>
     <style>
         :root {{ --grid: 20px; }}
-        body {{ font-family: 'Segoe UI', sans-serif; background: #222; color: white; margin: 0; overflow: hidden; user-select: none; }}
+        body {{ font-family: sans-serif; background: #1a1a1a; color: white; margin: 0; overflow: hidden; user-select: none; }}
         #workspace {{ display: flex; height: 100vh; }}
-        #palette {{ width: 220px; background: #333; padding: 15px; border-right: 2px solid #444; z-index: 10; }}
-        #canvas {{ flex-grow: 1; position: relative; background: #1a1a1a; overflow: auto; }}
+        #palette {{ width: 200px; background: #222; padding: 15px; border-right: 1px solid #444; z-index: 100; }}
+        #canvas {{ flex-grow: 1; position: relative; overflow: auto; background: #111; }}
         
-        #toolbar {{ position: absolute; top: 15px; left: 15px; background: #333; padding: 8px; border-radius: 8px; display: flex; gap: 10px; z-index: 100; border: 1px solid #555; }}
-        .tool-btn {{ background: #444; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; }}
+        .tool-btn {{ background: #444; color: white; border: none; padding: 8px; margin: 2px; border-radius: 4px; cursor: pointer; }}
         .tool-btn:hover {{ background: #007bff; }}
-        
-        /* BREADBOARD ALIGNMENT - CRITICAL FIX */
-        .breadboard-container {{ 
-            position: absolute; top: 100px; left: 50px; background: #fdfdfd; 
-            border-radius: 8px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            display: flex; gap: 0; border: 2px solid #e0e0e0;
+
+        /* Unified Breadboard Structure */
+        .bb-outer {{ 
+            position: absolute; top: 120px; left: 60px; background: #fff; 
+            padding: 20px; border-radius: 10px; display: flex; gap: 0; 
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
         }}
-        
-        .bb-section {{ display: grid; grid-template-rows: repeat(30, var(--grid)); position: relative; }}
-        .bb-rails {{ grid-template-columns: repeat(2, var(--grid)); border-left: 2px solid #ff4444; border-right: 2px solid #4444ff; }}
-        .bb-main {{ grid-template-columns: repeat(5, var(--grid)); }}
-        .trench {{ width: var(--grid); background: #eee; box-shadow: inset 0 0 5px rgba(0,0,0,0.1); margin-top: 18px; }}
-        
-        .bb-wrapper {{ display: flex; flex-direction: column; }}
-        .col-headers {{ 
-            display: grid; grid-template-columns: repeat(5, var(--grid)); 
-            font-size: 11px; color: #555; text-align: center; font-weight: bold; height: 18px;
-        }}
-        
-        /* THE HOLE: 12px + 4px margin on each side = 20px total box */
+        .bb-section {{ display: grid; grid-template-rows: repeat(30, var(--grid)); }}
+        .rail {{ grid-template-columns: repeat(2, var(--grid)); border-left: 2px solid #ff4444; border-right: 2px solid #4444ff; }}
+        .main {{ grid-template-columns: repeat(5, var(--grid)); }}
+        .trench {{ width: var(--grid); background: #f0f0f0; border-left: 1px solid #ddd; border-right: 1px solid #ddd; }}
+        .spacer {{ width: var(--grid); }}
+
+        /* Headers aligned strictly above columns */
+        .header-row {{ display: flex; height: 20px; margin-bottom: 5px; }}
+        .header-cell {{ width: var(--grid); text-align: center; font-size: 10px; color: #666; font-weight: bold; }}
+
         .hole {{ 
             width: 12px; height: 12px; background: #ccc; border-radius: 50%; 
-            box-shadow: inset 1px 1px 2px rgba(0,0,0,0.4); margin: 4px; 
-            cursor: crosshair; transition: 0.2s; 
+            margin: 4px; box-shadow: inset 1px 1px 2px rgba(0,0,0,0.3);
+            cursor: pointer; position: relative; z-index: 10;
         }}
-        .hole:hover {{ background: #007bff; transform: scale(1.2); }}
-        .hole.wiring-active {{ background: #00ff00 !important; box-shadow: 0 0 10px #00ff00; }}
-        .hole.connected {{ background: #add8e6 !important; }}
+        .hole:hover {{ background: #007bff; }}
+        .hole.active {{ background: #00ff00; box-shadow: 0 0 8px #00ff00; }}
+        .hole.connected {{ background: #add8e6; }}
 
-        .row-numbers {{ display: grid; grid-template-rows: repeat(30, var(--grid)); width: 20px; text-align: center; font-size: 9px; color: #888; align-items: center; margin-top: 18px; }}
+        .active-comp {{ position: absolute; z-index: 50; cursor: grab; transform-origin: top left; }}
+        .active-comp.selected {{ filter: drop-shadow(0 0 5px #007bff); }}
+        .pin-collider {{ position: absolute; width: 4px; height: 4px; background: red; opacity: 0; pointer-events: none; }}
+
+        svg.overlay {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }}
+        .wire {{ stroke: #2ecc71; stroke-width: 4; stroke-linecap: round; pointer-events: auto; cursor: help; }}
+        .flow-line {{ stroke: #ffff00; stroke-width: 4; stroke-dasharray: 8 8; animation: flow 0.5s linear infinite; }}
+        @keyframes flow {{ from {{ stroke-dashoffset: 16; }} to {{ stroke-dashoffset: 0; }} }}
         
-        .active-comp {{ position: absolute; cursor: grab; z-index: 50; transform-origin: top left; }}
-        .active-comp.selected {{ filter: drop-shadow(0px 0px 6px #007bff) brightness(1.2); }}
-        .pin-collider {{ position: absolute; width: 4px; height: 4px; opacity: 0; pointer-events: none; }}
-        
-        svg.overlay-layer {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }}
-        #flow-layer {{ z-index: 45; }}
-        .flow-line {{ stroke-dasharray: 10 10; animation: flowAnim 0.5s linear infinite; }}
-        @keyframes flowAnim {{ from {{ stroke-dashoffset: 20; }} to {{ stroke-dashoffset: 0; }} }}
-        
-        .comp-item {{ background: #444; padding: 10px; margin-bottom: 10px; border-radius: 6px; cursor: pointer; text-align: center; border: 1px solid #555; }}
+        .comp-item {{ background: #333; padding: 10px; margin-bottom: 10px; border-radius: 5px; cursor: pointer; text-align: center; border: 1px solid #444; }}
     </style>
 </head>
 <body>
     <div id="workspace">
         <div id="palette">
-            <h4 style="margin:0 0 15px 0;">Components</h4>
-            <div class="comp-item" onclick="spawnComp('BATTERY')">{ASSETS['BATTERY']}<br>9V Battery</div>
-            <div class="comp-item" onclick="spawnComp('LED')">{ASSETS['LED_OFF']}<br>LED</div>
-            <div class="comp-item" onclick="spawnComp('RES_300')">{ASSETS['RES_300']}<br>300Ω Resistor</div>
-            <div class="comp-item" onclick="spawnComp('SWITCH')">{ASSETS['SWITCH']}<br>Switch</div>
+            <h4 style="margin:0 0 10px 0;">Library</h4>
+            <div class="comp-item" onclick="spawn('BATTERY')">{ASSETS['BATTERY']}<br>9V Battery</div>
+            <div class="comp-item" onclick="spawn('LED')">{ASSETS['LED_OFF']}<br>LED</div>
+            <div class="comp-item" onclick="spawn('RES_300')">{ASSETS['RES_300']}<br>300Ω Resistor</div>
+            <div class="comp-item" onclick="spawn('SWITCH')">{ASSETS['SWITCH']}<br>Slide Switch</div>
         </div>
         <div id="canvas">
-            <div id="toolbar">
+            <div style="padding:10px; background:#222; border-bottom:1px solid #444;">
                 <button class="tool-btn" onclick="undo()">↶ Undo</button>
-                <button class="tool-btn" onclick="rotateSelected()">↻ Rotate</button>
-                <button class="tool-btn" onclick="deleteSelected()" style="background:#dc3545;">✖ Delete</button>
-                <button class="tool-btn" onclick="toggleSimulation()" id="btn-sim" style="background:#f39c12; color:black;">⚡ Start Simulation</button>
+                <button class="tool-btn" onclick="rotate()">↻ Rotate</button>
+                <button class="tool-btn" onclick="remove()" style="background:#822;">✖ Delete</button>
+                <button class="tool-btn" onclick="simulate()" id="sim-btn" style="background:#d4a017; color:black;">⚡ Start</button>
             </div>
-            
-            <svg class="overlay-layer" id="wire-layer"></svg>
-            <svg class="overlay-layer" id="flow-layer"></svg>
-            
-            <div class="breadboard-container">
+
+            <svg class="overlay" id="wire-layer"></svg>
+            <svg class="overlay" id="flow-layer"></svg>
+
+            <div class="bb-outer" id="bb">
                 <!-- LHS RAILS -->
-                <div class="bb-section bb-rails" style="margin-top:18px;" id="rail-L"></div>
+                <div class="bb-section rail" id="rail-L"></div>
+                
                 <!-- MAIN LEFT -->
-                <div class="bb-wrapper">
-                    <div class="col-headers"><div>a</div><div>b</div><div>c</div><div>d</div><div>e</div></div>
-                    <div class="bb-section bb-main" id="main-L"></div>
+                <div style="display:flex; flex-direction:column;">
+                    <div class="header-row">
+                        <div class="header-cell">a</div><div class="header-cell">b</div><div class="header-cell">c</div><div class="header-cell">d</div><div class="header-cell">e</div>
+                    </div>
+                    <div class="bb-section main" id="main-L"></div>
                 </div>
+
                 <!-- NUMBERS -->
-                <div class="row-numbers" id="nums"></div>
+                <div class="bb-section" style="width:20px; margin-top:20px;" id="nums"></div>
+
                 <!-- TRENCH -->
-                <div class="trench"></div>
+                <div class="trench" style="margin-top:20px;"></div>
+
                 <!-- MAIN RIGHT -->
-                <div class="bb-wrapper">
-                    <div class="col-headers"><div>f</div><div>g</div><div>h</div><div>i</div><div>j</div></div>
-                    <div class="bb-section bb-main" id="main-R"></div>
+                <div style="display:flex; flex-direction:column;">
+                    <div class="header-row">
+                        <div class="header-cell">f</div><div class="header-cell">g</div><div class="header-cell">h</div><div class="header-cell">i</div><div class="header-cell">j</div>
+                    </div>
+                    <div class="bb-section main" id="main-R"></div>
                 </div>
+
                 <!-- RHS RAILS -->
-                <div class="bb-section bb-rails" style="margin-top:18px;" id="rail-R"></div>
+                <div class="bb-section rail" id="rail-R"></div>
             </div>
-            
-            <div id="component-layer"></div>
+
+            <div id="comp-layer"></div>
         </div>
     </div>
 
     <script>
-        const ASSET_MAP = {assets_json};
+        const ASSETS = {assets_json};
         const GRID = 20;
-        let state = [];
+        let comps = [];
         let wires = [];
         let history = [];
-        let historyIndex = -1;
-        let selectedId = null;
-        let draggingElement = null;
-        let dragOffset = {{ x: 0, y: 0 }};
-        let wiringStartHole = null;
-        let isSimulating = false;
+        let selection = null;
+        let drag = null;
+        let dragOff = {{x:0, y:0}};
+        let wiringHole = null;
+        let simMode = false;
 
-        function createHoles(containerId, cols, prefix) {{
-            const container = document.getElementById(containerId);
-            for (let r = 0; r < 30; r++) {{
-                for (let c = 0; c < cols; c++) {{
+        function createHoles(id, cols, tag) {{
+            const div = document.getElementById(id);
+            for(let r=0; r<30; r++) {{
+                for(let c=0; c<cols; c++) {{
                     const h = document.createElement('div');
                     h.className = 'hole';
-                    h.id = `hole_${{prefix}}_${{r}}_${{c}}`;
-                    h.onmousedown = (e) => handleHoleClick(e, h);
-                    container.appendChild(h);
+                    h.id = `h_${{tag}}_${{r}}_${{c}}`;
+                    h.onmousedown = (e) => onHoleClick(e, h.id);
+                    div.appendChild(h);
                 }}
             }}
         }}
-        
-        createHoles('rail-L', 2, 'LRAIL');
-        createHoles('main-L', 5, 'LMAIN');
-        createHoles('main-R', 5, 'RMAIN');
-        createHoles('rail-R', 2, 'RRAIL');
+        createHoles('rail-L', 2, 'RL');
+        createHoles('main-L', 5, 'ML');
+        createHoles('main-R', 5, 'MR');
+        createHoles('rail-R', 2, 'RR');
 
-        const numContainer = document.getElementById('nums');
+        const numBox = document.getElementById('nums');
         for(let i=1; i<=30; i++) {{
-            const div = document.createElement('div'); div.innerText = i; numContainer.appendChild(div);
+            const n = document.createElement('div');
+            n.style = "height:20px; font-size:9px; text-align:center; color:#999; line-height:20px;";
+            n.innerText = i; numBox.appendChild(n);
         }}
 
-        function handleHoleClick(e, holeEl) {{
+        function onHoleClick(e, id) {{
             e.stopPropagation();
-            if (wiringStartHole === null) {{
-                wiringStartHole = holeEl.id;
-                holeEl.classList.add('wiring-active');
+            if(!wiringHole) {{
+                wiringHole = id;
+                document.getElementById(id).classList.add('active');
             }} else {{
-                if (wiringStartHole !== holeEl.id) {{
-                    wires.push({{ start: wiringStartHole, end: holeEl.id }});
-                    saveState(); renderWires();
+                if(wiringHole !== id) {{
+                    wires.push({{start: wiringHole, end: id}});
+                    save(); renderWires();
                 }}
-                document.getElementById(wiringStartHole).classList.remove('wiring-active');
-                wiringStartHole = null;
+                document.getElementById(wiringHole).classList.remove('active');
+                wiringHole = null;
             }}
         }}
 
-        function getPins(type) {{
-            if (type.includes('RES')) return [{{x: 10, y: 10}}, {{x: 70, y: 10}}];
-            if (type === 'SWITCH') return [{{x: 10, y: 10}}, {{x: 30, y: 10}}, {{x: 50, y: 10}}];
-            if (type === 'BATTERY') return [{{x: 10, y: 50}}, {{x: 30, y: 50}}];
-            return [{{x: 10, y: 30}}, {{x: 30, y: 30}}]; // LED
+        function spawn(type) {{
+            const id = 'c' + Date.now();
+            let pins = [{{x:10, y:30}}, {{x:30, y:30}}];
+            if(type.includes('RES')) pins = [{{x:10, y:10}}, {{x:70, y:10}}];
+            if(type === 'SWITCH') pins = [{{x:10, y:10}}, {{x:30, y:10}}, {{x:50, y:10}}];
+            if(type === 'BATTERY') pins = [{{x:10, y:50}}, {{x:30, y:50}}];
+            
+            comps.push({{id, type, x:100, y:100, rot:0, pins, lit:false, broken:false, conns:[]}});
+            selection = id;
+            save(); renderComps();
         }}
 
-        function spawnComp(type) {{
-            state.push({{ id: 'comp_' + Date.now(), type: type, x: 100, y: 100, rot: 0, lit: false, broken: false, pins: getPins(type), connectedHoles: [] }});
-            selectedId = state[state.length-1].id;
-            saveState(); renderComponents();
-        }}
-
-        function renderComponents() {{
-            const layer = document.getElementById('component-layer');
-            state.forEach(comp => {{
-                let el = document.getElementById(comp.id);
-                if (!el) {{
+        function renderComps() {{
+            const layer = document.getElementById('comp-layer');
+            comps.forEach(c => {{
+                let el = document.getElementById(c.id);
+                if(!el) {{
                     el = document.createElement('div');
-                    el.id = comp.id; layer.appendChild(el);
-                    el.onmousedown = (e) => startDrag(e, comp);
+                    el.id = c.id; el.className = 'active-comp';
+                    el.onmousedown = (e) => {{ e.stopPropagation(); drag = c; selection = c.id; dragOff = {{x:e.clientX - c.x, y:e.clientY - c.y}}; renderComps(); }};
+                    layer.appendChild(el);
                 }}
-                el.className = `active-comp ${{comp.id === selectedId ? 'selected' : ''}}`;
-                if (comp.type === 'LED') {{
-                    el.innerHTML = comp.broken ? ASSET_MAP['LED_BROKEN'] : (comp.lit ? ASSET_MAP['LED_ON'] : ASSET_MAP['LED_OFF']);
-                }} else {{ el.innerHTML = ASSET_MAP[comp.type]; }}
+                el.classList.toggle('selected', selection === c.id);
+                if(c.type === 'LED') {{
+                    el.innerHTML = c.broken ? ASSETS.LED_BROKEN : (c.lit ? ASSETS.LED_ON : ASSETS.LED_OFF);
+                }} else el.innerHTML = ASSETS[c.type];
+                
+                el.style.left = c.x + 'px'; el.style.top = c.y + 'px';
+                el.style.transform = `rotate(${{c.rot}}deg)`;
+                
                 el.querySelectorAll('.pin-collider').forEach(p => p.remove());
-                comp.pins.forEach(p => {{
-                    let dot = document.createElement('div');
+                c.pins.forEach(p => {{
+                    const dot = document.createElement('div');
                     dot.className = 'pin-collider';
                     dot.style.left = p.x + 'px'; dot.style.top = p.y + 'px';
                     el.appendChild(dot);
                 }});
-                el.style.left = comp.x + 'px'; el.style.top = comp.y + 'px';
-                el.style.transform = `rotate(${{comp.rot}}deg)`;
             }});
-            Array.from(layer.children).forEach(child => {{ if (!state.find(c => c.id === child.id)) child.remove(); }});
-            updateConnections();
+            Array.from(layer.children).forEach(child => {{ if(!comps.find(x => x.id === child.id)) child.remove(); }});
+            checkConns();
         }}
 
-        function startDrag(e, comp) {{
-            e.stopPropagation(); selectedId = comp.id; draggingElement = comp;
-            dragOffset.x = e.clientX - comp.x; dragOffset.y = e.clientY - comp.y;
-            renderComponents();
+        function checkConns() {{
+            const holes = Array.from(document.querySelectorAll('.hole'));
+            holes.forEach(h => h.classList.remove('connected'));
+            const rect = document.getElementById('canvas').getBoundingClientRect();
+
+            comps.forEach(c => {{
+                c.conns = [];
+                const el = document.getElementById(c.id);
+                el.querySelectorAll('.pin-collider').forEach(pc => {{
+                    const pRect = pc.getBoundingClientRect();
+                    const px = pRect.left - rect.left + 2;
+                    const py = pRect.top - rect.top + 2;
+                    
+                    let best = null;
+                    holes.forEach(h => {{
+                        const hRect = h.getBoundingClientRect();
+                        const hx = hRect.left - rect.left + 6;
+                        const hy = hRect.top - rect.top + 6;
+                        if(Math.abs(px-hx) < 8 && Math.abs(py-hy) < 8) best = h.id;
+                    }});
+                    if(best) {{
+                        c.conns.push(best);
+                        document.getElementById(best).classList.add('connected');
+                    }} else c.conns.push(null);
+                }});
+            }});
         }}
 
         document.onmousemove = (e) => {{
-            if (!draggingElement) return;
-            draggingElement.x = e.clientX - dragOffset.x;
-            draggingElement.y = e.clientY - dragOffset.y;
-            renderComponents();
+            if(drag) {{
+                drag.x = e.clientX - dragOff.x;
+                drag.y = e.clientY - dragOff.y;
+                renderComps();
+            }}
         }};
 
         document.onmouseup = () => {{
-            if (!draggingElement) return;
-            // Precise snapping to the grid
-            draggingElement.x = Math.round(draggingElement.x / GRID) * GRID;
-            draggingElement.y = Math.round(draggingElement.y / GRID) * GRID;
-            draggingElement = null; 
-            saveState(); renderComponents();
+            if(drag) {{
+                drag.x = Math.round(drag.x / GRID) * GRID;
+                drag.y = Math.round(drag.y / GRID) * GRID;
+                drag = null; save(); renderComps();
+            }}
         }};
 
-        function updateConnections() {{
-            const holes = Array.from(document.querySelectorAll('.hole'));
-            holes.forEach(h => h.classList.remove('connected'));
-            const canvasRect = document.getElementById('canvas').getBoundingClientRect();
-
-            state.forEach(comp => {{
-                comp.connectedHoles = [];
-                const colEls = document.getElementById(comp.id).querySelectorAll('.pin-collider');
-                colEls.forEach(colEl => {{
-                    const cRect = colEl.getBoundingClientRect();
-                    const px = cRect.left - canvasRect.left + 2; 
-                    const py = cRect.top - canvasRect.top + 2;
-                    let foundHole = null;
-                    holes.forEach(h => {{
-                        const hRect = h.getBoundingClientRect();
-                        if (Math.abs(px - (hRect.left - canvasRect.left + 6)) < 8 && Math.abs(py - (hRect.top - canvasRect.top + 6)) < 8) {{
-                            h.classList.add('connected');
-                            foundHole = h.id;
-                        }}
-                    }});
-                    comp.connectedHoles.push(foundHole);
-                }});
-            }});
-        }}
-
-        function simulateCircuit() {{
-            updateConnections();
-            let graph = {{}};
-            const addEdge = (u, v, weight) => {{
-                if(!u || !v) return;
-                if(!graph[u]) graph[u] = []; if(!graph[v]) graph[v] = [];
-                graph[u].push({{ to: v, weight }}); graph[v].push({{ to: u, weight }});
-            }};
-
-            // Internal Rails & Main Bus
-            for(let r=0; r<30; r++) {{
-                for(let c=0; c<4; c++) {{
-                    addEdge(`hole_LMAIN_${{r}}_${{c}}`, `hole_LMAIN_${{r}}_${{c+1}}`, 0);
-                    addEdge(`hole_RMAIN_${{r}}_${{c}}`, `hole_RMAIN_${{r}}_${{c+1}}`, 0);
-                }}
-                if(r<29) {{
-                    addEdge(`hole_LRAIL_${{r}}_0`, `hole_LRAIL_${{r+1}}_0`, 0);
-                    addEdge(`hole_LRAIL_${{r}}_1`, `hole_LRAIL_${{r+1}}_1`, 0);
-                    addEdge(`hole_RRAIL_${{r}}_0`, `hole_RRAIL_${{r+1}}_0`, 0);
-                    addEdge(`hole_RRAIL_${{r}}_1`, `hole_RRAIL_${{r+1}}_1`, 0);
-                }}
-            }}
-
-            wires.forEach(w => addEdge(w.start, w.end, 0));
-
-            let startHole = null, endHole = null;
-            state.forEach(c => {{
-                if(c.connectedHoles.includes(null) || c.connectedHoles.length === 0) return;
-                if(c.type === 'BATTERY') {{ startHole = c.connectedHoles[0]; endHole = c.connectedHoles[1]; }}
-                else if(c.type.includes('RES')) addEdge(c.connectedHoles[0], c.connectedHoles[1], 100);
-                else if(c.type === 'SWITCH') {{ addEdge(c.connectedHoles[0], c.connectedHoles[1], 0); addEdge(c.connectedHoles[1], c.connectedHoles[2], 0); }}
-                else if(c.type === 'LED') addEdge(c.connectedHoles[0], c.connectedHoles[1], 10);
-            }});
-
-            if(!startHole || !endHole) return {{ success: false }};
-            let queue = [{{ id: startHole, path: [startHole], weight: 0 }}];
-            let visited = new Set();
-            while(queue.length > 0) {{
-                let curr = queue.shift();
-                if(curr.id === endHole) return {{ success: true, pathNodes: curr.path, weight: curr.weight }};
-                if(visited.has(curr.id)) continue;
-                visited.add(curr.id);
-                (graph[curr.id] || []).forEach(edge => {{
-                    if(!visited.has(edge.to)) queue.push({{ id: edge.to, path: [...curr.path, edge.to], weight: curr.weight + edge.weight }});
-                }});
-            }}
-            return {{ success: false }};
-        }}
-
-        function toggleSimulation() {{
-            isSimulating = !isSimulating;
-            if (isSimulating) {{
-                let res = simulateCircuit();
-                if (res.success) {{
-                    const isBurnedOut = res.weight < 50;
-                    state.forEach(c => {{ if(c.type === 'LED') {{ c.lit = !isBurnedOut; c.broken = isBurnedOut; }} }});
-                    drawFlow(res.pathNodes);
-                }}
-            }} else {{
-                state.forEach(c => {{ c.lit = false; c.broken = false; }});
-                document.getElementById('flow-layer').innerHTML = '';
-            }}
-            renderComponents();
-        }}
-
-        function drawFlow(pathNodes) {{
-            const layer = document.getElementById('flow-layer'); layer.innerHTML = '';
-            const canvasRect = document.getElementById('canvas').getBoundingClientRect();
-            let d = "";
-            pathNodes.forEach((node, i) => {{
-                const r = document.getElementById(node).getBoundingClientRect();
-                const x = r.left - canvasRect.left + 6, y = r.top - canvasRect.top + 6;
-                d += (i === 0 ? "M " : "L ") + x + " " + y;
-            }});
-            const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            p.setAttribute('d', d); p.setAttribute('fill', 'none'); p.setAttribute('stroke', '#ff0');
-            p.setAttribute('stroke-width', '4'); p.classList.add('flow-line');
-            layer.appendChild(p);
-        }}
-
         function renderWires() {{
-            const layer = document.getElementById('wire-layer'); layer.innerHTML = '';
-            const canvasRect = document.getElementById('canvas').getBoundingClientRect();
-            wires.forEach(w => {{
+            const layer = document.getElementById('wire-layer');
+            layer.innerHTML = '';
+            const rect = document.getElementById('canvas').getBoundingClientRect();
+            wires.forEach((w, i) => {{
                 const s = document.getElementById(w.start).getBoundingClientRect();
                 const e = document.getElementById(w.end).getBoundingClientRect();
                 const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                l.setAttribute('x1', s.left - canvasRect.left + 6); l.setAttribute('y1', s.top - canvasRect.top + 6);
-                l.setAttribute('x2', e.left - canvasRect.left + 6); l.setAttribute('y2', e.top - canvasRect.top + 6);
-                l.setAttribute('stroke', '#2ecc71'); l.setAttribute('stroke-width', '4');
+                l.setAttribute('x1', s.left - rect.left + 6); l.setAttribute('y1', s.top - rect.top + 6);
+                l.setAttribute('x2', e.left - rect.left + 6); l.setAttribute('y2', e.top - rect.top + 6);
+                l.className = 'wire';
+                l.ondblclick = () => {{ wires.splice(i,1); save(); renderWires(); }};
                 layer.appendChild(l);
             }});
         }}
 
-        function rotateSelected() {{
-            if (!selectedId) return;
-            const c = state.find(x => x.id === selectedId);
-            c.rot = (c.rot + 90) % 360; saveState(); renderComponents();
+        function simulate() {{
+            simMode = !simMode;
+            const btn = document.getElementById('sim-btn');
+            document.getElementById('flow-layer').innerHTML = '';
+            
+            if(simMode) {{
+                btn.innerText = "⏹ Stop"; btn.style.background = "#822"; btn.style.color = "white";
+                runLogic();
+            }} else {{
+                btn.innerText = "⚡ Start"; btn.style.background = "#d4a017"; btn.style.color = "black";
+                comps.forEach(c => {{ c.lit = false; c.broken = false; }});
+                renderComps();
+            }}
         }}
 
-        function deleteSelected() {{
-            state = state.filter(x => x.id !== selectedId);
-            selectedId = null; saveState(); renderComponents();
+        function runLogic() {{
+            let graph = {{}};
+            const link = (u, v, w) => {{
+                if(!u || !v) return;
+                if(!graph[u]) graph[u] = []; if(!graph[v]) graph[v] = [];
+                graph[u].push({{to:v, w}}); graph[v].push({{to:u, w}});
+            }};
+
+            // Breadboard Internal Paths
+            for(let r=0; r<30; r++) {{
+                for(let c=0; c<4; c++) {{
+                    link(`h_ML_${{r}}_${{c}}`, `h_ML_${{r}}_${{c+1}}`, 0);
+                    link(`h_MR_${{r}}_${{c}}`, `h_MR_${{r}}_${{c+1}}`, 0);
+                }}
+                if(r<29) {{
+                    link(`h_RL_${{r}}_0`, `h_RL_${{r+1}}_0`, 0); link(`h_RL_${{r}}_1`, `h_RL_${{r+1}}_1`, 0);
+                    link(`h_RR_${{r}}_0`, `h_RR_${{r+1}}_0`, 0); link(`h_RR_${{r}}_1`, `h_RR_${{r+1}}_1`, 0);
+                }}
+            }}
+            wires.forEach(w => link(w.start, w.end, 0));
+
+            let bat = comps.find(c => c.type === 'BATTERY');
+            if(!bat || bat.conns.includes(null)) return;
+
+            comps.forEach(c => {{
+                if(c.type.includes('RES')) link(c.conns[0], c.conns[1], 100);
+                if(c.type === 'LED') link(c.conns[0], c.conns[1], 10);
+                if(c.type === 'SWITCH') {{ link(c.conns[0], c.conns[1], 0); link(c.conns[1], c.conns[2], 0); }}
+            }});
+
+            // BFS for path
+            let q = [{{id: bat.conns[0], path: [bat.conns[0]], res: 0}}];
+            let seen = new Set();
+            let result = null;
+
+            while(q.length > 0) {{
+                let cur = q.shift();
+                if(cur.id === bat.conns[1]) {{ result = cur; break; }}
+                if(seen.has(cur.id)) continue;
+                seen.add(cur.id);
+                (graph[cur.id] || []).forEach(e => {{
+                    q.push({{id: e.to, path: [...cur.path, e.to], res: cur.res + e.w}});
+                }});
+            }}
+
+            if(result) {{
+                const shorted = result.res < 50;
+                comps.forEach(c => {{
+                    if(c.type === 'LED' && result.path.includes(c.conns[0])) {{
+                        c.lit = !shorted; c.broken = shorted;
+                    }}
+                }});
+                drawFlow(result.path);
+                renderComps();
+            }}
         }}
 
-        function saveState() {{
-            historyIndex++;
-            history = history.slice(0, historyIndex);
-            history.push({{ comps: JSON.deepcopy(state), wires: JSON.deepcopy(wires) }});
+        function drawFlow(nodes) {{
+            const layer = document.getElementById('flow-layer');
+            const rect = document.getElementById('canvas').getBoundingClientRect();
+            let d = "";
+            nodes.forEach((n, i) => {{
+                const r = document.getElementById(n).getBoundingClientRect();
+                const x = r.left - rect.left + 6, y = r.top - rect.top + 6;
+                d += (i===0 ? "M " : "L ") + x + " " + y;
+            }});
+            const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            p.setAttribute('d', d); p.setAttribute('fill', 'none');
+            p.className = 'flow-line'; layer.appendChild(p);
         }}
-        function undo() {{ if(historyIndex > 0) {{ historyIndex--; state = history[historyIndex].comps; wires = history[historyIndex].wires; renderComponents(); renderWires(); }} }}
-        const JSON = {{ deepcopy: (o) => window.JSON.parse(window.JSON.stringify(o)) }};
 
-        saveState(); renderComponents();
+        function rotate() {{
+            if(!selection) return;
+            const c = comps.find(x => x.id === selection);
+            c.rot = (c.rot + 90) % 360; save(); renderComps();
+        }}
+
+        function remove() {{
+            comps = comps.filter(x => x.id !== selection);
+            selection = null; save(); renderComps();
+        }}
+
+        function save() {{
+            history.push(JSON.stringify({{comps, wires}}));
+            if(history.length > 20) history.shift();
+        }}
+
+        function undo() {{
+            if(history.length > 1) {{
+                history.pop();
+                const last = JSON.parse(history[history.length-1]);
+                comps = last.comps; wires = last.wires;
+                renderComps(); renderWires();
+            }}
+        }}
+
+        save();
     </script>
 </body>
 </html>
