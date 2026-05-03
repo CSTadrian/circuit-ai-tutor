@@ -211,13 +211,21 @@ simulator_html = f"""
 
         function handleWire(id) {{
             if (!wiringStart) {{
-                wiringStart = id; document.getElementById(id).classList.add('wiring');
+                wiringStart = id; 
+                document.getElementById(id).classList.add('wiring');
             }} else {{
-                if (wiringStart !== id) {{ 
-                    wires.push({{start: wiringStart, end: id}}); 
-                    renderWires(); 
-                    saveState();
-                    if(isSimulating) simulateCircuit(); 
+                if (wiringStart !== id) {{
+                    // Check for duplicates
+                    const exists = wires.some(w => 
+                        (w.start === wiringStart && w.end === id) || 
+                        (w.start === id && w.end === wiringStart)
+                    );
+                    
+                    if (!exists) {{
+                        wires.push({{start: wiringStart, end: id}}); 
+                        renderWires(); 
+                        saveState();
+                    }}
                 }}
                 document.getElementById(wiringStart).classList.remove('wiring');
                 wiringStart = null;
@@ -309,18 +317,29 @@ simulator_html = f"""
         }} }};
 
         function renderWires() {{
-            const layer = document.getElementById('wire-layer'); layer.innerHTML = '';
+            const layer = document.getElementById('wire-layer'); 
+            layer.innerHTML = '';
             const rect = document.getElementById('canvas').getBoundingClientRect();
+            
             wires.forEach((w, i) => {{
+                // Calculate the track name on the fly using your new getTrack logic
+                const startTrack = getTrack(w.start);
+                const endTrack = getTrack(w.end);
+                
                 const s = document.getElementById(w.start).getBoundingClientRect();
                 const e = document.getElementById(w.end).getBoundingClientRect();
+                
                 const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                l.setAttribute('x1', s.left - rect.left + 6); l.setAttribute('y1', s.top - rect.top + 6);
-                l.setAttribute('x2', e.left - rect.left + 6); l.setAttribute('y2', e.top - rect.top + 6);
+                l.setAttribute('x1', s.left - rect.left + 6); 
+                l.setAttribute('y1', s.top - rect.top + 6);
+                l.setAttribute('x2', e.left - rect.left + 6); 
+                l.setAttribute('y2', e.top - rect.top + 6);
                 l.setAttribute('class', 'wire');
-                l.ondblclick = () => {{ wires.splice(i, 1); renderWires(); saveState(); if(isSimulating) simulateCircuit(); }};
+                
+                // This keeps the wires interactive
+                l.ondblclick = () => { wires.splice(i, 1); renderWires(); saveState(); }};
                 layer.appendChild(l);
-            }});
+            });
         }}
 
         function toggleSim() {{
