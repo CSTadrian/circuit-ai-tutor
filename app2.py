@@ -376,8 +376,7 @@ simulator_html = f"""
                 comps.forEach(c => {{ if(c.type === 'LED' && c.state !== 'OFF') {{ c.state = 'OFF'; document.getElementById(c.id).innerHTML = ASSETS.LED.OFF; }} }});
                 return;
             }}
-            else if(c.type === 'LED') {{ if(tr[0] && tr[1]) addDirected(tr[0], tr[1]); }}
-            
+ 
             const fwd = {{}}; const rev = {{}};
             function addDirected(u, v) {{ if(!u || !v) return; if(!fwd[u]) fwd[u] = []; fwd[u].push(v); if(!rev[v]) rev[v] = []; rev[v].push(u); }}
             function addUndirected(u, v) {{ addDirected(u, v); addDirected(v, u); }}
