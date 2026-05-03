@@ -6,17 +6,19 @@ import json
 st.set_page_config(page_title="Pro-STEM Precision Lab", layout="wide")
 
 # --- SVG ASSET TEMPLATES ---
+# 1) LED Updated: Long Anode leg starts higher (y=22 vs y=30) and has clear +/- labels.
+# 2) Switch Updated: White logo/toggle visibly shifts left and right.
 ASSETS_RAW = {
     "LED": {
-        "OFF": '<svg width="40" height="50" viewBox="0 0 40 50"><rect x="9" y="20" width="2" height="30" fill="#aaa"/><rect x="29" y="25" width="2" height="25" fill="#aaa"/><path d="M10 25 Q 10 5 20 5 Q 30 5 30 25 Z" fill="#822" opacity="0.9"/><text x="5" y="48" fill="#666" font-size="8">A</text><text x="33" y="48" fill="#666" font-size="8">K</text></svg>',
-        "ON": '<svg width="40" height="50" viewBox="0 0 40 50"><rect x="9" y="20" width="2" height="30" fill="#aaa"/><rect x="29" y="25" width="2" height="25" fill="#aaa"/><path d="M10 25 Q 10 5 20 5 Q 30 5 30 25 Z" fill="#f00" filter="drop-shadow(0 0 8px red)"/><text x="5" y="48" fill="#666" font-size="8">A</text><text x="33" y="48" fill="#666" font-size="8">K</text></svg>'
+        "OFF": '<svg width="40" height="50" viewBox="0 0 40 50"><rect x="9" y="22" width="2" height="28" fill="#aaa"/><rect x="29" y="30" width="2" height="20" fill="#aaa"/><path d="M10 30 Q 10 5 20 5 Q 30 5 30 30 Z" fill="#822" opacity="0.9"/><text x="1" y="48" fill="#aaa" font-size="9">+</text><text x="32" y="48" fill="#aaa" font-size="9">-</text></svg>',
+        "ON": '<svg width="40" height="50" viewBox="0 0 40 50"><rect x="9" y="22" width="2" height="28" fill="#aaa"/><rect x="29" y="30" width="2" height="20" fill="#aaa"/><path d="M10 30 Q 10 5 20 5 Q 30 5 30 30 Z" fill="#f00" filter="drop-shadow(0 0 8px red)"/><text x="1" y="48" fill="#aaa" font-size="9">+</text><text x="32" y="48" fill="#aaa" font-size="9">-</text></svg>'
     },
     "RES_5BAND": '<svg width="80" height="20" viewBox="0 0 80 20"><rect x="5" y="9" width="70" height="2" fill="#aaa"/><rect x="20" y="4" width="40" height="12" rx="4" fill="#69a8e6"/><rect x="25" y="4" width="3" height="12" fill="#8b4513"/><rect x="31" y="4" width="3" height="12" fill="#000"/><rect x="37" y="4" width="3" height="12" fill="#000"/><rect x="43" y="4" width="3" height="12" fill="#ff8c00"/><rect x="52" y="4" width="3" height="12" fill="#800080"/></svg>',
     "SWITCH": {
-        "LEFT": '<svg width="60" height="24" viewBox="0 0 60 24"><rect x="10" y="12" width="2" height="12" fill="#aaa"/><rect x="30" y="12" width="2" height="12" fill="#aaa"/><rect x="50" y="12" width="2" height="12" fill="#aaa"/><rect x="5" y="0" width="50" height="16" rx="2" fill="#333"/><rect x="8" y="3" width="18" height="10" rx="1" fill="#888"/></svg>',
-        "RIGHT": '<svg width="60" height="24" viewBox="0 0 60 24"><rect x="10" y="12" width="2" height="12" fill="#aaa"/><rect x="30" y="12" width="2" height="12" fill="#aaa"/><rect x="50" y="12" width="2" height="12" fill="#aaa"/><rect x="5" y="0" width="50" height="16" rx="2" fill="#333"/><rect x="34" y="3" width="18" height="10" rx="1" fill="#888"/></svg>'
+        "LEFT": '<svg width="60" height="24" viewBox="0 0 60 24"><rect x="10" y="12" width="2" height="12" fill="#aaa"/><rect x="30" y="12" width="2" height="12" fill="#aaa"/><rect x="50" y="12" width="2" height="12" fill="#aaa"/><rect x="5" y="0" width="50" height="16" rx="2" fill="#333"/><rect x="8" y="3" width="18" height="10" rx="2" fill="#ffffff" stroke="#aaa" stroke-width="1"/></svg>',
+        "RIGHT": '<svg width="60" height="24" viewBox="0 0 60 24"><rect x="10" y="12" width="2" height="12" fill="#aaa"/><rect x="30" y="12" width="2" height="12" fill="#aaa"/><rect x="50" y="12" width="2" height="12" fill="#aaa"/><rect x="5" y="0" width="50" height="16" rx="2" fill="#333"/><rect x="34" y="3" width="18" height="10" rx="2" fill="#ffffff" stroke="#aaa" stroke-width="1"/></svg>'
     },
-    "BATTERY": '<svg width="40" height="60" viewBox="0 0 40 60"><rect x="2" y="2" width="36" height="46" rx="4" fill="#333" stroke="#555"/><rect x="6" y="6" width="28" height="10" fill="#f1c40f"/><rect x="6" y="18" width="28" height="10" fill="#f1c40f"/><rect x="6" y="30" width="28" height="10" fill="#f1c40f"/><text x="11" y="40" fill="black" font-size="7" font-weight="bold">4.5V DC</text><rect x="10" y="48" width="2" height="12" fill="#aaa"/><rect x="30" y="48" width="2" height="12" fill="#aaa"/></svg>'
+    "BATTERY": '<svg width="40" height="60" viewBox="0 0 40 60"><rect x="2" y="2" width="36" height="46" rx="4" fill="#333" stroke="#555"/><rect x="6" y="6" width="28" height="10" fill="#f1c40f"/><rect x="6" y="18" width="28" height="10" fill="#f1c40f"/><rect x="6" y="30" width="28" height="10" fill="#f1c40f"/><text x="11" y="40" fill="black" font-size="7" font-weight="bold">4.5V DC</text><rect x="10" y="48" width="2" height="12" fill="#ff4444"/><rect x="30" y="48" width="2" height="12" fill="#4444ff"/><text x="6" y="59" fill="white" font-size="9">+</text><text x="31" y="59" fill="white" font-size="9">-</text></svg>'
 }
 
 simulator_html = f"""
@@ -28,7 +30,6 @@ simulator_html = f"""
         body {{ font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; margin: 0; overflow: hidden; user-select: none; }}
         #workspace {{ display: flex; height: 100vh; }}
         
-        /* Palette & UI */
         #palette {{ width: 260px; background: #222; padding: 20px; border-right: 1px solid #444; }}
         .comp-item {{ background: #333; padding: 12px; margin-bottom: 10px; border-radius: 6px; cursor: pointer; text-align: center; border: 1px solid #444; }}
         .comp-item:hover {{ background: #444; border-color: #3498db; }}
@@ -38,7 +39,6 @@ simulator_html = f"""
         .tool-btn {{ background: #444; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; }}
         .tool-btn:hover {{ background: #3498db; }}
 
-        /* Unified Breadboard Grid */
         .bb-outer {{ 
             position: absolute; top: 60px; left: 40px; background: #eee; 
             padding: 25px; border-radius: 12px; display: flex; align-items: flex-start;
@@ -62,7 +62,6 @@ simulator_html = f"""
         .hole.occupied {{ background: var(--pale-blue) !important; box-shadow: 0 0 5px var(--pale-blue); }}
         .hole.wiring {{ background: #2ecc71 !important; }}
 
-        /* Components */
         .active-comp {{ position: absolute; z-index: 100; cursor: grab; transform-origin: 0 0; }}
         .active-comp.selected {{ filter: drop-shadow(0 0 5px #3498db); }}
         .pin-collider {{ position: absolute; width: 4px; height: 4px; opacity: 0; pointer-events: none; }}
@@ -76,7 +75,7 @@ simulator_html = f"""
         <div id="palette">
             <h4 style="margin-top:0;">Precision Lab</h4>
             <div class="comp-item" onclick="spawn('BATTERY')">{ASSETS_RAW['BATTERY']}<br>4.5V Battery</div>
-            <div class="comp-item" onclick="spawn('LED')">{ASSETS_RAW['LED']['OFF']}<br>LED (A=Long)</div>
+            <div class="comp-item" onclick="spawn('LED')">{ASSETS_RAW['LED']['OFF']}<br>LED (Polarized)</div>
             <div class="comp-item" onclick="spawn('RESISTOR')">{ASSETS_RAW['RES_5BAND']}<br>5-Band Resistor</div>
             <div class="comp-item" onclick="spawn('SWITCH')">{ASSETS_RAW['SWITCH']['LEFT']}<br>Slide Switch</div>
         </div>
@@ -91,9 +90,7 @@ simulator_html = f"""
             <svg class="overlay" id="wire-layer"></svg>
             
             <div class="bb-outer" id="board">
-                <!-- LHS RAIL (Shifted slightly for alignment) -->
                 <div class="bb-section rail" id="rail-L"></div>
-                
                 <div class="main-col">
                     <div class="header-row">
                         <div class="header-cell">a</div><div class="header-cell">b</div><div class="header-cell">c</div><div class="header-cell">d</div><div class="header-cell">e</div>
@@ -110,17 +107,14 @@ simulator_html = f"""
                     </div>
                     <div class="main-grid" id="main-R"></div>
                 </div>
-
                 <div class="bb-section rail" id="rail-R"></div>
             </div>
-
             <div id="comp-layer"></div>
         </div>
     </div>
 
     <script>
         const ASSETS = {json.dumps(ASSETS_RAW)};
-        const GRID = 20;
         let comps = [];
         let wires = [];
         let selection = null;
@@ -152,6 +146,13 @@ simulator_html = f"""
             const d = document.createElement('div'); d.innerText = i; numBox.appendChild(d);
         }}
 
+        function getTrack(holeId) {{
+            if(!holeId) return null;
+            const p = holeId.split('_'); 
+            if(p[1] === 'RL' || p[1] === 'RR') return p[1] + '_' + p[3]; // Vertical Rails are entirely connected per column
+            return p[1] + '_' + p[2]; // Horizontal rows are connected 5-wide
+        }}
+
         function handleWire(id) {{
             if (!wiringStart) {{
                 wiringStart = id;
@@ -160,6 +161,7 @@ simulator_html = f"""
                 if (wiringStart !== id) {{
                     wires.push({{start: wiringStart, end: id}});
                     renderWires();
+                    if(isSimulating) simulateCircuit();
                 }}
                 document.getElementById(wiringStart).classList.remove('wiring');
                 wiringStart = null;
@@ -168,12 +170,12 @@ simulator_html = f"""
 
         function spawn(type) {{
             const id = 'c' + Date.now();
-            let pins = [{{x:9, y:50}}, {{x:29, y:50}}]; // Default LED
+            let pins = [{{x:10, y:50}}, {{x:30, y:50}}]; // Default LED
             if(type === 'RESISTOR') pins = [{{x:5, y:10}}, {{x:75, y:10}}];
             if(type === 'SWITCH') pins = [{{x:10, y:12}}, {{x:30, y:12}}, {{x:50, y:12}}];
             if(type === 'BATTERY') pins = [{{x:10, y:48}}, {{x:30, y:48}}];
             
-            comps.push({{id, type, x:300, y:100, rot:0, pins, state: 'OFF', switchPos: 'LEFT'}});
+            comps.push({{id, type, x:300, y:100, rot:0, pins, state: 'OFF', switchPos: 'LEFT', connectedTracks: []}});
             selection = id;
             renderComps();
         }}
@@ -193,7 +195,7 @@ simulator_html = f"""
                     el.onclick = (e) => {{
                         if(c.type === 'SWITCH') {{
                             c.switchPos = c.switchPos === 'LEFT' ? 'RIGHT' : 'LEFT';
-                            renderComps();
+                            renderComps(); // Triggers simulation update below
                         }}
                     }};
                     layer.appendChild(el);
@@ -217,8 +219,11 @@ simulator_html = f"""
                     el.appendChild(dot);
                 }});
             }});
+            
             Array.from(layer.children).forEach(child => {{ if(!comps.find(x => x.id === child.id)) child.remove(); }});
-            updateHoles();
+            
+            // Allow DOM to update bounding boxes before recalculating physical insertions
+            setTimeout(updateHoles, 0);
         }}
 
         function updateHoles() {{
@@ -227,21 +232,37 @@ simulator_html = f"""
             const rect = document.getElementById('canvas').getBoundingClientRect();
 
             comps.forEach(c => {{
+                c.connectedTracks = [];
                 const el = document.getElementById(c.id);
-                el.querySelectorAll('.pin-collider').forEach(pc => {{
+                if(!el) return;
+
+                const pinNodes = el.querySelectorAll('.pin-collider');
+                pinNodes.forEach((pc, idx) => {{
                     const pRect = pc.getBoundingClientRect();
                     const px = pRect.left - rect.left + 2;
                     const py = pRect.top - rect.top + 2;
+                    
+                    let bestHole = null;
+                    let minDist = 12; 
                     
                     holes.forEach(h => {{
                         const hRect = h.getBoundingClientRect();
                         const hx = hRect.left - rect.left + 6;
                         const hy = hRect.top - rect.top + 6;
-                        // Slightly larger hit area to ensure Rail connectivity
-                        if(Math.abs(px-hx) < 10 && Math.abs(py-hy) < 10) h.classList.add('occupied');
+                        const dist = Math.hypot(px-hx, py-hy);
+                        if(dist < minDist) {{
+                            minDist = dist;
+                            bestHole = h;
+                        }}
                     }});
+                    
+                    if(bestHole) {{
+                        bestHole.classList.add('occupied');
+                        c.connectedTracks[idx] = getTrack(bestHole.id);
+                    }}
                 }});
             }});
+            if(isSimulating) simulateCircuit();
         }}
 
         document.onmousemove = (e) => {{
@@ -254,8 +275,8 @@ simulator_html = f"""
 
         document.onmouseup = () => {{
             if(drag) {{
-                drag.x = Math.round(drag.x / 5) * 5; // Finer snapping for alignment
-                drag.y = Math.round(drag.y / 5) * 5;
+                drag.x = Math.round(drag.x / 10) * 10; 
+                drag.y = Math.round(drag.y / 10) * 10;
                 drag = null; renderComps();
             }}
         }};
@@ -271,7 +292,7 @@ simulator_html = f"""
                 l.setAttribute('x1', s.left - rect.left + 6); l.setAttribute('y1', s.top - rect.top + 6);
                 l.setAttribute('x2', e.left - rect.left + 6); l.setAttribute('y2', e.top - rect.top + 6);
                 l.setAttribute('class', 'wire');
-                l.ondblclick = () => {{ wires.splice(i, 1); renderWires(); }};
+                l.ondblclick = () => {{ wires.splice(i, 1); renderWires(); if(isSimulating) simulateCircuit(); }};
                 layer.appendChild(l);
             }});
         }}
@@ -282,14 +303,96 @@ simulator_html = f"""
             if(isSimulating) {{
                 btn.innerText = "⏹ Stop Stim";
                 btn.style.background = "#c0392b"; btn.style.color = "white";
-                // Simple visual feedback for simulation
-                comps.forEach(c => {{ if(c.type === 'LED') c.state = 'ON'; }});
             }} else {{
                 btn.innerText = "⚡ Stimulate";
                 btn.style.background = "#f39c12"; btn.style.color = "black";
-                comps.forEach(c => {{ if(c.type === 'LED') c.state = 'OFF'; }});
             }}
-            renderComps();
+            simulateCircuit();
+        }}
+
+        // --- GRAPH LOGIC ENGINE ---
+        function simulateCircuit() {{
+            if (!isSimulating) {{
+                comps.forEach(c => {{
+                    if(c.type === 'LED' && c.state !== 'OFF') {{
+                        c.state = 'OFF';
+                        document.getElementById(c.id).innerHTML = ASSETS.LED.OFF;
+                    }}
+                }});
+                return;
+            }}
+
+            const fwd = {{}};
+            const rev = {{}};
+            function addDirected(u, v) {{
+                if(!u || !v) return;
+                if(!fwd[u]) fwd[u] = []; fwd[u].push(v);
+                if(!rev[v]) rev[v] = []; rev[v].push(u);
+            }}
+            function addUndirected(u, v) {{
+                addDirected(u, v);
+                addDirected(v, u);
+            }}
+
+            // Wires = Undirected Edges
+            wires.forEach(w => addUndirected(getTrack(w.start), getTrack(w.end)));
+
+            let vccTracks = [];
+            let gndTracks = [];
+
+            comps.forEach(c => {{
+                const tr = c.connectedTracks || [];
+                if(c.type === 'BATTERY') {{
+                    if(tr[0]) vccTracks.push(tr[0]); // Pin 0 is Positive
+                    if(tr[1]) gndTracks.push(tr[1]); // Pin 1 is Negative
+                }} else if(c.type === 'RESISTOR') {{
+                    if(tr[0] && tr[1]) addUndirected(tr[0], tr[1]); // Bidirectional
+                }} else if(c.type === 'SWITCH') {{
+                    if(c.switchPos === 'LEFT' && tr[0] && tr[1]) addUndirected(tr[0], tr[1]);
+                    if(c.switchPos === 'RIGHT' && tr[1] && tr[2]) addUndirected(tr[1], tr[2]);
+                }} else if(c.type === 'LED') {{
+                    // STRICT POLARITY: Only allows current flow from Anode (Pin 0) to Cathode (Pin 1)
+                    if(tr[0] && tr[1]) addDirected(tr[0], tr[1]); 
+                }}
+            }});
+
+            // BFS to find all tracks with Positive Current
+            const reachableFromVCC = new Set();
+            let q = [...vccTracks];
+            q.forEach(t => reachableFromVCC.add(t));
+            while(q.length > 0) {{
+                const curr = q.shift();
+                (fwd[curr] || []).forEach(n => {{
+                    if(!reachableFromVCC.has(n)) {{
+                        reachableFromVCC.add(n); q.push(n);
+                    }}
+                }});
+            }}
+
+            // BFS to find all tracks connecting to Negative/Ground
+            const canReachGND = new Set();
+            q = [...gndTracks];
+            q.forEach(t => canReachGND.add(t));
+            while(q.length > 0) {{
+                const curr = q.shift();
+                (rev[curr] || []).forEach(n => {{
+                    if(!canReachGND.has(n)) {{
+                        canReachGND.add(n); q.push(n);
+                    }}
+                }});
+            }}
+
+            // Evaluate LED States Based on Flow
+            comps.forEach(c => {{
+                if(c.type === 'LED') {{
+                    const tr = c.connectedTracks || [];
+                    const newState = (tr[0] && tr[1] && reachableFromVCC.has(tr[0]) && canReachGND.has(tr[1])) ? 'ON' : 'OFF';
+                    if(c.state !== newState) {{
+                        c.state = newState;
+                        document.getElementById(c.id).innerHTML = ASSETS.LED[c.state];
+                    }}
+                }}
+            }});
         }}
 
         function rotateComp() {{
