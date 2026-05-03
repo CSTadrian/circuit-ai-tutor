@@ -411,7 +411,7 @@ simulator_html = f"""
                 edgeRes[v+"|"+u] = r;
             }}
 
-            // 1. Internal Breadboard Connections (Resistance ≈ 0)
+            // 1. Internal Breadboard Connections
             for(let r=1; r<=30; r++) {{
                 for(let i=0; i<4; i++) {{
                     addResEdge(`${{r}}${{String.fromCharCode(97+i)}}`, `${{r}}${{String.fromCharCode(97+i+1)}}`, 0.01);
@@ -425,14 +425,14 @@ simulator_html = f"""
                 addResEdge(`${{r}}_blue_r`, `${{r+1}}_blue_r`, 0.01);
             }}
 
-            // 2. Physical Wires (Resistance ≈ 0)
+            // 2. Physical Wires
             wires.forEach(w => addResEdge(getTrack(w.start), getTrack(w.end), 0.01));
 
             let vccTracks = new Set();
             let gndTracks = new Set();
             let ledPaths = [];
 
-            // 3. Map Components with Values
+            // 3. Map Components
             comps.forEach(c => {{
                 const tr = c.connectedTracks || [];
                 if(c.type === 'BATTERY') {{
@@ -441,7 +441,6 @@ simulator_html = f"""
                 }}
                 else if(c.type === 'RESISTOR') {{
                     if(tr[0] && tr[1]) {{
-                        // Ensure we parse '10k' as 10000
                         let val = c.value === '10k' ? 10000 : (parseFloat(c.value) || 1000);
                         addResEdge(tr[0], tr[1], val);
                     }}
@@ -455,7 +454,7 @@ simulator_html = f"""
                 }}
             }});
 
-            // 4. Resistance Calculation (DFS)
+            // 4. Resistance Calculation
             function getEquivR(startSet, endSet) {{
                 let paths = [];
                 let visited = new Set();
@@ -470,14 +469,12 @@ simulator_html = f"""
                 }}
                 startSet.forEach(s => dfs(s, 0, 0));
                 if (paths.length === 0) return Infinity;
-                
-                // For a simple series/parallel auditor, we sum paths as parallel branches
                 let invR = 0;
                 paths.forEach(r => {{ if(r > 0) invR += (1 / r); }});
                 return invR > 0 ? (1 / invR) : 0;
             }}
 
-            // 5. Brightness Mapping
+            // 5. Optimized Brightness Mapping
             ledPaths.forEach(led => {{
                 let rPre = getEquivR(vccTracks, new Set([led.anode]));
                 let rPost = getEquivR(new Set([led.cathode]), gndTracks);
@@ -485,22 +482,20 @@ simulator_html = f"""
 
                 const el = document.getElementById(led.comp.id);
                 if (totalR < Infinity) {{
-                    // Ohm's Law: I = V/R. Battery 4.5V - LED drop 2.0V = 2.5V effective
                     let currentmA = (2.5 / totalR) * 1000;
                     
-                    // Inverse Mapping: 
-                    // 8mA+ (300 ohm) -> ~1.0 opacity
-                    // 2.5mA (1k ohm) -> ~0.5 opacity
-                    // 0.25mA (10k ohm) -> ~0.1 opacity
-                    let brightness = Math.min(Math.max(currentmA / 8, 0.05), 1.0);
+                    // Boosted Mapping for visibility:
+                    // High Res (10k) will now result in ~0.3 opacity instead of near 0.
+                    let brightness = Math.min(Math.max(currentmA / 6, 0.3), 1.0);
                     
                     led.comp.state = 'ON';
                     el.innerHTML = ASSETS.LED.ON;
                     const bulb = el.querySelector('#led-bulb');
                     if(bulb) {{
                         bulb.style.opacity = brightness;
-                        // Glow gets smaller as resistance gets higher
-                        bulb.style.filter = `drop-shadow(0 0 ${{brightness * 20}}px #ff4444)`;
+                        // Increased glow spread for the 'dim' state
+                        let glowSize = 10 + (brightness * 20);
+                        bulb.style.filter = `drop-shadow(0 0 ${{glowSize}}px #ff3333)`;
                     }}
                 }} else {{
                     led.comp.state = 'OFF';
@@ -508,6 +503,7 @@ simulator_html = f"""
                 }}
             }});
         }}
+        
         function rotateComp() {{ if(!selection) return; const c = comps.find(x => x.id === selection); c.rot = (c.rot + 90) % 360; renderComps(); saveState(); }}
         function deleteComp() {{ comps = comps.filter(x => x.id !== selection); selection = null; renderComps(); saveState(); }}
 
