@@ -83,6 +83,7 @@ simulator_html = f"""
                 </div>
             </div>
             <div class="comp-item" onclick="spawn('SWITCH')">{ASSETS_RAW['SWITCH']['LEFT']}<br>Slide Switch</div>
+            <div class="comp-item" onclick="clearBoard()" style="background:#822; margin-top: 20px;">🗑 Reset Board</div>
         </div>
 
         <div id="canvas">
@@ -124,6 +125,31 @@ simulator_html = f"""
         let wiringStart = null;
         let isSimulating = false;
 
+        // --- PERSISTENCE LAYER ---
+        function saveState() {{
+            const state = {{ comps, wires }};
+            localStorage.setItem('precision_lab_circuit', JSON.stringify(state));
+        }}
+
+        function loadState() {{
+            const saved = localStorage.getItem('precision_lab_circuit');
+            if(saved) {{
+                const state = JSON.parse(saved);
+                comps = state.comps || [];
+                wires = state.wires || [];
+                renderComps();
+                renderWires();
+            }}
+        }}
+
+        function clearBoard() {{
+            if(confirm("Clear the entire board?")) {{
+                comps = []; wires = [];
+                localStorage.removeItem('precision_lab_circuit');
+                location.reload();
+            }}
+        }}
+
         function updateResistorPreview() {{
             const val = document.getElementById('res-val').value;
             document.getElementById('res-preview').innerHTML = ASSETS.RESISTOR[val] + "<br>Add Resistor";
@@ -157,7 +183,12 @@ simulator_html = f"""
             if (!wiringStart) {{
                 wiringStart = id; document.getElementById(id).classList.add('wiring');
             }} else {{
-                if (wiringStart !== id) {{ wires.push({{start: wiringStart, end: id}}); renderWires(); if(isSimulating) simulateCircuit(); }}
+                if (wiringStart !== id) {{ 
+                    wires.push({{start: wiringStart, end: id}}); 
+                    renderWires(); 
+                    saveState();
+                    if(isSimulating) simulateCircuit(); 
+                }}
                 document.getElementById(wiringStart).classList.remove('wiring');
                 wiringStart = null;
             }}
@@ -177,6 +208,7 @@ simulator_html = f"""
             comps.push({{id, type, x:300, y:100, rot:0, pins, state: 'OFF', switchPos: 'LEFT', value: compValue, connectedTracks: []}});
             selection = id;
             renderComps();
+            saveState();
         }}
 
         function renderComps() {{
@@ -190,7 +222,11 @@ simulator_html = f"""
                         dragOff = {{x:e.clientX - c.x, y:e.clientY - c.y}}; renderComps();
                     }};
                     el.onclick = (e) => {{
-                        if(c.type === 'SWITCH') {{ c.switchPos = c.switchPos === 'LEFT' ? 'RIGHT' : 'LEFT'; renderComps(); }}
+                        if(c.type === 'SWITCH') {{ 
+                            c.switchPos = c.switchPos === 'LEFT' ? 'RIGHT' : 'LEFT'; 
+                            renderComps(); 
+                            saveState();
+                        }}
                     }};
                     layer.appendChild(el);
                 }}
@@ -237,7 +273,10 @@ simulator_html = f"""
         }}
 
         document.onmousemove = (e) => {{ if(drag) {{ drag.x = e.clientX - dragOff.x; drag.y = e.clientY - dragOff.y; renderComps(); }} }};
-        document.onmouseup = () => {{ if(drag) {{ drag.x = Math.round(drag.x / 10) * 10; drag.y = Math.round(drag.y / 10) * 10; drag = null; renderComps(); }} }};
+        document.onmouseup = () => {{ if(drag) {{ 
+            drag.x = Math.round(drag.x / 10) * 10; drag.y = Math.round(drag.y / 10) * 10; 
+            drag = null; renderComps(); saveState();
+        }} }};
 
         function renderWires() {{
             const layer = document.getElementById('wire-layer'); layer.innerHTML = '';
@@ -249,19 +288,17 @@ simulator_html = f"""
                 l.setAttribute('x1', s.left - rect.left + 6); l.setAttribute('y1', s.top - rect.top + 6);
                 l.setAttribute('x2', e.left - rect.left + 6); l.setAttribute('y2', e.top - rect.top + 6);
                 l.setAttribute('class', 'wire');
-                l.ondblclick = () => {{ wires.splice(i, 1); renderWires(); if(isSimulating) simulateCircuit(); }};
+                l.ondblclick = () => {{ wires.splice(i, 1); renderWires(); saveState(); if(isSimulating) simulateCircuit(); }};
                 layer.appendChild(l);
             }});
         }}
 
-        // --- UPDATED JAVASCRIPT BRIDGE ---
         function toggleSim() {{
             isSimulating = !isSimulating;
-
-            // 1. Capture the state immediately
-            const circuitSnapshot = JSON.stringify(comps);
+            const btn = document.getElementById('sim-btn');
             
-            // 2. Send to Streamlit Parent Window
+            // Send current state to Streamlit before it reruns
+            const circuitSnapshot = JSON.stringify(comps);
             if (window.parent.postMessage) {{
                 window.parent.postMessage({{
                     type: 'streamlit:setComponentValue',
@@ -269,7 +306,6 @@ simulator_html = f"""
                 }}, '*');
             }}
 
-            const btn = document.getElementById('sim-btn');
             if(isSimulating) {{ 
                 btn.innerText = "⏹ Stop Stim"; btn.style.background = "#c0392b"; btn.style.color = "white"; 
             }} else {{ 
@@ -318,8 +354,11 @@ simulator_html = f"""
             }});
         }}
 
-        function rotateComp() {{ if(!selection) return; const c = comps.find(x => x.id === selection); c.rot = (c.rot + 90) % 360; renderComps(); }}
-        function deleteComp() {{ comps = comps.filter(x => x.id !== selection); selection = null; renderComps(); }}
+        function rotateComp() {{ if(!selection) return; const c = comps.find(x => x.id === selection); c.rot = (c.rot + 90) % 360; renderComps(); saveState(); }}
+        function deleteComp() {{ comps = comps.filter(x => x.id !== selection); selection = null; renderComps(); saveState(); }}
+
+        // BOOTSTRAP: Load saved circuit on start
+        window.onload = loadState;
     </script>
 </body>
 </html>
@@ -339,37 +378,27 @@ def get_vertex_client():
             location="global", 
             credentials=credentials
         )
-    else:
-        st.error("GCP Service Account secrets not found!")
-        st.stop()
+    return None
 
 client = get_vertex_client()
 MODEL_ID = "gemini-3.1-pro-preview"
 
-# --- 4. REVISED SIMULATION LOGIC (Learning Analytics) ---
+# --- 4. LEARNING ANALYTICS HELPER ---
 def get_ai_observation(student_json):
-    """Parses JSON data safely into a human-readable string for the AI and student."""
     try:
-        # If the json is a string, parse it; if it's already a list, use it directly
         data = json.loads(student_json) if isinstance(student_json, str) else student_json
         observations = []
-        
         for comp in data:
             ctype = comp.get('type', 'Unknown')
             val = comp.get('value', '')
             tracks = comp.get('connectedTracks', [])
-            
-            # Clean up null values to avoid errors
             valid_tracks = [str(t) for t in tracks if t is not None]
-            
             if valid_tracks:
                 track_str = " & ".join(valid_tracks)
-                obs_line = f"- {ctype} ({val if val else 'No Val'}) connected to tracks: {track_str}"
-                observations.append(obs_line)
-        
-        return "\n".join(observations) if observations else "No components connected to the board."
-    except Exception as e:
-        return f"Could not parse circuit data: {e}"
+                observations.append(f"- {ctype} ({val if val else 'No Val'}) on tracks: {track_str}")
+        return "\n".join(observations) if observations else "No components detected."
+    except:
+        return "Circuit data format error."
 
 # --- 5. MAIN UI LAYOUT ---
 st.title("⚡ AI Circuit Auditor")
@@ -377,8 +406,9 @@ st.title("⚡ AI Circuit Auditor")
 with st.sidebar:
     st.header("Teacher's Goal")
     schematic_file = st.file_uploader("Upload Target Schematic", type=["jpg", "png", "jpeg"])
+    st.info("💡 **Pro-Tip:** If the AI doesn't see your circuit, click 'Stimulate' first to lock in the state.")
 
-# Invisible data layer (assuming state is managed via postMessage bridge)
+# Grab state from the session (passed via postMessage in the JS bridge)
 current_sim_data = st.session_state.get("last_sim_state", "[]") 
 
 # --- 6. AI AUDIT EXECUTION ---
@@ -386,27 +416,24 @@ if st.button("🔍 Check My Circuit", type="primary"):
     if not schematic_file:
         st.warning("Please upload a schematic.")
     else:
-        # 1. Create the human-readable observation (The Analytics/XAI Part)
         user_circuit_description = get_ai_observation(current_sim_data)
         
-        # 2. Display it for the student immediately
         st.subheader("👁️ AI Observation")
-        st.info("The AI sees the following connections on your board:")
+        st.info("The AI analyzed your board and sees:")
         st.markdown(user_circuit_description)
 
-        # 3. Process with Vertex AI
         raw_schematic = PILImage.open(schematic_file).convert("RGB")
         
         analysis_prompt = f"""
-        Compare the student's breadboard connections to the target schematic.
+        Compare this schematic to the student's breadboard description.
         
-        STUDENT CONNECTIONS:
+        STUDENT DATA:
         {user_circuit_description}
         
-        Strictly evaluate:
-        1. Is there a complete path from Power to Ground?
-        2. Is the LED protected by a resistor?
-        3. Is the LED polarity correct (Anode to Positive)?
+        Check for:
+        1. Complete path from Power (VCC) to Ground (GND).
+        2. LED presence and correct polarity.
+        3. Protection resistor presence.
         """
 
         try:
@@ -429,19 +456,18 @@ if st.button("🔍 Check My Circuit", type="primary"):
             )
             
             result = resp.parsed
-            
-            # --- VISUAL FEEDBACK ---
             st.divider()
             if result.get("is_correct"):
-                st.success("✅ **Perfect! Your circuit matches the goal.**")
+                st.success("✅ **Circuit matches! Well done.**")
             else:
-                st.error("❌ **Almost there! Check the connections below.**")
+                st.error("❌ **Audit failed. See suggestions below.**")
             
-            st.write(f"**AI Interpretation:** {result.get('ai_observation')}")
+            st.write(f"**Interpretation:** {result.get('ai_observation')}")
             st.info(f"**Tutor Note:** {result.get('feedback')}")
 
         except Exception as e:
             st.error(f"Audit failed: {e}")
 
 # --- 7. EMBED SIMULATOR ---
+# We use height=850 to keep the full board visible
 components.html(simulator_html, height=850)
