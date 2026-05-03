@@ -410,4 +410,109 @@ simulator_html = f"""
 </html>
 """
 
+# -*- coding: utf-8 -*-
+import streamlit as st
+import json
+from PIL import Image as PILImage
+
+# --- VERTEX AI SDK IMPORTS ---
+from google import genai
+from google.genai import types
+from google.oauth2 import service_account
+
+st.set_page_config(page_title="AI Circuit Auditor", layout="wide")
+MODEL_ID = "gemini-3.1-pro-preview"
+
+# --- 1. VERTEX AI INITIALIZATION ---
+@st.cache_resource
+def get_vertex_client():
+    if "gcp_service_account" in st.secrets:
+        creds_info = st.secrets["gcp_service_account"]
+        credentials = service_account.Credentials.from_service_account_info(
+            creds_info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        return genai.Client(
+            vertexai=True, 
+            project=creds_info["project_id"], 
+            location="global", 
+            credentials=credentials
+        )
+    else:
+        st.error("GCP Service Account secrets not found!")
+        st.stop()
+
+client = get_vertex_client()
+
+# --- 2. UI: UPLOAD SEMANTICS ---
+st.title("⚡ AI Circuit Auditor")
+st.write("Upload the target schematic and submit your circuit data to verify the logic.")
+
+schematic_file = st.file_uploader("Upload Target Schematic (The Semantics)", type=["jpg", "png", "jpeg"])
+
+# Note: In a full deployment, this JSON would be passed directly from your 
+# JavaScript 'simulateCircuit()' via a Streamlit custom component bi-directional bridge. 
+# For this implementation, we simulate receiving that payload.
+student_circuit_json = st.text_area(
+    "Student Circuit Data (JSON from Simulator)", 
+    value='[{"id":"c1","type":"BATTERY","connectedTracks":["RL_0","RR_0"]},{"id":"c2","type":"LED","connectedTracks":["RL_5","RR_5"]}]',
+    height=100
+)
+
+# --- 3. AI AUDIT EXECUTION ---
+if st.button("Check Circuit", type="primary"):
+    if not schematic_file:
+        st.warning("Please upload a schematic to check against.")
+    elif not student_circuit_json:
+        st.warning("No circuit data received.")
+    else:
+        raw_schematic = PILImage.open(schematic_file).convert("RGB")
+        
+        with st.spinner("Analyzing topological alignment..."):
+            # Construct the Socratic Prompt
+            analysis_prompt = f"""
+            You are an expert engineering tutor evaluating a student's virtual breadboard circuit.
+            
+            1. Analyze the visual schematic provided (The Goal).
+            2. Analyze the student's current circuit topology provided in this JSON data:
+            {student_circuit_json}
+            
+            Task: Does the student's JSON topology correctly fulfill the visual schematic's semantics? 
+            Check for closed loops, correct polarity (LED anodes to positive rails), and short circuits.
+            
+            Return a JSON object containing:
+            - 'is_correct': boolean
+            - 'feedback': A short, encouraging pedagogical explanation of what is right or wrong.
+            """
+
+            try:
+                # Vertex AI Call
+                resp = client.models.generate_content(
+                    model=MODEL_ID,
+                    contents=[raw_schematic, analysis_prompt],
+                    config=types.GenerateContentConfig(
+                        temperature=0.0,
+                        response_mime_type="application/json",
+                        response_schema={
+                            "type": "OBJECT",
+                            "properties": {
+                                "is_correct": {"type": "BOOLEAN"},
+                                "feedback": {"type": "STRING"}
+                            }
+                        }
+                    )
+                )
+                
+                # Parse and Display Results
+                result = resp.parsed if hasattr(resp, 'parsed') else json.loads(resp.text)
+                
+                if result.get("is_correct"):
+                    st.success("✅ **Circuit is Correct!**")
+                else:
+                    st.error("❌ **Circuit Needs Adjustment**")
+                    
+                st.info(result.get("feedback"))
+
+            except Exception as e:
+                st.error(f"Audit failed: {e}")
+
 components.html(simulator_html, height=850)
