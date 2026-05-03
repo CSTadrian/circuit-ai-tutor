@@ -147,11 +147,28 @@ simulator_html = f"""
         function loadState() {{
             const saved = localStorage.getItem('precision_lab_circuit');
             if(saved) {{
-                const state = JSON.parse(saved);
-                comps = state.comps || [];
-                wires = state.wires || [];
-                renderComps();
-                renderWires();
+                try {{
+                    const state = JSON.parse(saved);
+                    
+                    // AUTOMATIC MIGRATION: 
+                    // Check if wires use the old "h_" format
+                    const isOldFormat = state.wires && state.wires.some(w => w.start.includes('h_'));
+                    
+                    if (isOldFormat) {{
+                        console.log("Old data format detected. Migrating...");
+                        localStorage.removeItem('precision_lab_circuit');
+                        location.reload(); // Automatically refreshes the page to start clean
+                        return;
+                    }}
+        
+                    comps = state.comps || [];
+                    wires = state.wires || [];
+                    renderComps();
+                    renderWires();
+                }} catch (e) {{
+                    console.error("Data corrupt, resetting.");
+                    localStorage.removeItem('precision_lab_circuit');
+                }}
             }}
         }}
 
