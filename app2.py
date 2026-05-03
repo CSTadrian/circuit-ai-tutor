@@ -281,6 +281,22 @@ simulator_html = f"""
 
         function toggleSim() {{
             isSimulating = !isSimulating;
+            
+            // 1. Capture the state immediately
+            const circuitSnapshot = JSON.stringify(comps);
+            
+            // 2. Send to Streamlit (Hidden from UI)
+            // This uses the Streamlit bridge to update the session state
+            if (window.parent.postMessage) {
+                window.parent.postMessage({
+                    type: 'streamlit:setComponentValue',
+                    value: circuitSnapshot
+                }, '*');
+            }
+        
+            const btn = document.getElementById('sim-btn');
+
+            isSimulating = !isSimulating;
             const btn = document.getElementById('sim-btn');
             if(isSimulating) {{ btn.innerText = "⏹ Stop Stim"; btn.style.background = "#c0392b"; btn.style.color = "white"; }} 
             else {{ btn.innerText = "⚡ Stimulate"; btn.style.background = "#f39c12"; btn.style.color = "black"; }}
@@ -407,33 +423,54 @@ with st.sidebar:
 # We use a hidden state or a collapsed expander to store the simulator data
 # In production, this variable 'current_sim_data' would be pushed from the JS simulator
 current_sim_data = st.session_state.get("last_sim_state", "[No Data]") 
+# --- REVISED SIMULATION LOGIC FOR THE AI PROMPT ---
+def get_ai_observation(student_json):
+    try:
+        data = json.loads(student_json)
+        observations = []
+        
+        for comp in data:
+            ctype = comp.get('type', 'Unknown')
+            val = comp.get('value', '')
+            tracks = comp.get('connectedTracks', [])
+            
+            # Filter out nulls and format for the AI's "eyes"
+            valid_tracks = [t for t in tracks if t]
+            if valid_tracks:
+                track_str = " & ".join(valid_tracks)
+                obs_line = f"- {ctype} ({val if val else ''}) connected to tracks: {track_str}"
+                observations.append(obs_line)
+        
+        return "\n".join(observations) if observations else "No components connected to the board."
+    except:
+        return "Could not parse circuit data."
 
-# --- 4. AI AUDIT EXECUTION ---
+# --- UPDATED AI AUDIT EXECUTION ---
 if st.button("🔍 Check My Circuit", type="primary"):
     if not schematic_file:
-        st.warning("Please upload a schematic for the AI to compare against.")
+        st.warning("Please upload a schematic.")
     else:
+        # 1. Create the human-readable observation first
+        user_circuit_description = get_ai_observation(current_sim_data)
+        
+        # 2. Display it on the platform for the student (The "XAI" part)
+        st.subheader("👁️ AI Observation")
+        st.markdown(f"**The AI sees the following connections on your board:**\n\n{user_circuit_description}")
+
+        # 3. Send to Vertex AI for the high-level pedagogical audit
         raw_schematic = PILImage.open(schematic_file).convert("RGB")
         
-        with st.spinner("AI is observing your connections..."):
-            # The prompt now asks the AI to "Describe the Path" (XAI)
-            analysis_prompt = f"""
-            You are a STEM tutor. I am providing a schematic and the student's live circuit data:
-            {current_sim_data}
-            
-            TASK:
-            1. Describe EXACTLY what the student's circuit is doing based on the JSON. 
-               (e.g., "I see a loop starting from the battery, going through a 1k resistor, then to an LED.")
-            2. Compare this to the uploaded schematic.
-            3. Tell the student if it is 'Correct' or 'Needs adjustment'.
-            
-            RETURN JSON:
-            {{
-              "is_correct": boolean,
-              "ai_observation": "A description of the path and connections the AI sees",
-              "feedback": "Pedagogical advice"
-            }}
-            """
+        analysis_prompt = f"""
+        Compare the student's breadboard connections to the target schematic.
+        
+        STUDENT CONNECTIONS:
+        {user_circuit_description}
+        
+        Strictly evaluate:
+        1. Is there a complete path from Power to Ground?
+        2. Is the LED protected by a resistor?
+        3. Is the LED polarity correct (Anode to Positive)?
+        """
 
             try:
                 resp = client.models.generate_content(
