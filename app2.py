@@ -16,8 +16,8 @@ st.set_page_config(page_title="Pro-STEM Precision Lab", layout="wide")
 # --- 1. SVG ASSET TEMPLATES ---
 ASSETS_RAW = {
     "LED": {
-        "OFF": '<svg width="40" height="50" viewBox="0 0 40 50"><rect x="9" y="22" width="2" height="28" fill="#aaa"/><rect x="29" y="30" width="2" height="20" fill="#aaa"/><path d="M10 30 Q 10 5 20 5 Q 30 5 30 30 Z" fill="#822" opacity="0.9"/><text x="1" y="48" fill="#aaa" font-size="9">+</text><text x="32" y="48" fill="#aaa" font-size="9">-</text></svg>',
-        "ON": '<svg width="40" height="50" viewBox="0 0 40 50"><rect x="9" y="22" width="2" height="28" fill="#aaa"/><rect x="29" y="30" width="2" height="20" fill="#aaa"/><path d="M10 30 Q 10 5 20 5 Q 30 5 30 30 Z" fill="#f00" filter="drop-shadow(0 0 8px red)"/><text x="1" y="48" fill="#aaa" font-size="9">+</text><text x="32" y="48" fill="#aaa" font-size="9">-</text></svg>'
+        "OFF": '<svg width="40" height="50" viewBox="0 0 40 50"><rect x="9" y="22" width="2" height="28" fill="#aaa"/><rect x="29" y="30" width="2" height="20" fill="#aaa"/><path d="M10 30 Q 10 5 20 5 Q 30 5 30 30 Z" fill="#441111"/></svg>',
+        "ON": '<svg width="40" height="50" viewBox="0 0 40 50"><rect x="9" y="22" width="2" height="28" fill="#aaa"/><rect x="29" y="30" width="2" height="20" fill="#aaa"/><path id="led-bulb" d="M10 30 Q 10 5 20 5 Q 30 5 30 30 Z" fill="#ff0000" style="transition: all 0.2s;"/></svg>'
     },
     "RESISTOR": {
         "300": '<svg width="80" height="20" viewBox="0 0 80 20"><rect x="5" y="9" width="70" height="2" fill="#aaa"/><rect x="20" y="4" width="40" height="12" rx="4" fill="#69a8e6"/><rect x="25" y="4" width="3" height="12" fill="#ff8c00"/><rect x="31" y="4" width="3" height="12" fill="#000"/><rect x="37" y="4" width="3" height="12" fill="#000"/><rect x="43" y="4" width="3" height="12" fill="#000"/><rect x="52" y="4" width="3" height="12" fill="#8b4513"/></svg>',
@@ -397,73 +397,99 @@ simulator_html = f"""
                 }});
                 return;
             }}
-        
-            const fwd = {{}}; const rev = {{}};
-            function addDirected(u, v) {{ if(!u || !v) return; if(!fwd[u]) fwd[u] = []; fwd[u].push(v); if(!rev[v]) rev[v] = []; rev[v].push(u); }}
-            function addUndirected(u, v) {{ addDirected(u, v); addDirected(v, u); }}
-        
-            // --- NEW: Internal Breadboard Logic ---
-            // Connect rows a-b-c-d-e and f-g-h-i-j
+
+            let graph = {{}};
+            let edgeRes = {{}};
+
+            function addResEdge(u, v, r) {{
+                if(!u || !v) return;
+                if(!graph[u]) graph[u] = [];
+                if(!graph[v]) graph[v] = [];
+                graph[u].push(v);
+                graph[v].push(u);
+                edgeRes[u+"|"+v] = r;
+                edgeRes[v+"|"+u] = r;
+            }}
+
+            // 1. Internal Breadboard Connections (Resistance near 0)
             for(let r=1; r<=30; r++) {{
                 for(let i=0; i<4; i++) {{
-                    addUndirected(`${{r}}${{String.fromCharCode(97+i)}}`, `${{r}}${{String.fromCharCode(97+i+1)}}`);
-                    addUndirected(`${{r}}${{String.fromCharCode(102+i)}}`, `${{r}}${{String.fromCharCode(102+i+1)}}`);
+                    addResEdge(`${{r}}${{String.fromCharCode(97+i)}}`, `${{r}}${{String.fromCharCode(97+i+1)}}`, 0.01);
+                    addResEdge(`${{r}}${{String.fromCharCode(102+i)}}`, `${{r}}${{String.fromCharCode(102+i+1)}}`, 0.01);
                 }}
             }}
-            // Connect power rails vertically (Bus strips)
             for(let r=1; r<30; r++) {{
-                addUndirected(`${{r}}_red_l`, `${{r+1}}_red_l`);
-                addUndirected(`${{r}}_blue_l`, `${{r+1}}_blue_l`);
-                addUndirected(`${{r}}_red_r`, `${{r+1}}_red_r`);
-                addUndirected(`${{r}}_blue_r`, `${{r+1}}_blue_r`);
+                addResEdge(`${{r}}_red_l`, `${{r+1}}_red_l`, 0.01);
+                addResEdge(`${{r}}_blue_l`, `${{r+1}}_blue_l`, 0.01);
+                addResEdge(`${{r}}_red_r`, `${{r+1}}_red_r`, 0.01);
+                addResEdge(`${{r}}_blue_r`, `${{r+1}}_blue_r`, 0.01);
             }}
-        
-            // 1. Add student's wires
-            wires.forEach(w => addUndirected(getTrack(w.start), getTrack(w.end)));
-        
-            let vccTracks = []; let gndTracks = [];
-        
-            // 2. Map components
+
+            // 2. Physical Wires (Resistance near 0)
+            wires.forEach(w => addResEdge(getTrack(w.start), getTrack(w.end), 0.01));
+
+            let vccTracks = new Set();
+            let gndTracks = new Set();
+            let ledPaths = [];
+
+            // 3. Map Components with Values
             comps.forEach(c => {{
                 const tr = c.connectedTracks || [];
                 if(c.type === 'BATTERY') {{
-                    if(tr[0]) vccTracks.push(tr[0]);
-                    if(tr[1]) gndTracks.push(tr[1]);
-                }} 
-                else if(c.type === 'RESISTOR') {{ if(tr[0] && tr[1]) addUndirected(tr[0], tr[1]); }}
+                    if(tr[0]) vccTracks.add(tr[0]);
+                    if(tr[1]) gndTracks.add(tr[1]);
+                }}
+                else if(c.type === 'RESISTOR') {{
+                    if(tr[0] && tr[1]) addResEdge(tr[0], tr[1], parseFloat(c.value) || 1000);
+                }}
                 else if(c.type === 'SWITCH') {{
-                    if(c.switchPos === 'LEFT' && tr[0] && tr[1]) addUndirected(tr[0], tr[1]);
-                    else if(c.switchPos === 'RIGHT' && tr[1] && tr[2]) addUndirected(tr[1], tr[2]);
-                }} 
-                else if(c.type === 'LED') {{ if(tr[0] && tr[1]) addDirected(tr[0], tr[1]); }}
+                    if(c.switchPos === 'LEFT' && tr[0] && tr[1]) addResEdge(tr[0], tr[1], 0.01);
+                    else if(c.switchPos === 'RIGHT' && tr[1] && tr[2]) addResEdge(tr[1], tr[2], 0.01);
+                }}
+                else if(c.type === 'LED') {{
+                    if(tr[0] && tr[1]) ledPaths.push({{ anode: tr[0], cathode: tr[1], comp: c }});
+                }}
             }});
-        
-            // 3. BFS Traversal
-            const reachableFromVCC = new Set(vccTracks);
-            let q = [...vccTracks];
-            while(q.length > 0) {{
-                const curr = q.shift();
-                (fwd[curr] || []).forEach(n => {{ if(!reachableFromVCC.has(n)) {{ reachableFromVCC.add(n); q.push(n); }} }});
+
+            // 4. Resistance Calculation
+            function getEquivR(startSet, endSet) {{
+                let paths = [];
+                let visited = new Set();
+                function dfs(curr, currR, d) {{
+                    if (endSet.has(curr)) {{ paths.push(currR); return; }}
+                    if (d > 40) return;
+                    visited.add(curr);
+                    (graph[curr] || []).forEach(n => {{
+                        if (!visited.has(n)) dfs(n, currR + (edgeRes[curr+"|"+n] || 0), d+1);
+                    }});
+                    visited.delete(curr);
+                }}
+                startSet.forEach(s => dfs(s, 0, 0));
+                if (paths.length === 0) return Infinity;
+                let invR = 0;
+                paths.forEach(r => {{ if(r > 0) invR += (1 / r); }});
+                return invR > 0 ? (1 / invR) : 0;
             }}
-        
-            const canReachGND = new Set(gndTracks);
-            q = [...gndTracks];
-            while(q.length > 0) {{
-                const curr = q.shift();
-                (rev[curr] || []).forEach(n => {{ if(!canReachGND.has(n)) {{ canReachGND.add(n); q.push(n); }} }});
-            }}
-        
-            // 4. Final LED State Update
-            comps.forEach(c => {{
-                if(c.type === 'LED') {{
-                    const tr = c.connectedTracks || [];
-                    const isPowered = (tr[0] && tr[1] && reachableFromVCC.has(tr[0]) && canReachGND.has(tr[1]));
-                    const newState = isPowered ? 'ON' : 'OFF';
-                    if(c.state !== newState) {{
-                        c.state = newState;
-                        const el = document.getElementById(c.id);
-                        if(el) el.innerHTML = ASSETS.LED[c.state];
-                    }}
+
+            // 5. Brightness Output
+            ledPaths.forEach(led => {{
+                let rPre = getEquivR(vccTracks, new Set([led.anode]));
+                let rPost = getEquivR(new Set([led.cathode]), gndTracks);
+                let totalR = rPre + rPost;
+
+                const el = document.getElementById(led.comp.id);
+                if (totalR < Infinity) {{
+                    let currentmA = ((4.5 - 2.0) / totalR) * 1000;
+                    let brightness = Math.min(Math.max(currentmA / 20, 0.1), 1.0);
+                    
+                    led.comp.state = 'ON';
+                    el.innerHTML = ASSETS.LED.ON;
+                    const bulb = el.querySelector('#led-bulb');
+                    bulb.style.opacity = brightness;
+                    bulb.style.filter = `drop-shadow(0 0 ${{brightness * 15}}px red)`;
+                }} else {{
+                    led.comp.state = 'OFF';
+                    el.innerHTML = ASSETS.LED.OFF;
                 }}
             }});
         }}
