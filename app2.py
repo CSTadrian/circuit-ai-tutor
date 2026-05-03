@@ -266,49 +266,42 @@ simulator_html = f"""
             saveState();
         }}
 
-        function renderComps() {
+        function renderComps() {{
             const layer = document.getElementById('comp-layer');
-            comps.forEach(c => {
+            comps.forEach(c => {{
                 let el = document.getElementById(c.id);
-                if(!el) {
+                if(!el) {{
                     el = document.createElement('div'); el.id = c.id; el.className = 'active-comp';
-                    el.onmousedown = (e) => {
+                    el.onmousedown = (e) => {{
                         e.stopPropagation(); drag = c; selection = c.id;
-                        dragOff = {x:e.clientX - c.x, y:e.clientY - c.y}; 
-                        renderComps();
-                    };
-                    el.onclick = (e) => {
-                        if(c.type === 'SWITCH') { 
+                        dragOff = {{x:e.clientX - c.x, y:e.clientY - c.y}}; renderComps();
+                    }};
+                    el.onclick = (e) => {{
+                        if(c.type === 'SWITCH') {{ 
                             c.switchPos = c.switchPos === 'LEFT' ? 'RIGHT' : 'LEFT'; 
                             renderComps(); 
                             saveState();
-                            if(isSimulating) simulateCircuit(); // Trigger sim on click
-                        }
-                    };
+                            if(isSimulating) simulateCircuit(); // Updates simulation immediately
+                        }}
+                    }};
                     layer.appendChild(el);
-                }
-                
-                // Apply state/visuals
+                }}
                 if(c.type === 'LED') el.innerHTML = ASSETS.LED[c.state];
                 else if(c.type === 'SWITCH') el.innerHTML = ASSETS.SWITCH[c.switchPos];
                 else if(c.type === 'BATTERY') el.innerHTML = ASSETS.BATTERY;
                 else if(c.type === 'RESISTOR') el.innerHTML = ASSETS.RESISTOR[c.value];
         
                 el.style.left = c.x + 'px'; el.style.top = c.y + 'px';
-                el.style.transform = `rotate(${c.rot}deg)`;
-                
-                // Remove and recreate colliders
+                el.style.transform = `rotate(${{c.rot}}deg)`;
                 el.querySelectorAll('.pin-collider').forEach(p => p.remove());
-                c.pins.forEach(p => {
+                c.pins.forEach(p => {{
                     const dot = document.createElement('div'); dot.className = 'pin-collider';
-                    // Important: Pin positions need to be relative to rotation if your pins move
-                    dot.style.left = p.x + 'px'; dot.style.top = p.y + 'px'; 
-                    el.appendChild(dot);
-                });
-            });
-            // Ensure holes are mapped after render
+                    dot.style.left = p.x + 'px'; dot.style.top = p.y + 'px'; el.appendChild(dot);
+                }});
+            }});
+            Array.from(layer.children).forEach(child => {{ if(!comps.find(x => x.id === child.id)) child.remove(); }});
             setTimeout(updateHoles, 0);
-        }
+        }}
 
         function updateHoles() {{
             const holes = Array.from(document.querySelectorAll('.hole'));
@@ -379,68 +372,66 @@ simulator_html = f"""
             simulateCircuit();
         }}
 
-        function simulateCircuit() {
-            // 1. Reset logic
-            if (!isSimulating) {
-                comps.forEach(c => { 
-                    if(c.type === 'LED' && c.state !== 'OFF') { 
+        function simulateCircuit() {{
+            if (!isSimulating) {{
+                comps.forEach(c => {{ 
+                    if(c.type === 'LED' && c.state !== 'OFF') {{ 
                         c.state = 'OFF'; 
                         document.getElementById(c.id).innerHTML = ASSETS.LED.OFF; 
-                    } 
-                });
+                    }} 
+                }});
                 return;
-            }
+            }}
         
-            // 2. Map the graph
-            const fwd = {}; const rev = {};
-            function addDirected(u, v) { if(!u || !v) return; if(!fwd[u]) fwd[u] = []; fwd[u].push(v); if(!rev[v]) rev[v] = []; rev[v].push(u); }
-            function addUndirected(u, v) { addDirected(u, v); addDirected(v, u); }
+            const fwd = {{}}; const rev = {{}};
+            function addDirected(u, v) {{ if(!u || !v) return; if(!fwd[u]) fwd[u] = []; fwd[u].push(v); if(!rev[v]) rev[v] = []; rev[v].push(u); }}
+            function addUndirected(u, v) {{ addDirected(u, v); addDirected(v, u); }}
             
-            // Add Wires
+            // Add all wire connections to the graph
             wires.forEach(w => addUndirected(getTrack(w.start), getTrack(w.end)));
             
             let vccTracks = []; let gndTracks = [];
             
-            // 3. Process Components
-            comps.forEach(c => {
+            // Map components to graph nodes
+            comps.forEach(c => {{
                 const tr = c.connectedTracks || [];
-                if(c.type === 'BATTERY') { if(tr[0]) vccTracks.push(tr[0]); if(tr[1]) gndTracks.push(tr[1]); } 
-                else if(c.type === 'RESISTOR') { if(tr[0] && tr[1]) addUndirected(tr[0], tr[1]); } 
-                else if(c.type === 'SWITCH') {
+                if(c.type === 'BATTERY') {{ if(tr[0]) vccTracks.push(tr[0]); if(tr[1]) gndTracks.push(tr[1]); }} 
+                else if(c.type === 'RESISTOR') {{ if(tr[0] && tr[1]) addUndirected(tr[0], tr[1]); }} 
+                else if(c.type === 'SWITCH') {{
                     if(c.switchPos === 'LEFT' && tr[0] && tr[1]) addUndirected(tr[0], tr[1]);
                     else if(c.switchPos === 'RIGHT' && tr[1] && tr[2]) addUndirected(tr[1], tr[2]);
-                } 
-                else if(c.type === 'LED') { if(tr[0] && tr[1]) addDirected(tr[0], tr[1]); }
-            });
+                }} else if(c.type === 'LED') {{ if(tr[0] && tr[1]) addDirected(tr[0], tr[1]); }}
+            }});
         
-            // 4. Traversal
+            // Calculate reachability from VCC
             const reachableFromVCC = new Set(vccTracks);
             let q = [...vccTracks];
-            while(q.length > 0) {
+            while(q.length > 0) {{
                 const curr = q.shift();
-                (fwd[curr] || []).forEach(n => { if(!reachableFromVCC.has(n)) { reachableFromVCC.add(n); q.push(n); } });
-            }
+                (fwd[curr] || []).forEach(n => {{ if(!reachableFromVCC.has(n)) {{ reachableFromVCC.add(n); q.push(n); }} }});
+            }}
             
+            // Calculate reachability from GND (reverse direction)
             const canReachGND = new Set(gndTracks);
             q = [...gndTracks];
-            while(q.length > 0) {
+            while(q.length > 0) {{
                 const curr = q.shift();
-                (rev[curr] || []).forEach(n => { if(!canReachGND.has(n)) { canReachGND.add(n); q.push(n); } });
-            }
+                (rev[curr] || []).forEach(n => {{ if(!canReachGND.has(n)) {{ canReachGND.add(n); q.push(n); }} }});
+            }}
             
-            // 5. Update UI
-            comps.forEach(c => {
-                if(c.type === 'LED') {
+            // Update all LEDs
+            comps.forEach(c => {{
+                if(c.type === 'LED') {{
                     const tr = c.connectedTracks || [];
-                    // A simple path exists if Anode (tr[0]) is VCC and Cathode (tr[1]) is GND
+                    // LED lights up only if there is a path from VCC to Anode, AND from Cathode to GND
                     const newState = (tr[0] && tr[1] && reachableFromVCC.has(tr[0]) && canReachGND.has(tr[1])) ? 'ON' : 'OFF';
-                    if(c.state !== newState) { 
+                    if(c.state !== newState) {{ 
                         c.state = newState; 
                         document.getElementById(c.id).innerHTML = ASSETS.LED[c.state]; 
-                    }
-                }
-            });
-        }
+                    }}
+                }}
+            }});
+        }}
 
         function rotateComp() {{ if(!selection) return; const c = comps.find(x => x.id === selection); c.rot = (c.rot + 90) % 360; renderComps(); saveState(); }}
         function deleteComp() {{ comps = comps.filter(x => x.id !== selection); selection = null; renderComps(); saveState(); }}
