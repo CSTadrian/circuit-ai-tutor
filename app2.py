@@ -9,31 +9,32 @@ st.set_page_config(page_title="Pro-STEM Accurate Lab", layout="wide")
 ASSETS = {
     # LED: Long leg (+), Short leg (-)
     "LED_OFF": '''<svg width="40" height="60" viewBox="0 0 40 60" xmlns="http://www.w3.org/2000/svg">
-        <line x1="10" y1="30" x2="10" y2="60" stroke="#aaa" stroke-width="2.5"/>
-        <line x1="30" y1="30" x2="30" y2="50" stroke="#aaa" stroke-width="2.5"/>
-        <path d="M5 30 Q 5 5 20 5 Q 35 5 35 30 Z" fill="#882222" opacity="0.9"/>
+        <line x1="15" y1="30" x2="15" y2="60" stroke="#aaa" stroke-width="2.5"/>
+        <line x1="35" y1="30" x2="35" y2="50" stroke="#aaa" stroke-width="2.5"/>
+        <path d="M10 30 Q 10 5 25 5 Q 40 5 40 30 Z" fill="#882222" opacity="0.9"/>
     </svg>''',
     
     "LED_ON": '''<svg width="40" height="60" viewBox="0 0 40 60" xmlns="http://www.w3.org/2000/svg">
-        <line x1="10" y1="30" x2="10" y2="60" stroke="#aaa" stroke-width="2.5"/>
-        <line x1="30" y1="30" x2="30" y2="50" stroke="#aaa" stroke-width="2.5"/>
-        <path d="M5 30 Q 5 5 20 5 Q 35 5 35 30 Z" fill="#ff0000" filter="drop-shadow(0px 0px 10px red)"/>
+        <line x1="15" y1="30" x2="15" y2="60" stroke="#aaa" stroke-width="2.5"/>
+        <line x1="35" y1="30" x2="35" y2="50" stroke="#aaa" stroke-width="2.5"/>
+        <path d="M10 30 Q 10 5 25 5 Q 40 5 40 30 Z" fill="#ff0000" filter="drop-shadow(0px 0px 10px red)"/>
     </svg>''',
     
-    # Battery: 4.5V (3-cell) with pins at 20px (1 hole) spacing
+    # Battery: Pins at 20px (1 hole) spacing
     "BATTERY": '''<svg width="50" height="60" viewBox="0 0 50 60" xmlns="http://www.w3.org/2000/svg">
         <rect x="5" y="5" width="40" height="35" rx="3" fill="#333"/>
         <rect x="5" y="10" width="15" height="25" fill="#ff4444"/>
-        <text x="10" y="30" fill="white" font-size="10" font-family="Arial">+</text>
+        <text x="8" y="28" fill="white" font-size="12" font-family="Arial" font-weight="bold">+</text>
         <line x1="15" y1="40" x2="15" y2="60" stroke="#ff4444" stroke-width="3"/>
         <line x1="35" y1="40" x2="35" y2="60" stroke="#4444ff" stroke-width="3"/>
     </svg>''',
     
-    "RESISTOR": '''<svg width="60" height="20" viewBox="0 0 60 20" xmlns="http://www.w3.org/2000/svg">
-        <line x1="10" y1="10" x2="50" y2="10" stroke="#aaa" stroke-width="2"/>
-        <rect x="15" y="4" width="30" height="12" rx="3" fill="#69a8e6"/>
-        <rect x="22" y="4" width="3" height="12" fill="#ff8c00"/>
-        <rect x="35" y="4" width="3" height="12" fill="#8b4513"/>
+    "RESISTOR": '''<svg width="50" height="60" viewBox="0 0 50 60" xmlns="http://www.w3.org/2000/svg">
+        <line x1="15" y1="30" x2="15" y2="60" stroke="#aaa" stroke-width="2.5"/>
+        <line x1="35" y1="30" x2="35" y2="60" stroke="#aaa" stroke-width="2.5"/>
+        <rect x="10" y="10" width="30" height="15" rx="3" fill="#69a8e6"/>
+        <rect x="15" y="10" width="3" height="15" fill="#ff8c00"/>
+        <rect x="25" y="10" width="3" height="15" fill="#8b4513"/>
     </svg>''',
 
     "SWITCH_L": '''<svg width="60" height="40" viewBox="0 0 60 40" xmlns="http://www.w3.org/2000/svg">
@@ -66,12 +67,12 @@ simulator_html = f"""
         
         /* Breadboard Styling */
         .bb-main {{ 
-            position: absolute; top: 100px; left: 250px; background: #f0f0f0; 
+            position: absolute; top: 100px; left: 250px; background: #fdfdfd; 
             padding: 25px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);
             display: flex; gap: 40px; border: 2px solid #ccc;
         }}
         .bb-group {{ display: flex; flex-direction: column; }}
-        .label-row {{ display: flex; justify-content: space-around; color: #666; font-size: 12px; font-weight: bold; margin-bottom: 5px; }}
+        .label-row {{ display: flex; justify-content: space-around; color: #333; font-size: 12px; font-weight: bold; margin-bottom: 5px; font-family: monospace; }}
         .bb-grid {{ display: grid; grid-template-rows: repeat(30, var(--grid)); grid-template-columns: repeat(5, var(--grid)); gap: 2px; }}
         
         .hole {{ width: 14px; height: 14px; background: #bbb; border-radius: 50%; box-shadow: inset 1px 1px 2px rgba(0,0,0,0.4); margin: 3px; }}
@@ -82,7 +83,7 @@ simulator_html = f"""
         .active-comp.selected {{ filter: drop-shadow(0 0 5px #007bff); }}
         
         #toolbar {{ position: absolute; top: 20px; left: 220px; display: flex; gap: 10px; z-index: 1000; }}
-        .btn {{ padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }}
+        .btn {{ padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.2s; }}
         .btn-run {{ background: #28a745; color: white; }}
         .btn-stop {{ background: #dc3545; color: white; }}
         .comp-card {{ background: #3d3d3d; padding: 10px; margin-bottom: 10px; border-radius: 5px; text-align: center; cursor: pointer; font-size: 13px; }}
@@ -96,12 +97,11 @@ simulator_html = f"""
             <div class="comp-card" onclick="addComp('BATTERY')">4.5V Battery</div>
             <div class="comp-card" onclick="addComp('LED')">LED (Polarized)</div>
             <div class="comp-card" onclick="addComp('RESISTOR')">Resistor</div>
-            <div class="comp-card" onclick="addComp('SWITCH')">Slide Switch</div>
         </div>
         
         <div id="canvas">
             <div id="toolbar">
-                <button id="simBtn" class="btn btn-run" onclick="toggleSim()">Start Stimulation</button>
+                <button id="simBtn" class="btn btn-run" onclick="toggleSim()">Start Simulation</button>
                 <button class="btn" onclick="rotateSelected()" style="background:#555; color:white;">Rotate 90°</button>
                 <button class="btn" onclick="deleteSelected()" style="background:#771111; color:white;">Delete</button>
             </div>
@@ -131,6 +131,7 @@ simulator_html = f"""
         function initBoard() {{
             const left = document.getElementById('grid-left');
             const right = document.getElementById('grid-right');
+            // 30 rows * 5 columns = 150 holes per side
             for(let i=0; i<150; i++) {{
                 const h = document.createElement('div');
                 h.className = 'hole';
@@ -148,7 +149,7 @@ simulator_html = f"""
 
         function addComp(type) {{
             const id = "c_" + Date.now();
-            comps.push({{ id, type, x: 50, y: 150, rot: 0, state: 'L', lit: false }});
+            comps.push({{ id, type, x: 50, y: 150, rot: 0, lit: false }});
             selectedId = id;
             render();
         }}
@@ -157,7 +158,7 @@ simulator_html = f"""
             isSimulating = !isSimulating;
             const btn = document.getElementById('simBtn');
             btn.className = isSimulating ? 'btn btn-stop' : 'btn btn-run';
-            btn.innerText = isSimulating ? 'Stop Stimulation' : 'Start Stimulation';
+            btn.innerText = isSimulating ? 'Stop Simulation' : 'Start Simulation';
             updateLogic();
         }}
 
@@ -177,7 +178,6 @@ simulator_html = f"""
                 
                 let svgKey = c.type;
                 if (c.type === 'LED') svgKey = (c.lit && isSimulating) ? 'LED_ON' : 'LED_OFF';
-                if (c.type === 'SWITCH') svgKey = c.state === 'L' ? 'SWITCH_L' : 'SWITCH_R';
                 
                 div.innerHTML = ASSETS[svgKey];
                 
@@ -187,13 +187,6 @@ simulator_html = f"""
                     startDrag(e, c);
                 }};
 
-                if(c.type === 'SWITCH') {{
-                    div.onclick = () => {{ 
-                        c.state = c.state === 'L' ? 'R' : 'L'; 
-                        render();
-                        updateLogic();
-                    }};
-                }}
                 layer.appendChild(div);
                 highlightHoles(c);
             }});
@@ -206,12 +199,16 @@ simulator_html = f"""
                 const cx = r.left + r.width/2;
                 const cy = r.top + r.height/2;
                 
-                // Logic: Pins are roughly at local (15, 50) and (35, 50) for these components
-                // We check if a hole is very close to those points
-                const distAnode = Math.sqrt((cx - (c.x + 15))**2 + (cy - (c.y + 55))**2);
-                const distCathode = Math.sqrt((cx - (c.x + 35))**2 + (cy - (c.y + 55))**2);
+                // Pin offsets relative to component top-left (assuming 1-gap/20px spacing)
+                const pin1X = c.x + 15;
+                const pin1Y = c.y + 55;
+                const pin2X = c.x + 35;
+                const pin2Y = c.y + 55;
+
+                const dist1 = Math.sqrt((cx - pin1X)**2 + (cy - pin1Y)**2);
+                const dist2 = Math.sqrt((cx - pin2X)**2 + (cy - pin2Y)**2);
                 
-                if(distAnode < 10 || distCathode < 10) {{
+                if(dist1 < 10 || dist2 < 10) {{
                     h.classList.add('occupied');
                 }}
             }});
@@ -223,11 +220,12 @@ simulator_html = f"""
                 render();
                 return;
             }}
-            // STEM Logic: Battery exists AND LED rotation is 0 (Long leg is on Left/+ side)
-            const hasPower = comps.some(c => c.type === 'BATTERY');
+            
+            const hasBattery = comps.some(c => c.type === 'BATTERY');
             comps.forEach(c => {{
                 if(c.type === 'LED') {{
-                    c.lit = hasPower && (c.rot === 0);
+                    // Basic Polarity Check: Long leg (Anode) on left (0deg) lights if battery is present
+                    c.lit = hasBattery && (c.rot === 0);
                 }}
             }});
             render();
@@ -244,6 +242,7 @@ simulator_html = f"""
             function stop() {{
                 window.removeEventListener('mousemove', move);
                 window.removeEventListener('mouseup', stop);
+                updateLogic();
             }}
             window.addEventListener('mousemove', move);
             window.addEventListener('mouseup', stop);
@@ -261,6 +260,7 @@ simulator_html = f"""
             comps = comps.filter(i => i.id !== selectedId);
             selectedId = null;
             render();
+            updateLogic();
         }}
     </script>
 </body>
