@@ -299,13 +299,12 @@ simulator_html = f"""
             
             // Send current state to Streamlit
             const circuitSnapshot = JSON.stringify(comps);
-            window.parent.postMessage({
+            window.parent.postMessage({{ // <-- Double curly brace here
                 isStreamlitMessage: true,
                 type: "setComponentValue",
                 value: circuitSnapshot,
-            }, "*");
-            
-
+            }}, "*"); // <-- Double curly brace here
+        
             if(isSimulating) {{ 
                 btn.innerText = "⏹ Stop Stim"; btn.style.background = "#c0392b"; btn.style.color = "white"; 
             }} else {{ 
@@ -313,6 +312,7 @@ simulator_html = f"""
             }}
             simulateCircuit();
         }}
+         
 
         function simulateCircuit() {{
             if (!isSimulating) {{
