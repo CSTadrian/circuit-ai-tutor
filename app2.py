@@ -42,22 +42,30 @@ def init_drive():
 drive_service = init_drive()
 
 def save_to_drive(user_id, hk_time_str, task_name, ai_result_dict, file_prefix, sim_data):
-    # 1. Save the Circuit State Snapshot (JSON)
-    snapshot_bytes = json.dumps(sim_data, indent=2).encode('utf-8')
-    file_metadata = {
-        'name': f"{file_prefix}.json", 
-        'parents': [PARENT_FOLDER_ID]
-    }
-    media = MediaIoBaseUpload(io.BytesIO(snapshot_bytes), mimetype='application/json', resumable=True)
-    drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+    
+    # 1. Save the PHOTO (PNG)
+    # The screenshot data looks like "data:image/png;base64,iVBORw..."
+    if "screenshot" in sim_data:
+        img_data = sim_data["screenshot"].split(",")[1]
+        img_bytes = base64.b64decode(img_data)
+        
+        img_metadata = {'name': f"{file_prefix}.png", 'parents': [PARENT_FOLDER_ID]}
+        media_img = MediaIoBaseUpload(io.BytesIO(img_bytes), mimetype='image/png')
+        drive_service.files().create(body=img_metadata, media_body=media_img).execute()
 
-    # 2. Prepare the new row for the CSV
+    # 2. Save the CIRCUIT DATA (JSON) for backup
+    json_bytes = json.dumps(sim_data, indent=2).encode('utf-8')
+    json_metadata = {'name': f"{file_prefix}.json", 'parents': [PARENT_FOLDER_ID]}
+    media_json = MediaIoBaseUpload(io.BytesIO(json_bytes), mimetype='application/json')
+    drive_service.files().create(body=json_metadata, media_body=media_json).execute()
+
+    # 3. Update the CSV
     new_row = {
         "user_id": user_id,
         "time_clicked": hk_time_str,
-        "task_number": task_name,
-        "ai_results": json.dumps(ai_result_dict), # Store the AI's JSON output
-        "saved_file_name": f"{file_prefix}.json"
+        "task_number": task_name, # Keeps full name in CSV
+        "ai_results": ai_result_dict.get("feedback"),
+        "saved_file_name": file_prefix # This will be user_task_time
     }
     df_new = pd.DataFrame([new_row])
 
@@ -158,6 +166,7 @@ simulator_html = f"""
         svg.overlay {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 50; }}
         .wire {{ stroke: #2ecc71; stroke-width: 4; stroke-linecap: round; pointer-events: auto; cursor: crosshair; }}
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
     <div id="workspace">
@@ -219,14 +228,25 @@ simulator_html = f"""
         let isSimulating = false;
 
         function notifyPython() {{
+            const boardElement = document.getElementById('canvas');
             
-            const circuitData = {{ comps: comps, wires: wires }};
-            window.parent.postMessage({{
-                isStreamlitMessage: true,
-                type: "streamlit:setComponentValue",
-                value: JSON.stringify(circuitData)
-            }}, '*');
+            html2canvas(boardElement).then(canvas => {{
+                const imageData = canvas.toDataURL("image/png");
+                // Note: The braces around circuitData are doubled below:
+                const circuitData = {{ 
+                    comps: comps, 
+                    wires: wires,
+                    screenshot: imageData 
+                }};
+                
+                window.parent.postMessage({{
+                    isStreamlitMessage: true,
+                    type: "streamlit:setComponentValue",
+                    value: JSON.stringify(circuitData)
+                }}, '*');
+            }});
         }}
+        
         
         // --- PERSISTENCE LAYER ---
         function saveState() {{
@@ -745,33 +765,46 @@ with open("sim_frontend/index.html", "w", encoding="utf-8") as f:
 sim_component = components.declare_component("sim_component", path="sim_frontend")
 current_sim_data = sim_component(default='{"comps": [], "wires": []}')
 
-from datetime import datetime, timedelta, timezone
 
 # --- 6. AI AUDIT EXECUTION ---
 if st.button("🔍 Check My Circuit", type="primary"):
+    # 1. Validation Check: Ensure we have both the target schematic and the student's board
     if schematic_img is None:
-        st.warning("No schematic available for this task.")
+        st.warning("No schematic available for this task. Please select a task first.")
+    elif current_sim_data is None:
+        st.warning("No circuit data detected. Please build something on the breadboard first!")
     else:
-        user_circuit_description = get_ai_observation(current_sim_data)
-        
-        st.subheader("👁️ AI Observation")
-        st.info(f"The AI is comparing your board against **{selected_task_name}**:")
-        st.markdown(user_circuit_description)
-
-        analysis_prompt = f"""
-        Compare this schematic to the student's breadboard description.
-        
-        TARGET TASK: {selected_task_name}
-        STUDENT DATA:
-        {user_circuit_description}
-        
-        Check for:
-        1. Complete path from Power (VCC) to Ground (GND).
-        2. LED presence and correct polarity.
-        3. Protection resistor presence and correct value.
-        """
-
         try:
+            # 2. Setup Naming & Time (Hong Kong Time UTC+8)
+            task_id_only = selected_task_name.split(":")[0].replace(" ", "") 
+            hk_tz = timezone(timedelta(hours=8))
+            now_hk = datetime.now(hk_tz)
+            
+            hk_time_log = now_hk.strftime('%Y-%m-%d %H:%M:%S')
+            time_code = now_hk.strftime('%y%m%d_%H%M')
+            file_prefix = f"{user_id}_{task_id_only}_{time_code}"
+
+            # 3. Get AI Observation of the Breadboard
+            user_circuit_description = get_ai_observation(current_sim_data)
+            
+            st.subheader("👁️ AI Observation")
+            st.info(f"The AI is comparing your board against **{selected_task_name}**:")
+            st.markdown(user_circuit_description)
+
+            # 4. Run the AI Analysis
+            analysis_prompt = f"""
+            Compare this schematic to the student's breadboard description.
+            
+            TARGET TASK: {selected_task_name}
+            STUDENT DATA:
+            {user_circuit_description}
+            
+            Check for:
+            1. Complete path from Power (VCC) to Ground (GND).
+            2. LED presence and correct polarity.
+            3. Protection resistor presence and correct value.
+            """
+
             with st.spinner("Analyzing circuit..."):
                 resp = client.models.generate_content(
                     model=MODEL_ID,
@@ -793,6 +826,7 @@ if st.button("🔍 Check My Circuit", type="primary"):
                 
             result = resp.parsed
             
+            # 5. Display Results to Student
             st.divider()
             if result.get("is_correct"):
                 st.success("✅ **Circuit matches! Well done.**")
@@ -802,34 +836,23 @@ if st.button("🔍 Check My Circuit", type="primary"):
             st.write(f"**Interpretation:** {result.get('ai_observation')}")
             st.info(f"**Tutor Note:** {result.get('feedback')}")
 
-            # --- SAVE TO DRIVE LOGIC ---
+            # 6. Parse Simulator Data & Save to Drive
             with st.spinner("Logging data to Google Drive..."):
-                # 1. Get Hong Kong Time (UTC+8)
-                hk_tz = timezone(timedelta(hours=8))
-                now_hk = datetime.now(hk_tz)
-                
-                # Format for CSV: YYYY-MM-DD HH:MM:SS
-                hk_time_log = now_hk.strftime('%Y-%m-%d %H:%M:%S')
-                
-                # Format for Filename: 260503_1234 (Year Month Day _ Hour Min)
-                time_code = now_hk.strftime('%y%m%d_%H%M')
+                # Handle potential string-to-dict conversion from the HTML component
+                if isinstance(current_sim_data, str):
+                    sim_dict = json.loads(current_sim_data)
+                else:
+                    sim_dict = current_sim_data
 
-                # 2. Prepare Naming (e.g., 01_task1_260503_1234)
-                # Cleaning task name to ensure no spaces in filename
-                clean_task_name = selected_task_name.replace(" ", "").lower()
-                file_name_final = f"{user_id}_{clean_task_name}_{time_code}"
-
-                # 3. Call your drive save function
-                # Note: 'result' is the AI output dictionary
                 save_to_drive(
                     user_id=user_id, 
                     hk_time_str=hk_time_log, 
                     task_name=selected_task_name, 
                     ai_result_dict=result, 
-                    file_prefix=file_name_final,
-                    sim_data=current_sim_data
+                    file_prefix=file_prefix,
+                    sim_data=sim_dict
                 )
-                st.toast(f"Data saved for User {user_id}", icon="💾")
+                st.toast(f"Data saved: {file_prefix}", icon="💾")
                 
         except Exception as e:
-            st.error(f"Audit failed: {e}")
+            st.error(f"Audit error: {e}")
