@@ -6,22 +6,40 @@ import urllib.parse
 from google import genai
 from google.oauth2 import service_account
 
-# --- 1. IMAGE CONFIGURATION ---
-# Replace these URLs with your actual GitHub RAW links
-ASSET_URLS = {
-    "bb": "https://your-github-link/breadboard.png",
-    "led": "https://your-github-link/led.png",
-    "ldr": "https://your-github-link/ldr.png",
-    "res_300": "https://your-github-link/resistor_300.png",
-    "res_1k": "https://your-github-link/resistor_1k.png",
-    "res_10k": "https://your-github-link/resistor_10k.png",
-    "switch": "https://your-github-link/switch.png",
-    "pot": "https://your-github-link/pot.png"
+# --- 1. CONFIG & AI SETUP ---
+st.set_page_config(page_title="Pro-STEM Direct Lab", layout="wide")
+
+@st.cache_resource
+def get_ai_client():
+    if "gcp_service_account" in st.secrets:
+        creds_info = st.secrets["gcp_service_account"]
+        credentials = service_account.Credentials.from_service_account_info(
+            creds_info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        return genai.Client(vertexai=True, project=creds_info["project_id"], location="global", credentials=credentials)
+    return None
+
+client = get_ai_client()
+
+# --- 2. VECTOR ASSETS (Embedded directly in code) ---
+# These are SVG strings that represent realistic electronic components
+ASSETS = {
+    "LED": '<svg width="50" height="80" viewBox="0 0 50 80" xmlns="http://www.w3.org/2000/svg"><rect x="22" y="40" width="2" height="40" fill="#aaa"/><rect x="26" y="40" width="2" height="35" fill="#aaa"/><path d="M15 40 Q 15 15 25 15 Q 35 15 35 40 Z" fill="#ff4444" opacity="0.9"/><circle cx="25" cy="25" r="5" fill="white" opacity="0.3"/></svg>',
+    
+    "RES_300": '<svg width="80" height="30" viewBox="0 0 80 30" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="14" width="80" height="2" fill="#aaa"/><rect x="20" y="5" width="40" height="20" rx="5" fill="#d2b48c"/><rect x="25" y="5" width="4" height="20" fill="orange"/><rect x="33" y="5" width="4" height="20" fill="orange"/><rect x="41" y="5" width="4" height="20" fill="brown"/></svg>',
+    
+    "RES_1K": '<svg width="80" height="30" viewBox="0 0 80 30" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="14" width="80" height="2" fill="#aaa"/><rect x="20" y="5" width="40" height="20" rx="5" fill="#d2b48c"/><rect x="25" y="5" width="4" height="20" fill="brown"/><rect x="33" y="5" width="4" height="20" fill="black"/><rect x="41" y="5" width="4" height="20" fill="red"/></svg>',
+    
+    "RES_10K": '<svg width="80" height="30" viewBox="0 0 80 30" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="14" width="80" height="2" fill="#aaa"/><rect x="20" y="5" width="40" height="20" rx="5" fill="#d2b48c"/><rect x="25" y="5" width="4" height="20" fill="brown"/><rect x="33" y="5" width="4" height="20" fill="black"/><rect x="41" y="5" width="4" height="20" fill="orange"/></svg>',
+    
+    "LDR": '<svg width="50" height="50" viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg"><circle cx="25" cy="25" r="20" fill="#cc0000"/><path d="M15 25 L20 20 L25 30 L30 20 L35 30 L40 25" fill="none" stroke="yellow" stroke-width="2"/><rect x="22" y="45" width="2" height="20" fill="#aaa"/><rect x="26" y="45" width="2" height="20" fill="#aaa"/></svg>',
+    
+    "SWITCH": '<svg width="60" height="40" viewBox="0 0 60 40" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="5" width="50" height="30" rx="2" fill="#333"/><rect x="20" y="10" width="20" height="20" fill="#555"/><rect x="25" y="12" width="10" height="16" fill="white" opacity="0.8"/></svg>',
+    
+    "POT": '<svg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"><circle cx="30" cy="30" r="25" fill="#555" stroke="#333" stroke-width="2"/><circle cx="30" cy="30" r="5" fill="#999"/><line x1="30" y1="30" x2="30" y2="10" stroke="white" stroke-width="3"/></svg>'
 }
 
-st.set_page_config(page_title="Pro-STEM Simulator", layout="wide")
-
-# --- 2. AI LOGIC (Silent Scaffolding) ---
+# --- 3. STATE MANAGEMENT ---
 if "tokens" not in st.session_state: st.session_state.tokens = 15
 if "feedback" not in st.session_state: st.session_state.feedback = ""
 
@@ -30,157 +48,154 @@ if "circuit_data" in query_params:
     raw_data = query_params["circuit_data"]
     st.query_params.clear()
     try:
-        decoded = json.loads(urllib.parse.unquote(raw_data))
+        decoded_data = json.loads(urllib.parse.unquote(raw_data))
         st.session_state.tokens -= 1
-        
-        # We pass the metadata of the images to Gemini
-        # Gemini now 'knows' what the logos represent based on the 'type' tag
-        prompt = f"Analyze this circuit: {decoded}. The student is using real-world component logos. Provide a Socratic hint about their placement or logic."
-        
-        # (AI Client logic remains the same as previous versions)
-        st.session_state.feedback = "AI Analysis complete. Check your resistor value!" 
+        prompt = f"Student built: {decoded_data}. Provide a Socratic hint for a P4-S3 student."
+        if client:
+            response = client.models.generate_content(model="gemini-3.1-pro-preview", contents=prompt)
+            st.session_state.feedback = response.text
     except:
         pass
 
-# --- 3. THE VISUAL SIMULATOR (JS/HTML5) ---
-# I am using a transparent SVG overlay for the holes so your breadboard image shows through.
+# --- 4. UI & SIDEBAR ---
+with st.sidebar:
+    st.title("🔋 Component Lab")
+    st.metric("Tokens", st.session_state.tokens)
+    if st.button("Reset Lab"):
+        st.session_state.tokens = 15
+        st.session_state.feedback = ""
+        st.rerun()
+
+if st.session_state.feedback:
+    st.info(f"🤖 **Tutor:** {st.session_state.feedback}")
+
+# --- 5. THE SIMULATOR ---
+# We pass the SVGs as a JSON string to the JavaScript
+assets_json = json.dumps(ASSETS)
+
 simulator_html = f"""
 <!DOCTYPE html>
 <html>
 <head>
     <style>
-        body {{ background: #1e1e1e; color: white; font-family: sans-serif; margin: 0; overflow: hidden; }}
-        #ui-root {{ display: flex; height: 100vh; }}
+        body {{ font-family: 'Segoe UI', sans-serif; background: #222; color: white; margin: 0; overflow: hidden; }}
+        #workspace {{ display: flex; height: 100vh; }}
+        #palette {{ width: 220px; background: #333; padding: 15px; border-right: 2px solid #444; overflow-y: auto; }}
+        #canvas {{ flex-grow: 1; position: relative; background: #1a1a1a; }}
         
-        /* Side Palette */
-        #palette {{ width: 220px; background: #2d2d2d; padding: 15px; border-right: 2px solid #444; z-index: 1000; }}
-        .asset-btn {{ 
-            width: 100%; margin-bottom: 15px; background: #3d3d3d; border: 1px solid #555; 
-            border-radius: 8px; cursor: pointer; padding: 10px; color: white; transition: 0.2s;
+        .breadboard {{ 
+            background: #e0e0e0; width: 850px; height: 420px; border-radius: 10px; 
+            margin: 50px auto; position: relative; display: grid; 
+            grid-template-columns: repeat(30, 1fr); padding: 30px 20px; gap: 8px;
+            border: 5px solid #ccc;
         }}
-        .asset-btn:hover {{ background: #505050; border-color: #007bff; }}
-        .asset-btn img {{ width: 50px; height: auto; display: block; margin: 0 auto 5px; }}
+        .hole {{ width: 14px; height: 14px; background: #bbb; border-radius: 50%; cursor: crosshair; box-shadow: inset 1px 1px 2px rgba(0,0,0,0.2); }}
+        .hole:hover {{ background: #555; }}
         
-        /* Workspace */
-        #workspace {{ flex-grow: 1; position: relative; background-image: radial-gradient(#333 1px, transparent 1px); background-size: 20px 20px; }}
+        .comp-item {{ 
+            background: #444; padding: 10px; margin-bottom: 12px; border-radius: 8px; 
+            cursor: pointer; text-align: center; border: 1px solid #555; font-size: 11px;
+            display: flex; flex-direction: column; align-items: center;
+        }}
+        .comp-item:hover {{ border-color: #007bff; background: #505050; }}
+        .comp-item svg {{ margin-bottom: 5px; max-width: 60px; height: auto; }}
         
-        #bb-layer {{ 
-            position: absolute; top: 100px; left: 50px; 
-            width: 900px; height: 450px;
-            background: url('{ASSET_URLS["bb"]}') no-repeat center;
-            background-size: contain;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        .active-comp {{ 
+            position: absolute; cursor: move; z-index: 100;
+            filter: drop-shadow(3px 5px 5px rgba(0,0,0,0.4));
         }}
-
-        .hole-grid {{ 
-            display: grid; grid-template-columns: repeat(30, 1fr); 
-            width: 100%; height: 100%; opacity: 0.3; /* Hidden holes that align with your image */
-        }}
-        .hole {{ width: 15px; height: 15px; border-radius: 50%; cursor: crosshair; margin: auto; }}
-        .hole:hover {{ background: rgba(255, 255, 0, 0.5); opacity: 1; }}
-
-        .placed-component {{ 
-            position: absolute; cursor: move; z-index: 50; 
-            filter: drop-shadow(2px 4px 6px rgba(0,0,0,0.3));
-        }}
-        .placed-component img {{ pointer-events: none; }}
-
-        #wire-canvas {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 60; }}
-        #submit-btn {{ 
-            position: fixed; bottom: 20px; right: 20px; padding: 15px 40px; 
-            background: #28a745; border: none; border-radius: 30px; color: white; 
-            font-weight: bold; font-size: 18px; cursor: pointer;
+        
+        svg.wire-layer {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 90; }}
+        #analyze-btn {{ 
+            position: fixed; bottom: 20px; right: 20px; padding: 15px 30px; 
+            background: #28a745; color: white; border: none; border-radius: 50px; 
+            font-weight: bold; cursor: pointer;
         }}
     </style>
 </head>
 <body>
-    <div id="ui-root">
+    <div id="workspace">
         <div id="palette">
-            <h4 style="margin-top:0">Components</h4>
-            <button class="asset-btn" onclick="spawn('LED', '{ASSET_URLS["led"]}')"><img src="{ASSET_URLS["led"]}">LED</button>
-            <button class="asset-btn" onclick="spawn('RES_300', '{ASSET_URLS["res_300"]}')"><img src="{ASSET_URLS["res_300"]}">300Ω</button>
-            <button class="asset-btn" onclick="spawn('LDR', '{ASSET_URLS["ldr"]}')"><img src="{ASSET_URLS["ldr"]}">LDR</button>
-            <button class="asset-btn" onclick="spawn('SWITCH', '{ASSET_URLS["switch"]}')"><img src="{ASSET_URLS["switch"]}">Switch</button>
-            <button class="asset-btn" onclick="spawn('POT', '{ASSET_URLS["pot"]}')"><img src="{ASSET_URLS["pot"]}">Variable</button>
+            <div class="comp-item" onclick="addComp('LED')">{ASSETS['LED']}LED</div>
+            <div class="comp-item" onclick="addComp('Resistor-300')">{ASSETS['RES_300']}300Ω Resistor</div>
+            <div class="comp-item" onclick="addComp('Resistor-1k')">{ASSETS['RES_1K']}1kΩ Resistor</div>
+            <div class="comp-item" onclick="addComp('Resistor-10k')">{ASSETS['RES_10K']}10kΩ Resistor</div>
+            <div class="comp-item" onclick="addComp('LDR')">{ASSETS['LDR']}LDR</div>
+            <div class="comp-item" onclick="addComp('Slide-Switch')">{ASSETS['SWITCH']}Switch</div>
+            <div class="comp-item" onclick="addComp('Potentiometer')">{ASSETS['POT']}Variable</div>
         </div>
-
-        <div id="workspace">
-            <svg id="wire-canvas"></svg>
-            <div id="bb-layer">
-                <div class="hole-grid" id="grid"></div>
-            </div>
+        <div id="canvas">
+            <svg class="wire-layer" id="wire-layer"></svg>
+            <div class="breadboard" id="bb"></div>
         </div>
     </div>
-    
-    <button id="submit-btn" onclick="exportCircuit()">🔍 Analyze Circuit</button>
+    <button id="analyze-btn" onclick="submit()">Analyze My Circuit</button>
 
     <script>
-        const grid = document.getElementById('grid');
-        const wireCanvas = document.getElementById('wire-canvas');
-        let comps = [];
-        let wires = [];
-        let activeWireStart = null;
+        const bb = document.getElementById('bb');
+        const wireLayer = document.getElementById('wire-layer');
+        const ASSET_MAP = {assets_json};
+        let placedComponents = [];
+        let connections = [];
+        let wireStartHole = null;
 
-        // 1. Create the 'invisible' logic grid over your breadboard image
-        for(let i=0; i<300; i++) {{
+        for (let i = 0; i < 300; i++) {{
             const h = document.createElement('div');
             h.className = 'hole';
-            h.dataset.id = i;
+            h.id = 'h-' + i;
             h.onclick = () => handleWire(i);
-            grid.appendChild(h);
+            bb.appendChild(h);
         }}
 
-        // 2. Drag & Drop with Images
-        function spawn(type, url) {{
-            const id = 'c' + Date.now();
+        function addComp(type) {{
+            const id = 'comp-' + Date.now();
             const div = document.createElement('div');
-            div.className = 'placed-component';
+            div.className = 'active-comp';
             div.id = id;
+            div.innerHTML = ASSET_MAP[type.toUpperCase().replace('-', '_')];
             div.style.left = '300px';
-            div.style.top = '50px';
-            div.innerHTML = `<img src="${{url}}" width="80">`;
+            div.style.top = '100px';
             
-            // Drag Logic
-            let x=0, y=0;
-            div.onmousedown = (e) => {{
-                x = e.clientX - div.offsetLeft;
-                y = e.clientY - div.offsetTop;
-                document.onmousemove = (me) => {{
-                    div.style.left = (me.clientX - x) + 'px';
-                    div.style.top = (me.clientY - y) + 'px';
-                }};
+            let isDragging = false;
+            div.onmousedown = () => {{ isDragging = true; }};
+            document.onmousemove = (e) => {{
+                if (isDragging) {{
+                    div.style.left = (e.clientX - 250) + 'px';
+                    div.style.top = (e.clientY - 50) + 'px';
+                }}
             }};
-            document.onmouseup = () => {{ document.onmousemove = null; }};
+            document.onmouseup = () => {{ isDragging = false; }};
             
-            document.getElementById('workspace').appendChild(div);
-            comps.push({{ id, type, x: 300, y: 50 }});
+            document.getElementById('canvas').appendChild(div);
+            placedComponents.push({{ id, type }});
         }}
 
-        // 3. Wiring Logic
-        function handleWire(id) {{
-            if(activeWireStart === null) {{
-                activeWireStart = id;
-            }} else {{
-                const h1 = document.querySelector(`[data-id="${{activeWireStart}}"]`).getBoundingClientRect();
-                const h2 = document.querySelector(`[data-id="${{id}}"]`).getBoundingClientRect();
-                const root = document.getElementById('workspace').getBoundingClientRect();
-                
+        function handleWire(holeIdx) {{
+            if (wireStartHole === null) {{
+                wireStartHole = holeIdx;
+                document.getElementById('h-' + holeIdx).style.background = '#007bff';
+            } else {{
+                const start = document.getElementById('h-' + wireStartHole).getBoundingClientRect();
+                const end = document.getElementById('h-' + holeIdx).getBoundingClientRect();
+                const canvas = document.getElementById('canvas').getBoundingClientRect();
+
                 const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                line.setAttribute('x1', h1.left - root.left + 7);
-                line.setAttribute('y1', h1.top - root.top + 7);
-                line.setAttribute('x2', h2.left - root.left + 7);
-                line.setAttribute('y2', h2.top - root.top + 7);
-                line.setAttribute('stroke', '#ff4444');
-                line.setAttribute('stroke-width', '4');
-                wireCanvas.appendChild(line);
-                
-                wires.push({{ from: activeWireStart, to: id }});
-                activeWireStart = null;
+                line.setAttribute('x1', start.left - canvas.left + 7);
+                line.setAttribute('y1', start.top - canvas.top + 7);
+                line.setAttribute('x2', end.left - canvas.left + 7);
+                line.setAttribute('y2', end.top - canvas.top + 7);
+                line.setAttribute('stroke', '#00ff00');
+                line.setAttribute('stroke-width', '3');
+                wireLayer.appendChild(line);
+
+                connections.push({{ from: wireStartHole, to: holeIdx }});
+                document.getElementById('h-' + wireStartHole).style.background = '#bbb';
+                wireStartHole = null;
             }}
         }}
 
-        function exportCircuit() {{
-            const data = JSON.stringify({{ components: comps, connections: wires }});
+        function submit() {{
+            const data = JSON.stringify({{ components: placedComponents, connections: connections }});
             const url = window.parent.location.origin + window.parent.location.pathname + '?circuit_data=' + encodeURIComponent(data);
             window.parent.location.assign(url);
         }}
