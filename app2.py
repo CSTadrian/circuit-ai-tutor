@@ -9,9 +9,10 @@ from google import genai
 from google.genai import types
 from google.oauth2 import service_account
 
+# --- PAGE CONFIG ---
 st.set_page_config(page_title="Pro-STEM Precision Lab", layout="wide")
 
-# --- 1. ASSETS & SIMULATOR HTML ---
+# --- 1. SVG ASSET TEMPLATES ---
 ASSETS_RAW = {
     "LED": {
         "OFF": '<svg width="40" height="50" viewBox="0 0 40 50"><rect x="9" y="22" width="2" height="28" fill="#aaa"/><rect x="29" y="30" width="2" height="20" fill="#aaa"/><path d="M10 30 Q 10 5 20 5 Q 30 5 30 30 Z" fill="#822" opacity="0.9"/><text x="1" y="48" fill="#aaa" font-size="9">+</text><text x="32" y="48" fill="#aaa" font-size="9">-</text></svg>',
@@ -29,52 +30,85 @@ ASSETS_RAW = {
     "BATTERY": '<svg width="40" height="60" viewBox="0 0 40 60"><rect x="2" y="2" width="36" height="46" rx="4" fill="#333" stroke="#555"/><rect x="6" y="6" width="28" height="10" fill="#f1c40f"/><rect x="6" y="18" width="28" height="10" fill="#f1c40f"/><rect x="6" y="30" width="28" height="10" fill="#f1c40f"/><text x="11" y="40" fill="black" font-size="7" font-weight="bold">4.5V DC</text><rect x="10" y="48" width="2" height="12" fill="#ff4444"/><rect x="30" y="48" width="2" height="12" fill="#4444ff"/><text x="6" y="59" fill="white" font-size="9">+</text><text x="31" y="59" fill="white" font-size="9">-</text></svg>'
 }
 
+# --- 2. VIRTUAL SIMULATOR (HTML/JS) ---
 simulator_html = f"""
 <!DOCTYPE html>
 <html>
 <head>
     <style>
         :root {{ --grid: 20px; --pale-blue: #add8e6; }}
-        body {{ font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; margin: 0; overflow: hidden; }}
+        body {{ font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; margin: 0; overflow: hidden; user-select: none; }}
         #workspace {{ display: flex; height: 100vh; }}
-        #palette {{ width: 220px; background: #222; padding: 15px; border-right: 1px solid #444; overflow-y: auto; }}
-        .comp-item {{ background: #333; padding: 10px; margin-bottom: 10px; border-radius: 6px; cursor: pointer; text-align: center; border: 1px solid #444; }}
+        #palette {{ width: 260px; background: #222; padding: 20px; border-right: 1px solid #444; }}
+        .comp-item {{ background: #333; padding: 12px; margin-bottom: 10px; border-radius: 6px; cursor: pointer; text-align: center; border: 1px solid #444; position: relative; }}
         .comp-item:hover {{ background: #444; border-color: #3498db; }}
+        .resistor-select {{ background: #222; color: white; border: 1px solid #555; padding: 4px; border-radius: 4px; margin-bottom: 8px; font-size: 12px; width: 80%; cursor: pointer; }}
         #canvas {{ flex-grow: 1; position: relative; background: #111; overflow: auto; }}
         #toolbar {{ padding: 10px; background: #222; border-bottom: 1px solid #444; display: flex; gap: 10px; }}
-        .tool-btn {{ background: #444; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }}
+        .tool-btn {{ background: #444; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; }}
         .tool-btn:hover {{ background: #3498db; }}
         .bb-outer {{ position: absolute; top: 60px; left: 40px; background: #eee; padding: 25px; border-radius: 12px; display: flex; align-items: flex-start; box-shadow: 0 10px 40px rgba(0,0,0,0.5); gap: 8px; }}
-        .hole {{ width: 12px; height: 12px; background: #bbb; border-radius: 50%; margin: 4px; cursor: pointer; position: relative; z-index: 10; }}
-        .hole.occupied {{ background: var(--pale-blue) !important; }}
+        .bb-section {{ display: grid; grid-template-rows: repeat(30, var(--grid)); }}
+        .rail {{ grid-template-columns: repeat(2, var(--grid)); border-left: 2px solid #ff4444; border-right: 2px solid #4444ff; margin-top: 25px; }}
+        .main-col {{ display: flex; flex-direction: column; }}
+        .main-grid {{ display: grid; grid-template-rows: repeat(30, var(--grid)); grid-template-columns: repeat(5, var(--grid)); }}
+        .trench {{ width: var(--grid); background: #ddd; height: 600px; margin-top: 25px; box-shadow: inset 0 0 5px rgba(0,0,0,0.1); }}
+        .num-col {{ width: 20px; margin-top: 25px; text-align: center; font-size: 10px; color: #888; line-height: 20px; }}
+        .header-row {{ display: flex; height: 20px; margin-bottom: 5px; }}
+        .header-cell {{ width: var(--grid); text-align: center; font-size: 11px; color: #444; font-weight: bold; }}
+        .hole {{ width: 12px; height: 12px; background: #bbb; border-radius: 50%; margin: 4px; box-shadow: inset 1px 1px 2px rgba(0,0,0,0.2); cursor: pointer; position: relative; z-index: 10; }}
+        .hole.occupied {{ background: var(--pale-blue) !important; box-shadow: 0 0 5px var(--pale-blue); }}
+        .hole.wiring {{ background: #2ecc71 !important; }}
         .active-comp {{ position: absolute; z-index: 100; cursor: grab; transform-origin: 0 0; }}
+        .active-comp.selected {{ filter: drop-shadow(0 0 5px #3498db); }}
         .pin-collider {{ position: absolute; width: 4px; height: 4px; opacity: 0; pointer-events: none; }}
         svg.overlay {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 50; }}
-        .wire {{ stroke: #2ecc71; stroke-width: 4; stroke-linecap: round; pointer-events: auto; }}
-        .sync-box {{ background: #27ae60; color: white; padding: 10px; border-radius: 4px; text-align: center; cursor: pointer; font-weight: bold; margin-top: 20px; }}
+        .wire {{ stroke: #2ecc71; stroke-width: 4; stroke-linecap: round; pointer-events: auto; cursor: crosshair; }}
     </style>
 </head>
 <body>
     <div id="workspace">
         <div id="palette">
-            <h4 style="margin:0 0 10px 0;">Components</h4>
-            <div class="comp-item" onclick="spawn('BATTERY')">{ASSETS_RAW['BATTERY']}<br>Battery</div>
-            <div class="comp-item" onclick="spawn('LED')">{ASSETS_RAW['LED']['OFF']}<br>LED</div>
-            <div class="comp-item" onclick="spawn('RESISTOR')">{ASSETS_RAW['RESISTOR']['1000']}<br>1k Resistor</div>
-            
-            <div class="sync-box" onclick="copyState()">📋 Copy Circuit Data</div>
-            <p style="font-size: 10px; color: #888; margin-top: 10px;">Click this button then paste into the "Circuit Link" box below.</p>
+            <h4 style="margin-top:0;">Precision Lab</h4>
+            <div class="comp-item" onclick="spawn('BATTERY')">{ASSETS_RAW['BATTERY']}<br>4.5V Battery</div>
+            <div class="comp-item" onclick="spawn('LED')">{ASSETS_RAW['LED']['OFF']}<br>LED (Polarized)</div>
+            <div class="comp-item">
+                <select id="res-val" class="resistor-select" onchange="updateResistorPreview()" onclick="event.stopPropagation()">
+                    <option value="300">300 Ω (Orange/Blk/Blk)</option>
+                    <option value="1000" selected>1 kΩ (Brn/Blk/Blk/Brn)</option>
+                    <option value="10k">10 kΩ (Brn/Blk/Blk/Red)</option>
+                </select>
+                <div id="res-preview" onclick="spawn('RESISTOR')" style="margin-top: 5px;">
+                    {ASSETS_RAW['RESISTOR']['1000']}<br>Add Resistor
+                </div>
+            </div>
+            <div class="comp-item" onclick="spawn('SWITCH')">{ASSETS_RAW['SWITCH']['LEFT']}<br>Slide Switch</div>
         </div>
 
         <div id="canvas">
             <div id="toolbar">
                 <button class="tool-btn" onclick="rotateComp()">↻ Rotate</button>
                 <button class="tool-btn" onclick="deleteComp()" style="background:#c0392b;">✖ Delete</button>
-                <button class="tool-btn" id="sim-btn" onclick="toggleSim()" style="background:#f39c12; color:black; margin-left:auto; font-weight:bold;">⚡ Stimulate</button>
+                <button class="tool-btn" id="sim-btn" onclick="toggleSim()" style="background:#f39c12; color:black; margin-left:auto;">⚡ Stimulate</button>
             </div>
             <svg class="overlay" id="wire-layer"></svg>
             <div class="bb-outer" id="board">
-                <div class="main-grid" id="main-grid" style="display:grid; grid-template-columns:repeat(5, var(--grid)); grid-template-rows:repeat(30, var(--grid));"></div>
+                <div class="bb-section rail" id="rail-L"></div>
+                <div class="main-col">
+                    <div class="header-row">
+                        <div class="header-cell">a</div><div class="header-cell">b</div><div class="header-cell">c</div><div class="header-cell">d</div><div class="header-cell">e</div>
+                    </div>
+                    <div class="main-grid" id="main-L"></div>
+                </div>
+                <div class="num-col" id="nums"></div>
+                <div class="trench"></div>
+                <div class="main-col">
+                    <div class="header-row">
+                        <div class="header-cell">f</div><div class="header-cell">g</div><div class="header-cell">h</div><div class="header-cell">i</div><div class="header-cell">j</div>
+                    </div>
+                    <div class="main-grid" id="main-R"></div>
+                </div>
+                <div class="bb-section rail" id="rail-R"></div>
             </div>
             <div id="comp-layer"></div>
         </div>
@@ -83,29 +117,64 @@ simulator_html = f"""
     <script>
         const ASSETS = {json.dumps(ASSETS_RAW)};
         let comps = [];
+        let wires = [];
         let selection = null;
         let drag = null;
         let dragOff = {{x:0, y:0}};
+        let wiringStart = null;
         let isSimulating = false;
 
-        // Generate breadboard holes
-        const grid = document.getElementById('main-grid');
-        for(let r=0; r<30; r++) {{
-            for(let c=0; c<5; c++) {{
-                const h = document.createElement('div');
-                h.className = 'hole'; h.id = `h_ML_${{r}}_${{c}}`;
-                grid.appendChild(h);
+        function updateResistorPreview() {{
+            const val = document.getElementById('res-val').value;
+            document.getElementById('res-preview').innerHTML = ASSETS.RESISTOR[val] + "<br>Add Resistor";
+        }}
+
+        function createHoles(id, cols, tag) {{
+            const container = document.getElementById(id);
+            for(let r=0; r<30; r++) {{
+                for(let c=0; c<cols; c++) {{
+                    const h = document.createElement('div');
+                    h.className = 'hole'; h.id = `h_${{tag}}_${{r}}_${{c}}`;
+                    h.onmousedown = (e) => {{ e.stopPropagation(); handleWire(h.id); }};
+                    container.appendChild(h);
+                }}
             }}
         }}
 
-        function getTrack(holeId) {{ return holeId ? holeId.split('_').slice(1,3).join('_') : null; }}
+        createHoles('rail-L', 2, 'RL'); createHoles('main-L', 5, 'ML');
+        createHoles('main-R', 5, 'MR'); createHoles('rail-R', 2, 'RR');
+        const numBox = document.getElementById('nums');
+        for(let i=1; i<=30; i++) {{ const d = document.createElement('div'); d.innerText = i; numBox.appendChild(d); }}
+
+        function getTrack(holeId) {{
+            if(!holeId) return null;
+            const p = holeId.split('_'); 
+            if(p[1] === 'RL' || p[1] === 'RR') return p[1] + '_' + p[3]; 
+            return p[1] + '_' + p[2];
+        }}
+
+        function handleWire(id) {{
+            if (!wiringStart) {{
+                wiringStart = id; document.getElementById(id).classList.add('wiring');
+            }} else {{
+                if (wiringStart !== id) {{ wires.push({{start: wiringStart, end: id}}); renderWires(); if(isSimulating) simulateCircuit(); }}
+                document.getElementById(wiringStart).classList.remove('wiring');
+                wiringStart = null;
+            }}
+        }}
 
         function spawn(type) {{
             const id = 'c' + Date.now();
-            let pins = [{{x:10, y:48}}, {{x:30, y:48}}];
-            if(type === 'RESISTOR') pins = [{{x:5, y:10}}, {{x:75, y:10}}];
+            let pins = [{{x:10, y:50}}, {{x:30, y:50}}];
+            let compValue = null;
+            if(type === 'RESISTOR') {{
+                pins = [{{x:5, y:10}}, {{x:75, y:10}}];
+                compValue = document.getElementById('res-val').value;
+            }}
+            else if(type === 'SWITCH') pins = [{{x:10, y:12}}, {{x:30, y:12}}, {{x:50, y:12}}];
+            else if(type === 'BATTERY') pins = [{{x:10, y:48}}, {{x:30, y:48}}];
             
-            comps.push({{id, type, x:250, y:150, rot:0, pins, state:'OFF', value: (type==='RESISTOR'?'1000':null), connectedTracks: []}});
+            comps.push({{id, type, x:300, y:100, rot:0, pins, state: 'OFF', switchPos: 'LEFT', value: compValue, connectedTracks: []}});
             selection = id;
             renderComps();
         }}
@@ -116,13 +185,22 @@ simulator_html = f"""
                 let el = document.getElementById(c.id);
                 if(!el) {{
                     el = document.createElement('div'); el.id = c.id; el.className = 'active-comp';
-                    el.onmousedown = (e) => {{ drag = c; selection = c.id; dragOff = {{x:e.clientX - c.x, y:e.clientY - c.y}}; renderComps(); }};
+                    el.onmousedown = (e) => {{
+                        e.stopPropagation(); drag = c; selection = c.id;
+                        dragOff = {{x:e.clientX - c.x, y:e.clientY - c.y}}; renderComps();
+                    }};
+                    el.onclick = (e) => {{
+                        if(c.type === 'SWITCH') {{ c.switchPos = c.switchPos === 'LEFT' ? 'RIGHT' : 'LEFT'; renderComps(); }}
+                    }};
                     layer.appendChild(el);
                 }}
+                if(c.type === 'LED') el.innerHTML = ASSETS.LED[c.state];
+                else if(c.type === 'SWITCH') el.innerHTML = ASSETS.SWITCH[c.switchPos];
+                else if(c.type === 'BATTERY') el.innerHTML = ASSETS.BATTERY;
+                else if(c.type === 'RESISTOR') el.innerHTML = ASSETS.RESISTOR[c.value];
+
                 el.style.left = c.x + 'px'; el.style.top = c.y + 'px';
                 el.style.transform = `rotate(${{c.rot}}deg)`;
-                el.innerHTML = c.type === 'LED' ? ASSETS.LED[c.state] : (c.type === 'RESISTOR' ? ASSETS.RESISTOR['1000'] : ASSETS.BATTERY);
-                
                 el.querySelectorAll('.pin-collider').forEach(p => p.remove());
                 c.pins.forEach(p => {{
                     const dot = document.createElement('div'); dot.className = 'pin-collider';
@@ -130,119 +208,240 @@ simulator_html = f"""
                 }});
             }});
             Array.from(layer.children).forEach(child => {{ if(!comps.find(x => x.id === child.id)) child.remove(); }});
-            updateHoles();
+            setTimeout(updateHoles, 0);
         }}
 
         function updateHoles() {{
             const holes = Array.from(document.querySelectorAll('.hole'));
             holes.forEach(h => h.classList.remove('occupied'));
             const rect = document.getElementById('canvas').getBoundingClientRect();
-            
             comps.forEach(c => {{
                 c.connectedTracks = [];
                 const el = document.getElementById(c.id);
-                el.querySelectorAll('.pin-collider').forEach((pc, idx) => {{
+                if(!el) return;
+                const pinNodes = el.querySelectorAll('.pin-collider');
+                pinNodes.forEach((pc, idx) => {{
                     const pRect = pc.getBoundingClientRect();
-                    const px = pRect.left - rect.left; const py = pRect.top - rect.top;
-                    let best = null; let minDist = 15;
+                    const px = pRect.left - rect.left + 2; const py = pRect.top - rect.top + 2;
+                    let bestHole = null; let minDist = 12; 
                     holes.forEach(h => {{
                         const hRect = h.getBoundingClientRect();
-                        const hx = hRect.left - rect.left; const hy = hRect.top - rect.top;
+                        const hx = hRect.left - rect.left + 6; const hy = hRect.top - rect.top + 6;
                         const dist = Math.hypot(px-hx, py-hy);
-                        if(dist < minDist) {{ minDist = dist; best = h; }}
+                        if(dist < minDist) {{ minDist = dist; bestHole = h; }}
                     }});
-                    if(best) {{ best.classList.add('occupied'); c.connectedTracks[idx] = best.id; }}
+                    if(bestHole) {{ bestHole.classList.add('occupied'); c.connectedTracks[idx] = getTrack(bestHole.id); }}
                 }});
             }});
-        }}
-
-        function copyState() {{
-            const data = JSON.stringify(comps);
-            navigator.clipboard.writeText(data);
-            alert("Circuit data copied! Now paste it into the box below the board.");
+            if(isSimulating) simulateCircuit();
         }}
 
         document.onmousemove = (e) => {{ if(drag) {{ drag.x = e.clientX - dragOff.x; drag.y = e.clientY - dragOff.y; renderComps(); }} }};
-        document.onmouseup = () => {{ drag = null; renderComps(); }};
-        function rotateComp() {{ if(selection) {{ const c = comps.find(x => x.id === selection); c.rot = (c.rot + 90) % 360; renderComps(); }} }}
+        document.onmouseup = () => {{ if(drag) {{ drag.x = Math.round(drag.x / 10) * 10; drag.y = Math.round(drag.y / 10) * 10; drag = null; renderComps(); }} }};
+
+        function renderWires() {{
+            const layer = document.getElementById('wire-layer'); layer.innerHTML = '';
+            const rect = document.getElementById('canvas').getBoundingClientRect();
+            wires.forEach((w, i) => {{
+                const s = document.getElementById(w.start).getBoundingClientRect();
+                const e = document.getElementById(w.end).getBoundingClientRect();
+                const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                l.setAttribute('x1', s.left - rect.left + 6); l.setAttribute('y1', s.top - rect.top + 6);
+                l.setAttribute('x2', e.left - rect.left + 6); l.setAttribute('y2', e.top - rect.top + 6);
+                l.setAttribute('class', 'wire');
+                l.ondblclick = () => {{ wires.splice(i, 1); renderWires(); if(isSimulating) simulateCircuit(); }};
+                layer.appendChild(l);
+            }});
+        }}
+
+        // --- UPDATED JAVASCRIPT BRIDGE ---
+        function toggleSim() {{
+            isSimulating = !isSimulating;
+
+            // 1. Capture the state immediately
+            const circuitSnapshot = JSON.stringify(comps);
+            
+            // 2. Send to Streamlit Parent Window
+            if (window.parent.postMessage) {{
+                window.parent.postMessage({{
+                    type: 'streamlit:setComponentValue',
+                    value: circuitSnapshot
+                }}, '*');
+            }}
+
+            const btn = document.getElementById('sim-btn');
+            if(isSimulating) {{ 
+                btn.innerText = "⏹ Stop Stim"; btn.style.background = "#c0392b"; btn.style.color = "white"; 
+            }} else {{ 
+                btn.innerText = "⚡ Stimulate"; btn.style.background = "#f39c12"; btn.style.color = "black"; 
+            }}
+            simulateCircuit();
+        }}
+
+        function simulateCircuit() {{
+            if (!isSimulating) {{
+                comps.forEach(c => {{ if(c.type === 'LED' && c.state !== 'OFF') {{ c.state = 'OFF'; document.getElementById(c.id).innerHTML = ASSETS.LED.OFF; }} }});
+                return;
+            }}
+            const fwd = {{}}; const rev = {{}};
+            function addDirected(u, v) {{ if(!u || !v) return; if(!fwd[u]) fwd[u] = []; fwd[u].push(v); if(!rev[v]) rev[v] = []; rev[v].push(u); }}
+            function addUndirected(u, v) {{ addDirected(u, v); addDirected(v, u); }}
+            wires.forEach(w => addUndirected(getTrack(w.start), getTrack(w.end)));
+            let vccTracks = []; let gndTracks = [];
+            comps.forEach(c => {{
+                const tr = c.connectedTracks || [];
+                if(c.type === 'BATTERY') {{ if(tr[0]) vccTracks.push(tr[0]); if(tr[1]) gndTracks.push(tr[1]); }} 
+                else if(c.type === 'RESISTOR') {{ if(tr[0] && tr[1]) addUndirected(tr[0], tr[1]); }} 
+                else if(c.type === 'SWITCH') {{
+                    if(c.switchPos === 'LEFT' && tr[0] && tr[1]) addUndirected(tr[0], tr[1]);
+                    if(c.switchPos === 'RIGHT' && tr[1] && tr[2]) addUndirected(tr[1], tr[2]);
+                }} else if(c.type === 'LED') {{ if(tr[0] && tr[1]) addDirected(tr[0], tr[1]); }}
+            }});
+            const reachableFromVCC = new Set(); let q = [...vccTracks];
+            q.forEach(t => reachableFromVCC.add(t));
+            while(q.length > 0) {{
+                const curr = q.shift();
+                (fwd[curr] || []).forEach(n => {{ if(!reachableFromVCC.has(n)) {{ reachableFromVCC.add(n); q.push(n); }} }});
+            }}
+            const canReachGND = new Set(); q = [...gndTracks];
+            q.forEach(t => canReachGND.add(t));
+            while(q.length > 0) {{
+                const curr = q.shift();
+                (rev[curr] || []).forEach(n => {{ if(!canReachGND.has(n)) {{ canReachGND.add(n); q.push(n); }} }});
+            }}
+            comps.forEach(c => {{
+                if(c.type === 'LED') {{
+                    const tr = c.connectedTracks || [];
+                    const newState = (tr[0] && tr[1] && reachableFromVCC.has(tr[0]) && canReachGND.has(tr[1])) ? 'ON' : 'OFF';
+                    if(c.state !== newState) {{ c.state = newState; document.getElementById(c.id).innerHTML = ASSETS.LED[c.state]; }}
+                }}
+            }});
+        }}
+
+        function rotateComp() {{ if(!selection) return; const c = comps.find(x => x.id === selection); c.rot = (c.rot + 90) % 360; renderComps(); }}
         function deleteComp() {{ comps = comps.filter(x => x.id !== selection); selection = null; renderComps(); }}
-        function toggleSim() {{ isSimulating = !isSimulating; }}
     </script>
 </body>
 </html>
 """
 
-# --- 2. STREAMLIT APP LOGIC ---
-st.title("⚡ AI Circuit Auditor & Tutor")
-
-# Vertex AI Initialization
+# --- 3. VERTEX AI INITIALIZATION ---
 @st.cache_resource
 def get_vertex_client():
     if "gcp_service_account" in st.secrets:
         creds_info = st.secrets["gcp_service_account"]
-        credentials = service_account.Credentials.from_service_account_info(creds_info)
-        return genai.Client(vertexai=True, project=creds_info["project_id"], location="global", credentials=credentials)
-    return None
+        credentials = service_account.Credentials.from_service_account_info(
+            creds_info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        return genai.Client(
+            vertexai=True, 
+            project=creds_info["project_id"], 
+            location="global", 
+            credentials=credentials
+        )
+    else:
+        st.error("GCP Service Account secrets not found!")
+        st.stop()
 
 client = get_vertex_client()
 MODEL_ID = "gemini-3.1-pro-preview"
 
-# --- LAYOUT ---
-# 1. Simulator Platform
-components.html(simulator_html, height=600)
+# --- 4. REVISED SIMULATION LOGIC (Learning Analytics) ---
+def get_ai_observation(student_json):
+    """Parses JSON data safely into a human-readable string for the AI and student."""
+    try:
+        # If the json is a string, parse it; if it's already a list, use it directly
+        data = json.loads(student_json) if isinstance(student_json, str) else student_json
+        observations = []
+        
+        for comp in data:
+            ctype = comp.get('type', 'Unknown')
+            val = comp.get('value', '')
+            tracks = comp.get('connectedTracks', [])
+            
+            # Clean up null values to avoid errors
+            valid_tracks = [str(t) for t in tracks if t is not None]
+            
+            if valid_tracks:
+                track_str = " & ".join(valid_tracks)
+                obs_line = f"- {ctype} ({val if val else 'No Val'}) connected to tracks: {track_str}"
+                observations.append(obs_line)
+        
+        return "\n".join(observations) if observations else "No components connected to the board."
+    except Exception as e:
+        return f"Could not parse circuit data: {e}"
 
-st.divider()
+# --- 5. MAIN UI LAYOUT ---
+st.title("⚡ AI Circuit Auditor")
 
-# 2. Audit Control Panel (Directly under the platform)
-c1, c2 = st.columns([1, 1])
-
-with c1:
-    st.subheader("🛠️ Step 1: Sync Your Data")
-    # This is the bridge. Students paste the copied JSON here.
-    circuit_json = st.text_area("Circuit Link (Paste copied data here)", height=100, placeholder='[{"id":"c123...", "type":"LED"...}]')
-    schematic_file = st.file_uploader("Step 2: Upload Target Schematic", type=["jpg", "png", "jpeg"])
-
-with c2:
-    st.subheader("🔍 Step 3: Run Audit")
-    
-    if st.button("🚀 Check My Circuit", type="primary", use_container_width=True):
-        if not circuit_json or circuit_json == "[]":
-            st.error("AI Observation: I can't see your circuit yet. Please click 'Copy Circuit Data' above and paste it in the box.")
-        elif not schematic_file:
-            st.warning("Please upload a schematic for comparison.")
-        else:
-            try:
-                # Process the data
-                data = json.loads(circuit_json)
-                obs_list = []
-                for comp in data:
-                    tracks = [t for t in comp.get('connectedTracks', []) if t]
-                    track_str = " & ".join(tracks) if tracks else "Unconnected"
-                    obs_list.append(f"- **{comp['type']}**: {track_str}")
-                
-                st.info("👁️ **AI Observation**\n" + "\n".join(obs_list))
-                
-                # Run AI Feedback
-                if client:
-                    raw_img = PILImage.open(schematic_file).convert("RGB")
-                    prompt = f"Student Circuit Data: {json.dumps(data)}. Compare this to the schematic. Provide pedagogical feedback on connections and polarity."
-                    
-                    resp = client.models.generate_content(
-                        model=MODEL_ID,
-                        contents=[raw_img, prompt],
-                        config=types.GenerateContentConfig(temperature=0.2)
-                    )
-                    st.success("🤖 **Tutor Feedback**")
-                    st.markdown(resp.text)
-                else:
-                    st.warning("Vertex AI Client not configured. Showing basic connection check only.")
-            except Exception as e:
-                st.error(f"Failed to read circuit data: {e}")
-
-# Sidebar for Teacher Instructions
 with st.sidebar:
-    st.header("Lab Instructions")
-    st.write("1. Build your circuit on the breadboard.")
-    st.write("2. Use the **Copy Circuit Data** button to capture your build.")
-    st.write("3. Paste the data into the **Circuit Link** box.")
-    st.write("4. Upload your target diagram and click **Check My Circuit**.")
+    st.header("Teacher's Goal")
+    schematic_file = st.file_uploader("Upload Target Schematic", type=["jpg", "png", "jpeg"])
+
+# Invisible data layer (assuming state is managed via postMessage bridge)
+current_sim_data = st.session_state.get("last_sim_state", "[]") 
+
+# --- 6. AI AUDIT EXECUTION ---
+if st.button("🔍 Check My Circuit", type="primary"):
+    if not schematic_file:
+        st.warning("Please upload a schematic.")
+    else:
+        # 1. Create the human-readable observation (The Analytics/XAI Part)
+        user_circuit_description = get_ai_observation(current_sim_data)
+        
+        # 2. Display it for the student immediately
+        st.subheader("👁️ AI Observation")
+        st.info("The AI sees the following connections on your board:")
+        st.markdown(user_circuit_description)
+
+        # 3. Process with Vertex AI
+        raw_schematic = PILImage.open(schematic_file).convert("RGB")
+        
+        analysis_prompt = f"""
+        Compare the student's breadboard connections to the target schematic.
+        
+        STUDENT CONNECTIONS:
+        {user_circuit_description}
+        
+        Strictly evaluate:
+        1. Is there a complete path from Power to Ground?
+        2. Is the LED protected by a resistor?
+        3. Is the LED polarity correct (Anode to Positive)?
+        """
+
+        try:
+            resp = client.models.generate_content(
+                model=MODEL_ID,
+                contents=[raw_schematic, analysis_prompt],
+                config=types.GenerateContentConfig(
+                    temperature=0.0,
+                    response_mime_type="application/json",
+                    response_schema={
+                        "type": "OBJECT",
+                        "properties": {
+                            "is_correct": {"type": "BOOLEAN"},
+                            "ai_observation": {"type": "STRING"},
+                            "feedback": {"type": "STRING"}
+                        },
+                        "required": ["is_correct", "ai_observation", "feedback"]
+                    }
+                )
+            )
+            
+            result = resp.parsed
+            
+            # --- VISUAL FEEDBACK ---
+            st.divider()
+            if result.get("is_correct"):
+                st.success("✅ **Perfect! Your circuit matches the goal.**")
+            else:
+                st.error("❌ **Almost there! Check the connections below.**")
+            
+            st.write(f"**AI Interpretation:** {result.get('ai_observation')}")
+            st.info(f"**Tutor Note:** {result.get('feedback')}")
+
+        except Exception as e:
+            st.error(f"Audit failed: {e}")
+
+# --- 7. EMBED SIMULATOR ---
+components.html(simulator_html, height=850)
