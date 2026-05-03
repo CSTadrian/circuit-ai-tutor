@@ -361,7 +361,6 @@ simulator_html = f"""
 </html>
 """
 
-components.html(simulator_html, height=850)
 
 # -*- coding: utf-8 -*-
 import streamlit as st
@@ -470,4 +469,7 @@ if st.button("🔍 Check My Circuit", type="primary"):
             except Exception as e:
                 st.error(f"Audit failed: {e}")
 
+
+
+components.html(simulator_html, height=850)
 
