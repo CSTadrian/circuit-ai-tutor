@@ -135,7 +135,7 @@ simulator_html = f"""
                 value: JSON.stringify(circuitData)
             }, '*');
         }
-
+        
         // --- PERSISTENCE LAYER ---
         function saveState() {{
             const state = {{ comps, wires }};
