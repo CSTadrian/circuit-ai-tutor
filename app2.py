@@ -361,6 +361,8 @@ simulator_html = f"""
 </html>
 """
 
+components.html(simulator_html, height=850)
+
 # -*- coding: utf-8 -*-
 import streamlit as st
 import json
@@ -394,76 +396,78 @@ def get_vertex_client():
 
 client = get_vertex_client()
 
+
 # --- 2. UI: UPLOAD SEMANTICS ---
 st.title("⚡ AI Circuit Auditor")
-st.write("Upload the target schematic and submit your circuit data to verify the logic.")
 
-schematic_file = st.file_uploader("Upload Target Schematic (The Semantics)", type=["jpg", "png", "jpeg"])
+with st.sidebar:
+    st.header("Teacher's Goal")
+    schematic_file = st.file_uploader("Upload Target Schematic", type=["jpg", "png", "jpeg"])
 
-# Note: In a full deployment, this JSON would be passed directly from your 
-# JavaScript 'simulateCircuit()' via a Streamlit custom component bi-directional bridge. 
-# For this implementation, we simulate receiving that payload.
-student_circuit_json = st.text_area(
-    "Student Circuit Data (JSON from Simulator)", 
-    value='[{"id":"c1","type":"BATTERY","connectedTracks":["RL_0","RR_0"]},{"id":"c2","type":"LED","connectedTracks":["RL_5","RR_5"]}]',
-    height=100
-)
+# --- 3. THE "INVISIBLE" DATA LAYER ---
+# We use a hidden state or a collapsed expander to store the simulator data
+# In production, this variable 'current_sim_data' would be pushed from the JS simulator
+current_sim_data = st.session_state.get("last_sim_state", "[No Data]") 
 
-# --- 3. AI AUDIT EXECUTION ---
-if st.button("Check Circuit", type="primary"):
+# --- 4. AI AUDIT EXECUTION ---
+if st.button("🔍 Check My Circuit", type="primary"):
     if not schematic_file:
-        st.warning("Please upload a schematic to check against.")
-    elif not student_circuit_json:
-        st.warning("No circuit data received.")
+        st.warning("Please upload a schematic for the AI to compare against.")
     else:
         raw_schematic = PILImage.open(schematic_file).convert("RGB")
         
-        with st.spinner("Analyzing topological alignment..."):
-            # Construct the Socratic Prompt
+        with st.spinner("AI is observing your connections..."):
+            # The prompt now asks the AI to "Describe the Path" (XAI)
             analysis_prompt = f"""
-            You are an expert engineering tutor evaluating a student's virtual breadboard circuit.
+            You are a STEM tutor. I am providing a schematic and the student's live circuit data:
+            {current_sim_data}
             
-            1. Analyze the visual schematic provided (The Goal).
-            2. Analyze the student's current circuit topology provided in this JSON data:
-            {student_circuit_json}
+            TASK:
+            1. Describe EXACTLY what the student's circuit is doing based on the JSON. 
+               (e.g., "I see a loop starting from the battery, going through a 1k resistor, then to an LED.")
+            2. Compare this to the uploaded schematic.
+            3. Tell the student if it is 'Correct' or 'Needs adjustment'.
             
-            Task: Does the student's JSON topology correctly fulfill the visual schematic's semantics? 
-            Check for closed loops, correct polarity (LED anodes to positive rails), and short circuits.
-            
-            Return a JSON object containing:
-            - 'is_correct': boolean
-            - 'feedback': A short, encouraging pedagogical explanation of what is right or wrong.
+            RETURN JSON:
+            {{
+              "is_correct": boolean,
+              "ai_observation": "A description of the path and connections the AI sees",
+              "feedback": "Pedagogical advice"
+            }}
             """
 
             try:
-                # Vertex AI Call
                 resp = client.models.generate_content(
                     model=MODEL_ID,
                     contents=[raw_schematic, analysis_prompt],
                     config=types.GenerateContentConfig(
                         temperature=0.0,
                         response_mime_type="application/json",
-                        response_schema={
+                        response_schema={{
                             "type": "OBJECT",
-                            "properties": {
-                                "is_correct": {"type": "BOOLEAN"},
-                                "feedback": {"type": "STRING"}
-                            }
-                        }
+                            "properties": {{
+                                "is_correct": {{"type": "BOOLEAN"}},
+                                "ai_observation": {{"type": "STRING"}},
+                                "feedback": {{"type": "STRING"}}
+                            }}
+                        }}
                     )
                 )
                 
-                # Parse and Display Results
-                result = resp.parsed if hasattr(resp, 'parsed') else json.loads(resp.text)
+                result = resp.parsed
+                
+                # --- VISUAL FEEDBACK FOR STUDENT ---
+                st.subheader("👁️ What the AI Sees")
+                st.write(result.get("ai_observation")) # "The AI's internal mental model"
                 
                 if result.get("is_correct"):
-                    st.success("✅ **Circuit is Correct!**")
+                    st.success("✅ **Perfect! Your circuit matches the goal.**")
                 else:
-                    st.error("❌ **Circuit Needs Adjustment**")
-                    
-                st.info(result.get("feedback"))
+                    st.error("❌ **Almost there! Check the connections below.**")
+                
+                st.info(f"**Tutor Note:** {result.get('feedback')}")
 
             except Exception as e:
                 st.error(f"Audit failed: {e}")
 
-components.html(simulator_html, height=850)
+
