@@ -277,11 +277,13 @@ simulator_html = f"""
                         dragOff = {{x:e.clientX - c.x, y:e.clientY - c.y}}; renderComps();
                     }};
                     el.onclick = (e) => {{
+                        e.stopPropagation();
                         if(c.type === 'SWITCH') {{ 
                             c.switchPos = c.switchPos === 'LEFT' ? 'RIGHT' : 'LEFT'; 
-                            renderComps(); 
+                            // Force the switch visual to update
+                            el.innerHTML = ASSETS.SWITCH[c.switchPos]; 
                             saveState();
-                            if(isSimulating) simulateCircuit(); // Updates simulation immediately
+                            if(isSimulating) simulateCircuit(); 
                         }}
                     }};
                     layer.appendChild(el);
@@ -373,12 +375,14 @@ simulator_html = f"""
         }}
 
         function simulateCircuit() {{
+            // 1. Reset everything if not simulating
             if (!isSimulating) {{
-                comps.forEach(c => {{ 
-                    if(c.type === 'LED' && c.state !== 'OFF') {{ 
-                        c.state = 'OFF'; 
-                        document.getElementById(c.id).innerHTML = ASSETS.LED.OFF; 
-                    }} 
+                comps.forEach(c => {{
+                    if (c.type === 'LED' && c.state !== 'OFF') {{
+                        c.state = 'OFF';
+                        const el = document.getElementById(c.id);
+                        if (el) el.innerHTML = ASSETS.LED.OFF;
+                    }}
                 }});
                 return;
             }}
@@ -386,48 +390,54 @@ simulator_html = f"""
             const fwd = {{}}; const rev = {{}};
             function addDirected(u, v) {{ if(!u || !v) return; if(!fwd[u]) fwd[u] = []; fwd[u].push(v); if(!rev[v]) rev[v] = []; rev[v].push(u); }}
             function addUndirected(u, v) {{ addDirected(u, v); addDirected(v, u); }}
-            
-            // Add all wire connections to the graph
-            wires.forEach(w => addUndirected(getTrack(w.start), getTrack(w.end)));
-            
+        
+            // 2. Add wires to the graph
+            wires.forEach(w => {{
+                const u = getTrack(w.start);
+                const v = getTrack(w.end);
+                addUndirected(u, v);
+            }});
+        
             let vccTracks = []; let gndTracks = [];
-            
-            // Map components to graph nodes
+        
+            // 3. Map components to graph nodes
             comps.forEach(c => {{
                 const tr = c.connectedTracks || [];
-                if(c.type === 'BATTERY') {{ if(tr[0]) vccTracks.push(tr[0]); if(tr[1]) gndTracks.push(tr[1]); }} 
-                else if(c.type === 'RESISTOR') {{ if(tr[0] && tr[1]) addUndirected(tr[0], tr[1]); }} 
+                if(c.type === 'BATTERY') {{ if(tr[0]) vccTracks.push(tr[0]); if(tr[1]) gndTracks.push(tr[1]); }}
+                else if(c.type === 'RESISTOR') {{ if(tr[0] && tr[1]) addUndirected(tr[0], tr[1]); }}
                 else if(c.type === 'SWITCH') {{
                     if(c.switchPos === 'LEFT' && tr[0] && tr[1]) addUndirected(tr[0], tr[1]);
                     else if(c.switchPos === 'RIGHT' && tr[1] && tr[2]) addUndirected(tr[1], tr[2]);
-                }} else if(c.type === 'LED') {{ if(tr[0] && tr[1]) addDirected(tr[0], tr[1]); }}
+                }}
+                else if(c.type === 'LED') {{ if(tr[0] && tr[1]) addDirected(tr[0], tr[1]); }}
             }});
         
-            // Calculate reachability from VCC
+            // 4. Traversal (Breadth-First Search)
             const reachableFromVCC = new Set(vccTracks);
             let q = [...vccTracks];
             while(q.length > 0) {{
                 const curr = q.shift();
                 (fwd[curr] || []).forEach(n => {{ if(!reachableFromVCC.has(n)) {{ reachableFromVCC.add(n); q.push(n); }} }});
             }}
-            
-            // Calculate reachability from GND (reverse direction)
+        
             const canReachGND = new Set(gndTracks);
             q = [...gndTracks];
             while(q.length > 0) {{
                 const curr = q.shift();
                 (rev[curr] || []).forEach(n => {{ if(!canReachGND.has(n)) {{ canReachGND.add(n); q.push(n); }} }});
             }}
-            
-            // Update all LEDs
+        
+            // 5. Update LED states
             comps.forEach(c => {{
                 if(c.type === 'LED') {{
                     const tr = c.connectedTracks || [];
-                    // LED lights up only if there is a path from VCC to Anode, AND from Cathode to GND
-                    const newState = (tr[0] && tr[1] && reachableFromVCC.has(tr[0]) && canReachGND.has(tr[1])) ? 'ON' : 'OFF';
-                    if(c.state !== newState) {{ 
-                        c.state = newState; 
-                        document.getElementById(c.id).innerHTML = ASSETS.LED[c.state]; 
+                    // Anode (tr[0]) must be connected to VCC path AND Cathode (tr[1]) to GND path
+                    const isPowered = (tr[0] && tr[1] && reachableFromVCC.has(tr[0]) && canReachGND.has(tr[1]));
+                    const newState = isPowered ? 'ON' : 'OFF';
+                    if(c.state !== newState) {{
+                        c.state = newState;
+                        const el = document.getElementById(c.id);
+                        if(el) el.innerHTML = ASSETS.LED[c.state];
                     }}
                 }}
             }});
