@@ -291,7 +291,7 @@ simulator_html = f"""
                 window.parent.postMessage({
                     type: 'streamlit:setComponentValue',
                     value: circuitSnapshot
-                }, '*');
+                }
             }
         
             const btn = document.getElementById('sim-btn');
