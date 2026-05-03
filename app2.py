@@ -127,14 +127,15 @@ simulator_html = f"""
         let wiringStart = null;
         let isSimulating = false;
 
-        function notifyPython() {{
+        function notifyPython() {
+            // No double braces needed!
             const circuitData = { comps: comps, wires: wires };
             window.parent.postMessage({
                 isStreamlitMessage: true,
                 type: "streamlit:setComponentValue",
                 value: JSON.stringify(circuitData)
             }, '*');
-        }}
+        }
         
         // --- PERSISTENCE LAYER ---
         function saveState() {{
