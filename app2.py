@@ -339,7 +339,7 @@ simulator_html = f"""
                 // This keeps the wires interactive
                 l.ondblclick = () => {{ wires.splice(i, 1); renderWires(); saveState(); }};
                 layer.appendChild(l);
-            }};
+            }});
         }}
 
         function toggleSim() {{
