@@ -135,7 +135,7 @@ simulator_html = f"""
                 isStreamlitMessage: true,
                 type: "streamlit:setComponentValue",
                 value: JSON.stringify(circuitData)
-            }, '*');
+                
         }}
 
         // --- PERSISTENCE LAYER ---
