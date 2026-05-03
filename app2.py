@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
+import os
 import streamlit as st
 import streamlit.components.v1 as components
 import json
-import os
 from PIL import Image as PILImage
 
 # --- VERTEX AI SDK IMPORTS ---
@@ -32,6 +32,7 @@ ASSETS_RAW = {
 }
 
 # --- 2. VIRTUAL SIMULATOR (HTML/JS) ---
+# Notice the addition of the Streamlit protocol handshake in JS
 simulator_html = f"""
 <!DOCTYPE html>
 <html>
@@ -126,10 +127,21 @@ simulator_html = f"""
         let wiringStart = null;
         let isSimulating = false;
 
+        // --- STREAMLIT BI-DIRECTIONAL BRIDGE ---
+        function notifyPython() {{
+            const circuitSnapshot = JSON.stringify(comps);
+            window.parent.postMessage({{
+                isStreamlitMessage: true,
+                type: "streamlit:setComponentValue",
+                value: circuitSnapshot
+            }}, '*');
+        }}
+
         // --- PERSISTENCE LAYER ---
         function saveState() {{
             const state = {{ comps, wires }};
             localStorage.setItem('precision_lab_circuit', JSON.stringify(state));
+            notifyPython(); // PUSH STATE TO PYTHON EVERY TIME IT CHANGES!
         }}
 
         function loadState() {{
@@ -147,7 +159,7 @@ simulator_html = f"""
             if(confirm("Clear the entire board?")) {{
                 comps = []; wires = [];
                 localStorage.removeItem('precision_lab_circuit');
-                sendStateToStreamlit(); // Send empty state back
+                saveState();
                 location.reload();
             }}
         }}
@@ -295,25 +307,10 @@ simulator_html = f"""
             }});
         }}
 
-        // --- NEW: THE STREAMLIT HANDSHAKE ---
-        function sendStateToStreamlit() {{
-            const circuitSnapshot = JSON.stringify(comps);
-            if (window.parent !== window) {{
-                window.parent.postMessage({{
-                    isStreamlitMessage: true,         // CRITICAL: Tells Streamlit to listen!
-                    type: "setComponentValue",
-                    value: circuitSnapshot
-                }}, "*");
-            }}
-        }}
-
         function toggleSim() {{
             isSimulating = !isSimulating;
             const btn = document.getElementById('sim-btn');
             
-            // Send current state to Streamlit before it reruns
-            sendStateToStreamlit();
-
             if(isSimulating) {{ 
                 btn.innerText = "⏹ Stop Stim"; btn.style.background = "#c0392b"; btn.style.color = "white"; 
             }} else {{ 
@@ -365,25 +362,26 @@ simulator_html = f"""
         function rotateComp() {{ if(!selection) return; const c = comps.find(x => x.id === selection); c.rot = (c.rot + 90) % 360; renderComps(); saveState(); }}
         function deleteComp() {{ comps = comps.filter(x => x.id !== selection); selection = null; renderComps(); saveState(); }}
 
-        // BOOTSTRAP: Load saved circuit and initialize Streamlit Custom Component Handshake
+        // BOOTSTRAP: Load saved circuit and handshake with Streamlit
         window.onload = function() {{
             loadState();
             
-            // 1. Tell Streamlit the component is ready
-            if (window.parent !== window) {{
-                window.parent.postMessage({{
-                    isStreamlitMessage: true,
-                    type: "streamlit:componentReady",
-                    apiVersion: 1
-                }}, "*");
-                
-                // 2. Set the exact frame height so it doesn't collapse
-                window.parent.postMessage({{
-                    isStreamlitMessage: true,
-                    type: "setFrameHeight",
-                    height: 850
-                }}, "*");
-            }}
+            // Tell Streamlit the component is ready
+            window.parent.postMessage({{
+                isStreamlitMessage: true,
+                type: "streamlit:componentReady",
+                apiVersion: 1
+            }}, "*");
+            
+            // Set the iframe height so it doesn't collapse
+            window.parent.postMessage({{
+                isStreamlitMessage: true,
+                type: "streamlit:setFrameHeight",
+                height: 850
+            }}, "*");
+            
+            // Send initial state on boot
+            notifyPython();
         }};
     </script>
 </body>
@@ -410,9 +408,14 @@ client = get_vertex_client()
 MODEL_ID = "gemini-3.1-pro-preview"
 
 # --- 4. LEARNING ANALYTICS HELPER ---
-def get_ai_observation(student_json):
+def get_ai_observation(student_data):
     try:
-        data = json.loads(student_json) if isinstance(student_json, str) else student_json
+        # data might come back already parsed as a list/dict, or as a JSON string
+        data = json.loads(student_data) if isinstance(student_data, str) else student_data
+        
+        if not data:
+            return "No components detected."
+
         observations = []
         for comp in data:
             ctype = comp.get('type', 'Unknown')
@@ -423,8 +426,8 @@ def get_ai_observation(student_json):
                 track_str = " & ".join(valid_tracks)
                 observations.append(f"- {ctype} ({val if val else 'No Val'}) on tracks: {track_str}")
         return "\n".join(observations) if observations else "No components detected."
-    except:
-        return "Circuit data format error."
+    except Exception as e:
+        return f"Circuit data format error: {e}"
 
 # --- 5. MAIN UI LAYOUT ---
 st.title("⚡ AI Circuit Auditor")
@@ -432,29 +435,24 @@ st.title("⚡ AI Circuit Auditor")
 with st.sidebar:
     st.header("Teacher's Goal")
     schematic_file = st.file_uploader("Upload Target Schematic", type=["jpg", "png", "jpeg"])
-    st.info("💡 **Pro-Tip:** If the AI doesn't see your circuit, click 'Stimulate' first to lock in the state.")
 
-# --- 6. EMBED SIMULATOR AS A BIDIRECTIONAL COMPONENT ---
-# Because components.html is one-way, we must write the HTML locally 
-# and use declare_component to listen to JS postMessages.
-frontend_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sim_frontend")
-os.makedirs(frontend_dir, exist_ok=True)
-
-with open(os.path.join(frontend_dir, "index.html"), "w", encoding="utf-8") as f:
+# --- NEW: REGISTER HTML AS A CUSTOM COMPONENT ---
+# This forces Streamlit to actually read the postMessages
+if not os.path.exists("sim_frontend"):
+    os.makedirs("sim_frontend")
+with open("sim_frontend/index.html", "w", encoding="utf-8") as f:
     f.write(simulator_html)
 
-# Register the component
-circuit_simulator = components.declare_component("circuit_simulator", path=frontend_dir)
+# Declare component and grab the value synchronously
+sim_component = components.declare_component("sim_component", path="sim_frontend")
+current_sim_data = sim_component(default="[]")
 
-# Render it on screen and capture the output dynamically!
-current_sim_data = circuit_simulator(key="sim_board", default="[]")
-
-
-# --- 7. AI AUDIT EXECUTION ---
+# --- 6. AI AUDIT EXECUTION ---
 if st.button("🔍 Check My Circuit", type="primary"):
     if not schematic_file:
         st.warning("Please upload a schematic.")
     else:
+        # Notice we are now directly passing current_sim_data instead of pulling from session state
         user_circuit_description = get_ai_observation(current_sim_data)
         
         st.subheader("👁️ AI Observation")
@@ -506,3 +504,4 @@ if st.button("🔍 Check My Circuit", type="primary"):
 
         except Exception as e:
             st.error(f"Audit failed: {e}")
+            
