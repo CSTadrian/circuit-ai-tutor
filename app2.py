@@ -174,7 +174,7 @@ simulator_html = f"""
             if (wireStartHole === null) {{
                 wireStartHole = holeIdx;
                 document.getElementById('h-' + holeIdx).style.background = '#007bff';
-            } else {{
+            }} else {{
                 const start = document.getElementById('h-' + wireStartHole).getBoundingClientRect();
                 const end = document.getElementById('h-' + holeIdx).getBoundingClientRect();
                 const canvas = document.getElementById('canvas').getBoundingClientRect();
