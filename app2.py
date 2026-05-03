@@ -19,6 +19,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 from google.auth.transport.requests import Request
 from datetime import datetime, timedelta, timezone
+import base64
 
 # --- GOOGLE DRIVE INITIALIZATION & HELPER FUNCTIONS ---
 PARENT_FOLDER_ID = "15KqnkoChiywtxjahuXRg9NYIi7tdsxyc"
@@ -42,31 +43,42 @@ def init_drive():
 drive_service = init_drive()
 
 def save_to_drive(user_id, hk_time_str, task_name, ai_result_dict, file_prefix, sim_data):
-    
     # 1. Save the PHOTO (PNG)
-    # The screenshot data looks like "data:image/png;base64,iVBORw..."
     if "screenshot" in sim_data:
-        img_data = sim_data["screenshot"].split(",")[1]
-        img_bytes = base64.b64decode(img_data)
-        
-        img_metadata = {'name': f"{file_prefix}.png", 'parents': [PARENT_FOLDER_ID]}
-        media_img = MediaIoBaseUpload(io.BytesIO(img_bytes), mimetype='image/png')
-        drive_service.files().create(body=img_metadata, media_body=media_img).execute()
+        try:
+            # Strip the "data:image/png;base64," prefix to get the raw base64 data
+            img_data = sim_data["screenshot"].split(",")[1]
+            img_bytes = base64.b64decode(img_data)
+            
+            img_metadata = {'name': f"{file_prefix}.png", 'parents': [PARENT_FOLDER_ID]}
+            media_img = MediaIoBaseUpload(io.BytesIO(img_bytes), mimetype='image/png')
+            drive_service.files().create(body=img_metadata, media_body=media_img).execute()
+        except Exception as e:
+            st.error(f"Failed to save image to Drive: {e}")
 
-    # 2. Save the CIRCUIT DATA (JSON) for backup
-    json_bytes = json.dumps(sim_data, indent=2).encode('utf-8')
-    json_metadata = {'name': f"{file_prefix}.json", 'parents': [PARENT_FOLDER_ID]}
-    media_json = MediaIoBaseUpload(io.BytesIO(json_bytes), mimetype='application/json')
-    drive_service.files().create(body=json_metadata, media_body=media_json).execute()
+    # 2. Save the CIRCUIT JSON (for technical debugging if needed)
+    try:
+        json_bytes = json.dumps(sim_data, indent=2).encode('utf-8')
+        json_metadata = {'name': f"{file_prefix}.json", 'parents': [PARENT_FOLDER_ID]}
+        media_json = MediaIoBaseUpload(io.BytesIO(json_bytes), mimetype='application/json')
+        drive_service.files().create(body=json_metadata, media_body=media_json).execute()
+    except Exception as e:
+        st.error(f"Failed to save JSON to Drive: {e}")
 
     # 3. Update the CSV
+    # We only map the "feedback" (Tutor Note) to the AI output column
     new_row = {
         "user_id": user_id,
         "time_clicked": hk_time_str,
-        "task_number": task_name, # Keeps full name in CSV
-        "ai_results": ai_result_dict.get("feedback"),
-        "saved_file_name": file_prefix # This will be user_task_time
+        "task_number": task_name,
+        "ai_output": ai_result_dict.get("feedback"), # Only saving the Tutor Note here
+        "saved_file_name": file_prefix
     }
+    
+    # Append to your CSV logic here...
+    # (Assuming you are using the pandas append logic we set up previously)
+    st.toast(f"Log updated for {file_prefix}", icon="✅")
+    
     df_new = pd.DataFrame([new_row])
 
     # 3. Check if the CSV already exists in Drive
