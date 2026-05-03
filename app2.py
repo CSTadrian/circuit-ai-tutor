@@ -304,6 +304,7 @@ simulator_html = f"""
                 type: "setComponentValue",
                 value: circuitSnapshot,
             }, "*");
+            }}
 
             if(isSimulating) {{ 
                 btn.innerText = "⏹ Stop Stim"; btn.style.background = "#c0392b"; btn.style.color = "white"; 
