@@ -59,7 +59,20 @@ UI = {
         "back": "🔙 Back",
         "new": "🎉 New Task",
         "upload_prompt": "Upload a photo to begin.",
-        "prompt_addition": ""
+        "prompt_addition": "", 
+        "guide_title": "📖 Quick Guide",
+        "guide_text": """
+        **How to Start:**
+        1. Select Task & Upload Photo
+        2. Detect Components (Step 1)
+        3. Adjust Pin Rows (Step 2)
+        4. AI Diagnosis (Step 3)
+        
+        **Visual Legend:**
+        * 🔴 **Red Circle:** Open circuit (e.g., wires not connecting, misaligned rows).
+        * 🟦 **Blue Box:** Wrong component used.
+        * 🟡 **Yellow Circle:** Wrong connection/orientation (e.g., switch placed horizontally).
+        """,
     },
     "hk": {
         "title": "🔌 AI 電路導師",
@@ -84,6 +97,20 @@ UI = {
         "back": "🔙 返回",
         "new": "🎉 新任務",
         "upload_prompt": "請上傳照片以開始。",
+        # Add these key-value pairs to the "hk" dictionary:
+        "guide_title": "📖 快速指南",
+        "guide_text": """
+        **使用步驟：**
+        1. 選擇任務並上傳照片
+        2. 偵測零件（第一步）
+        3. 微調引腳位置（第二步）
+        4. AI 進行診斷（第三步）
+        
+        **圖示說明：**
+        * 🔴 **紅圈：** 斷路（例如：接線未連接 / 錯誤插在相鄰的行數）。
+        * 🟦 **藍框：** 使用了錯誤的零件。
+        * 🟡 **黃圈：** 接法或方向錯誤（例如：開關打橫插）。
+        """,
         "prompt_addition": "Please provide the 'feedback' text entirely in written formal Cantonese (Traditional Chinese). Ensure the tone is encouraging for a primary/secondary school student."
     }
 }
@@ -327,6 +354,10 @@ with st.sidebar:
         reset_flow()
         st.rerun()
 
+    st.divider()
+    st.markdown(f"### {UI[l]['guide_title']}")
+    st.markdown(UI[l]['guide_text'])
+
 # --- 7. APPLICATION LOGIC ---
 if student_file:
     if st.session_state.img1 is None:
@@ -415,21 +446,27 @@ if student_file:
             with st.spinner(UI[l]["checking"]):
                 summary = st.session_state.components_df.to_string(index=False)
                 
-                # Appends language instruction based on toggle state
+                # UPDATED PROMPT: Explicitly categorizing errors
                 prompt = f"""
                     Task: {selected_task}. 
                     Electrical Rules: 
-                    1. SLIDE-SWITCH: Always has 3 continuous pins in one row. The middle pin (Pin 2) is the 'Common' terminal. For a circuit to be closed, electricity MUST flow through the middle pin to one of the side pins.
+                    1. SLIDE-SWITCH: Always has 3 continuous pins in one row. The middle pin (Pin 2) is the 'Common' terminal. 
                     2. SERIES: Components must share a single node.
                     3. POLARITY: LED long leg (+ve) must connect toward the Red Rail.
                     4. BUTTON: 4-pin buttons connect horizontally.
                     
+                    Identify errors and strictly categorize them into one of these types:
+                    - "open_circuit": Components meant to connect are in different rows (e.g., pin 16 vs 17) or missing connections.
+                    - "wrong_component": An incorrect component was used for the task.
+                    - "wrong_orientation": Component is physically placed wrong (e.g., slide-switch placed horizontally instead of vertically).
+
                     Component Data: {summary}. 
-                    Compare to Target Schematic. Return JSON with 'feedback' and 'error_locations'.
+                    Compare to Target Schematic. Return JSON with 'feedback' and 'detected_errors'.
                     {UI[l]["prompt_addition"]}
                     """
                 
                 try:
+                    # UPDATED API CALL: New Schema structure
                     resp = client.models.generate_content(
                         model=MODEL_ID, 
                         contents=[raw_schematic, st.session_state.img3, prompt],
@@ -439,15 +476,22 @@ if student_file:
                                 "type": "OBJECT",
                                 "properties": {
                                     "feedback": {"type": "STRING"},
-                                    "error_locations": {
+                                    "detected_errors": {
                                         "type": "ARRAY", 
-                                        "items": {"type": "ARRAY", "items": {"type": "INTEGER"}}
+                                        "items": {
+                                            "type": "OBJECT",
+                                            "properties": {
+                                                "error_type": {"type": "STRING"},
+                                                "location": {"type": "ARRAY", "items": {"type": "INTEGER"}}
+                                            }
+                                        }
                                     }
                                 },
-                                "required": ["feedback", "error_locations"]
+                                "required": ["feedback", "detected_errors"]
                             }
                         )
                     )
+                    
                     
                     result = resp.parsed
                     if isinstance(result, list) and len(result) > 0:
@@ -459,14 +503,26 @@ if student_file:
                     draw = ImageDraw.Draw(diag_img)
                     w, h = diag_img.size
                     
-                    errors = st.session_state.analysis_result.get("error_locations", [])
+                    # UPDATED DRAWING LOGIC: Interpret error types
+                    errors = st.session_state.analysis_result.get("detected_errors", [])
                     for err in errors:
-                        if len(err) == 2:
-                            ey, ex = err
+                        err_type = err.get("error_type", "open_circuit")
+                        loc = err.get("location", [])
+                        
+                        if len(loc) == 2:
+                            ey, ex = loc
                             px, py = ex * w / 1000, ey * h / 1000
-                            draw.ellipse([px-25, py-25, px+25, py+25], outline="red", width=10)
+                            
+                            # Draw based on AI classification
+                            if err_type == "wrong_component":
+                                draw.rectangle([px-35, py-35, px+35, py+35], outline="blue", width=8)
+                            elif err_type == "wrong_orientation":
+                                draw.ellipse([px-30, py-30, px+30, py+30], outline="yellow", width=8)
+                            else: # Default to open_circuit
+                                draw.ellipse([px-25, py-25, px+25, py+25], outline="red", width=8)
                     
                     st.session_state.img4 = diag_img
+                    
 
                 except Exception as e:
                     st.error(f"AI Analysis failed: {e}")
