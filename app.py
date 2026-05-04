@@ -78,53 +78,67 @@ st.markdown("""
 
 
 # --- 4. IMAGE, COMPUTER VISION & DRIVE HELPERS ---
-
 def detect_horizontal_rows(pil_img):
     """
-    Improved Row Detection:
-    Uses a Vertical Projection Profile to find the periodic spikes 
-    created by breadboard holes. This is much more reliable than Hough Lines.
+    Finds the exact CENTER of the breadboard holes by 
+    calculating the centroids of detected blobs.
     """
-    # 1. Convert to grayscale and enhance contrast
     img_cv = np.array(pil_img)
     if len(img_cv.shape) == 3:
         gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
     else:
         gray = img_cv
 
-    # 2. Use Adaptive Thresholding to make holes stand out
-    thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                                   cv2.THRESH_BINARY_INV, 11, 2)
+    # 1. Pre-process: Blur slightly to remove noise, then threshold
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    # Using OTSU to automatically find the best 'darkness' level for the holes
+    _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
-    # 3. Vertical Projection: Sum the pixels horizontally
-    # This creates a 'signal' where peaks represent rows of holes
-    projection = np.sum(thresh, axis=1)
+    # 2. Find Contours (the 'blobs' representing the holes)
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    # 4. Find peaks in the projection (local maxima)
-    # We look for any row where the 'brightness' is significantly higher than its neighbors
-    height = pil_img.size[1]
-    rows = []
-    
-    # Define a minimum distance between rows (about 1% of height) 
-    # to avoid double-detecting the same row
-    min_dist = max(10, height // 100) 
+    y_centers = []
+    height, width = gray.shape
 
-    for y in range(min_dist, height - min_dist):
-        if projection[y] > projection[y-1] and projection[y] > projection[y+1]:
-            if projection[y] > np.mean(projection) * 1.2: # Peak must be 20% above average
-                rows.append(y)
+    for cnt in contours:
+        # Filter by area so we only pick up breadboard holes, not big components
+        area = cv2.contourArea(cnt)
+        if 5 < area < 500:  # Adjust based on how close the camera is
+            M = cv2.moments(cnt)
+            if M["m00"] != 0:
+                # This is the 'Center of Mass' formula
+                # cX = int(M["m10"] / M["m00"])
+                cY = int(M["m01"] / M["m00"])
+                y_centers.append(cY)
 
-    # 5. Filter/Cluster nearby detections
-    if not rows: return []
-    rows.sort()
-    
-    final_rows = [rows[0]]
-    for r in rows[1:]:
-        if r - final_rows[-1] > min_dist:
-            final_rows.append(r)
+    if not y_centers:
+        return []
 
-    # Convert to 0-1000 scale for your coordinate system
-    return [int((y / height) * 1000) for y in final_rows]
+    # 3. Group the Y-centers into rows
+    y_centers.sort()
+    unique_rows = []
+    if y_centers:
+        current_row_group = [y_centers[0]]
+        
+        # If two hole-centers are within 10 pixels of each other, 
+        # they belong to the same horizontal row.
+        row_threshold = height * 0.015 # 1.5% of image height
+        
+        for i in range(1, len(y_centers)):
+            if y_centers[i] - current_row_group[-1] < row_threshold:
+                current_row_group.append(y_centers[i])
+            else:
+                # Average the Y-coordinates of this row to find the MID-LINE
+                unique_rows.append(int(np.mean(current_row_group)))
+                current_row_group = [y_centers[i]]
+        unique_rows.append(int(np.mean(current_row_group)))
+
+    # 4. Filter out 'phantom' rows (rows with too few holes to be real)
+    # A real breadboard row should have many holes.
+    # (Optional: count occurrences in current_row_group before appending)
+
+    # Convert to your 0-1000 coordinate system
+    return [int((y / height) * 1000) for y in unique_rows]
     
 def process_uploaded_image(uploaded_file):
     """
