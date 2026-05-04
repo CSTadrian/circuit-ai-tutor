@@ -220,16 +220,13 @@ with st.sidebar:
     
     st.divider()
     
-    input_method = st.radio("Student Circuit Input:", ["Upload File", "Take Photo"])
-    student_file = None
-    if input_method == "Upload File":
-        student_file = st.file_uploader("Upload Student Circuit", type=["jpg", "png", "jpeg"])
-    else:
-        student_file = st.camera_input("Take a photo of the breadboard")
+    # --- UPDATED: Simplified input (removed radio button) ---
+    student_file = st.file_uploader("Upload Student Circuit", type=["jpg", "png", "jpeg"])
 
     if st.button("Reset Entire Process"): 
         reset_flow()
         st.rerun()
+        
 
 # --- MAIN LOOP ---
 if student_file:
@@ -321,12 +318,17 @@ if student_file:
         if st.session_state.analysis_result is None:
             with st.spinner("Evaluating circuit logic..."):
                 coord_summary = st.session_state.components_df.to_string(index=False)
+                
+                # --- UPDATED: Analysis Prompt with Flexible Order Rule ---
                 analysis_prompt = f"""
                 Task: {selected_task}. 
-                Check if the student's circuit (annotated) matches the logic of the reference schematic.
+                Verify if the student's breadboard matches the electrical logic of the schematic.
                 
-                RULES:
-                - 4-pin push button: HORIZONTAL flow when open. VERTICAL/DIAGONAL when pressed.
+                CRITICAL LOGIC RULES:
+                1. SERIES ORDER FLEXIBILITY: In a series loop (e.g., Battery -> Switch -> Resistor -> LED -> Battery), the physical order of the components does NOT matter. 
+                   If the student placed the resistor before the switch, but they are still in the same continuous loop, mark it as CORRECT.
+                2. 4-PIN PUSH BUTTON: Flows HORIZONTALLY when open. VERTICAL/DIAGONAL only when pressed.
+                3. POLARITY: Ensure LED and Electrolytic Capacitors are oriented correctly relative to the power rail (+ve to red rail, -ve to black rail).
                 
                 Data: {coord_summary}. 
                 Return JSON: 'feedback', 'error_locations': [[y,x]]
