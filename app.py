@@ -348,7 +348,7 @@ if student_file:
                 prompt = """
                 Identify components on the breadboard. Specifically locate:
                 - power rail (red: +ve and black: -ve)
-                - slide-switch, 4-pin Push Button, LDR, LED
+                - slide-switch (3 legs), 4-pin Push Button, LDR, LED
                 - resistor (check color bands: '5-band 300ohm', '1000 ohm', or '10k ohm')
                 Return JSON: 'name', 'center': [y,x], 'legs': [[y,x],...]
                 """
