@@ -80,34 +80,52 @@ st.markdown("""
 # --- 4. IMAGE, COMPUTER VISION & DRIVE HELPERS ---
 
 def detect_horizontal_rows(pil_img):
-    """Uses Hough Transform to find the horizontal rows of the breadboard."""
+    """
+    Improved Row Detection:
+    Uses a Vertical Projection Profile to find the periodic spikes 
+    created by breadboard holes. This is much more reliable than Hough Lines.
+    """
+    # 1. Convert to grayscale and enhance contrast
     img_cv = np.array(pil_img)
-    if len(img_cv.shape) == 3 and img_cv.shape[2] == 3:
+    if len(img_cv.shape) == 3:
         gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
     else:
         gray = img_cv
 
-    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
-    lines = cv2.HoughLinesP(edges, rho=1, theta=np.pi/180, threshold=80, minLineLength=100, maxLineGap=20)
-    
-    y_coords = []
-    if lines is not None:
-        for line in lines:
-            x1, y1, x2, y2 = line[0]
-            if abs(y2 - y1) < 10: 
-                y_coords.append((y1 + y2) // 2)
-                
-    if not y_coords: return []
-    y_coords.sort()
-    
-    clustered_y = [y_coords[0]]
-    for y in y_coords[1:]:
-        if y - clustered_y[-1] > 15: 
-            clustered_y.append(y)
-            
-    height = pil_img.size[1]
-    return [int((y / height) * 1000) for y in clustered_y]
+    # 2. Use Adaptive Thresholding to make holes stand out
+    thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                   cv2.THRESH_BINARY_INV, 11, 2)
 
+    # 3. Vertical Projection: Sum the pixels horizontally
+    # This creates a 'signal' where peaks represent rows of holes
+    projection = np.sum(thresh, axis=1)
+
+    # 4. Find peaks in the projection (local maxima)
+    # We look for any row where the 'brightness' is significantly higher than its neighbors
+    height = pil_img.size[1]
+    rows = []
+    
+    # Define a minimum distance between rows (about 1% of height) 
+    # to avoid double-detecting the same row
+    min_dist = max(10, height // 100) 
+
+    for y in range(min_dist, height - min_dist):
+        if projection[y] > projection[y-1] and projection[y] > projection[y+1]:
+            if projection[y] > np.mean(projection) * 1.2: # Peak must be 20% above average
+                rows.append(y)
+
+    # 5. Filter/Cluster nearby detections
+    if not rows: return []
+    rows.sort()
+    
+    final_rows = [rows[0]]
+    for r in rows[1:]:
+        if r - final_rows[-1] > min_dist:
+            final_rows.append(r)
+
+    # Convert to 0-1000 scale for your coordinate system
+    return [int((y / height) * 1000) for y in final_rows]
+    
 def process_uploaded_image(uploaded_file):
     """
     Android-Proof Processor:
