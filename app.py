@@ -68,7 +68,17 @@ if schematic_file and student_file:
 
         if st.button("🔍 Step 1: Detect Components", type="primary"):
             with st.spinner("AI locating components..."):
-                prompt_seg = "Identify LDR, Resistor, LED, and 4-pin Push Button. Return JSON: 'name', 'center': [y,x], 'legs': [[y,x],...]"
+                # UPDATED PROMPT: Explicitly ask for the specific components and resistor values
+                prompt_seg = """
+                Identify components on the breadboard. Specifically locate:
+                - slide-switch
+                - 4-pin Push Button
+                - LDR
+                - resistor (Read the color bands to specify if it is '5-band 300ohm', '1000 ohm', or '10k ohm')
+                
+                Return JSON: 'name', 'center': [y,x], 'legs': [[y,x],...]
+                """
+                
                 resp = client.models.generate_content(
                     model=MODEL_ID,
                     contents=[raw_student, prompt_seg],
@@ -127,7 +137,20 @@ if schematic_file and student_file:
         if st.session_state.analysis_result is None:
             with st.spinner("Evaluating circuit logic..."):
                 coord_summary = st.session_state.components_df.to_string(index=False)
-                analysis_prompt = f"Task: {task_id}. Button connects vertically/diagonally. Check loop. Data: {coord_summary}. Return JSON: 'feedback', 'error_locations': [[y,x]]"
+                
+                # UPDATED PROMPT: Explicitly declare the exact vertical/horizontal/diagonal routing logic
+                analysis_prompt = f"""
+                Task: {task_id}. 
+                
+                CRITICAL COMPONENT RULES:
+                - The 4-pin push button flows HORIZONTALLY when NOT PRESSED.
+                - When PRESSED, the pins connected are both VERTICAL and DIAGONAL.
+                
+                Check the loop and logic using exactly these rules. 
+                Data: {coord_summary}. 
+                Return JSON: 'feedback', 'error_locations': [[y,x]]
+                """
+                
                 resp = client.models.generate_content(
                     model=MODEL_ID,
                     contents=[raw_schematic, st.session_state.annotated_img, analysis_prompt],
