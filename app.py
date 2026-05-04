@@ -113,6 +113,8 @@ if schematic_file and student_file:
                 - slide-switch
                 - 4-pin Push Button
                 - LDR
+                - LED 
+                - 220µF capacitor
                 - resistor (Read the color bands to specify if it is '5-band 300ohm', '1000 ohm', or '10k ohm')
                 
                 Return JSON: 'name', 'center': [y,x], 'legs': [[y,x],...]
