@@ -343,34 +343,56 @@ if student_file:
             st.session_state.step = 3
             st.rerun()
 
-    # STEP 3: ANALYSIS
     elif st.session_state.step == 3:
         st.subheader("🧠 Step 3: AI Diagnosis")
-        if st.session_state.analysis_result is None:
+        
+        # Only run the AI if we don't have a result OR if the image hasn't been generated
+        if st.session_state.analysis_result is None or st.session_state.img4 is None:
             with st.spinner("Checking electrical logic..."):
                 summary = st.session_state.components_df.to_string(index=False)
+                
+                # Updated Prompt to handle 3-pin Slide Switches
                 prompt = f"""
                 Task: {selected_task}. 
-                Rules: 
-                1. SERIES order flexibility (Switch before or after Resistor is fine).
-                2. 4-pin Button: Flows HORIZONTALLY when open.
-                3. Polarity: LED/Capacitor must match power rail (+ve to red).
-                Data: {summary}. Return JSON: 'feedback', 'error_locations': [[y,x]]
-                """
-                resp = client.models.generate_content(
-                    model=MODEL_ID, contents=[raw_schematic, st.session_state.img3, prompt],
-                    config=types.GenerateContentConfig(response_mime_type="application/json")
-                )
-                st.session_state.analysis_result = json.loads(resp.text)
+                Electrical Rules: 
+                1. SLIDE-SWITCH: Has 3 pins. The MIDDLE pin is 'Common'. The switch connects Middle to Left OR Middle to Right. 
+                   Ensure the power path goes through the Middle pin.
+                2. SERIES: Components must share a single node.
+                3. POLARITY: LED long leg (+ve) must connect toward the Red Rail.
+                4. BUTTON: 4-pin buttons connect horizontally.
                 
-                # Create Final Image
-                diag_img = st.session_state.img3.copy()
-                draw = ImageDraw.Draw(diag_img)
-                w, h = diag_img.size
-                for ey, ex in st.session_state.analysis_result.get("error_locations", []):
-                    px, py = ex * w / 1000, ey * h / 1000
-                    draw.ellipse([px-25, py-25, px+25, py+25], outline="red", width=10)
-                st.session_state.img4 = diag_img
+                Component Data: {summary}. 
+                Compare to Target Schematic. Return JSON: 'feedback', 'error_locations': [[y,x]]
+                """
+                
+                try:
+                    resp = client.models.generate_content(
+                        model=MODEL_ID, 
+                        contents=[raw_schematic, st.session_state.img3, prompt],
+                        config=types.GenerateContentConfig(response_mime_type="application/json")
+                    )
+                    st.session_state.analysis_result = json.loads(resp.text)
+                    
+                    # Create Final Image (Red circles on errors)
+                    diag_img = st.session_state.img3.copy()
+                    draw = ImageDraw.Draw(diag_img)
+                    w, h = diag_img.size
+                    for ey, ex in st.session_state.analysis_result.get("error_locations", []):
+                        px, py = ex * w / 1000, ey * h / 1000
+                        draw.ellipse([px-25, py-25, px+25, py+25], outline="red", width=10)
+                    
+                    st.session_state.img4 = diag_img
+                except Exception as e:
+                    st.error(f"AI Analysis failed: {e}")
+                    st.session_state.step = 2 # Kick back to tuning if AI fails
+
+        # Safety Check: Only show the image if it actually exists
+        if st.session_state.img4:
+            st.image(st.session_state.img4, caption="AI Diagnosis: Red circles indicate potential wiring issues")
+        
+        if st.session_state.analysis_result:
+            st.info(st.session_state.analysis_result.get("feedback", "No feedback provided."))
+            
 
         st.image(st.session_state.img4)
         st.info(st.session_state.analysis_result.get("feedback"))
