@@ -3,13 +3,24 @@ import streamlit as st
 import pandas as pd
 import json
 import os
-import io  # <-- ADDED: Required for mobile memory buffer
-from PIL import Image as PILImage, ImageDraw, ImageOps  # <-- ADDED ImageOps for EXIF rotation
+import io  # <-- Required for mobile memory buffer
+from PIL import Image as PILImage, ImageDraw, ImageOps  # <-- ImageOps for EXIF rotation
 
 # --- NEW SDK IMPORTS ---
 from google import genai
 from google.genai import types
 from google.oauth2 import service_account
+
+# --- NEW: TASK CONFIGURATION ---
+# Define your tasks and their corresponding filenames in the 'data' folder
+TASKS = {
+    "Task 1: Basic LED Circuit": "task1_led.png",
+    "Task 2: Resistor in Series": "task2_series_led.png",
+    "Task 3: Parallel LED Setup": "task3_parallel_led.png",
+    "Task 4: Switch Control": "task4_switch.png",
+    "Task 5: Exam 1": "task5.png",
+}
+DATA_FOLDER = "data"
 
 # --- 1. INITIALIZATION & CONFIG ---
 st.set_page_config(page_title="AI Circuit Tutor", layout="wide")
@@ -24,8 +35,7 @@ else:
     st.error("GCP Service Account secrets not found!")
     st.stop()
 
-
-# --- UPDATED: Hide the Streamlit main menu, GitHub link, Deploy button, and footer ---
+# --- Hide the Streamlit main menu, GitHub link, Deploy button, and footer ---
 hide_menu_style = """
     <style>
     #MainMenu {visibility: hidden;}
@@ -51,7 +61,7 @@ def draw_coordinate_grid(image):
 
 def process_uploaded_image(uploaded_file):
     """Ensures image is upright, in RGB format, and resized to prevent mobile crashes."""
-    # Open the image
+    # Open the image (works for both file paths and byte streams)
     img = PILImage.open(uploaded_file)
     
     # 1. Fix Android/iOS rotation issues
@@ -61,13 +71,11 @@ def process_uploaded_image(uploaded_file):
     img = img.convert("RGB")
     
     # 3. FIX FOR ANDROID ZOOM ISSUE: Resize the image to a safe maximum resolution
-    # This maintains the aspect ratio but ensures neither side is larger than 1600px
     max_size = (1600, 1600)
     img.thumbnail(max_size, PILImage.Resampling.LANCZOS)
     
     return img
     
-
 # --- 3. SESSION STATE ---
 if "step" not in st.session_state: st.session_state.step = 1
 if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
@@ -83,10 +91,13 @@ st.title("🔌 AI Circuit Tutor: Human-in-the-Loop Debugging")
 
 with st.sidebar:
     st.header("Inputs")
-    task_id = st.text_input("Task Name", "Task 4b")
     
-    # Schematic is usually a file
-    schematic_file = st.file_uploader("Upload Schematic", type=["jpg", "png", "jpeg", "webp", "heic"])
+    # 1) NEW: User ID dropdown (00 to 50)
+    user_id_options = [f"{i:02d}" for i in range(51)]
+    user_id = st.selectbox("Select User ID", user_id_options)
+    
+    # 2) NEW: Task Selection (replaces schematic file upload)
+    selected_task = st.selectbox("Select Task", list(TASKS.keys()))
     
     # Choice for Student Circuit: Upload OR Take Photo
     input_method = st.radio("Student Circuit Input:", ["Upload File", "Take Photo"])
@@ -102,20 +113,30 @@ with st.sidebar:
         st.rerun()
 
 # --- MAIN LOOP ---
-if schematic_file and student_file:
-    # Use a try-except to catch platform-specific upload errors
+if selected_task and student_file:
     try:
-        # UPDATED: Use .getvalue() instead of .read() for better Streamlit mobile compatibility
-        raw_schematic = process_uploaded_image(io.BytesIO(schematic_file.getvalue()))
+        # Load schematic locally based on selected task
+        schematic_filename = TASKS[selected_task]
+        schematic_path = os.path.join(DATA_FOLDER, schematic_filename)
+        
+        if not os.path.exists(schematic_path):
+            st.error(f"Schematic file not found at {schematic_path}. Please ensure the 'data' folder exists and contains the images.")
+            st.stop()
+            
+        raw_schematic = process_uploaded_image(schematic_path)
+        
+        # Load student image from upload/camera
         raw_student = process_uploaded_image(io.BytesIO(student_file.getvalue()))
+        
     except Exception as e:
-        st.error(f"Error loading image: {e}. Please try taking the photo again.")
+        st.error(f"Error loading images: {e}. Please try again.")
         st.stop()
         
     # --- STEP 1: DETECTION ---
     if st.session_state.step == 1:
+        st.markdown(f"**Current User:** {user_id} | **Task:** {selected_task}")
         col1, col2 = st.columns(2)
-        col1.image(raw_schematic, caption="Reference Schematic")
+        col1.image(raw_schematic, caption=f"Reference Schematic ({schematic_filename})")
         col2.image(draw_coordinate_grid(raw_student.copy()), caption="Student Breadboard")
 
         if st.button("🔍 Step 1: Detect Components", type="primary"):
@@ -191,8 +212,9 @@ if schematic_file and student_file:
             with st.spinner("Evaluating circuit logic..."):
                 coord_summary = st.session_state.components_df.to_string(index=False)
                 
+                # UPDATED: Replaced manual task_id string with selected_task from dropdown
                 analysis_prompt = f"""
-                Task: {task_id}. 
+                Task: {selected_task}. 
                 
                 CRITICAL COMPONENT RULES:
                 - The 4-pin push button flows HORIZONTALLY when NOT PRESSED.
