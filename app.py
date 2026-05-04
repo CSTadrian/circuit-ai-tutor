@@ -23,6 +23,17 @@ else:
     st.error("GCP Service Account secrets not found!")
     st.stop()
 
+
+# Hide the Streamlit main menu (which contains the GitHub link) and the footer
+hide_menu_style = """
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    .stDeployButton {display:none;}
+    </style>
+    """
+st.markdown(hide_menu_style, unsafe_allow_html=True)
+
 # --- 2. HELPER FUNCTIONS ---
 def draw_coordinate_grid(image):
     if image.mode != "RGB":
@@ -54,7 +65,7 @@ with st.sidebar:
     task_id = st.text_input("Task Name", "Task 4b")
     
     # Schematic is usually a file
-    schematic_file = st.file_uploader("Upload Schematic", type=["jpg", "png", "jpeg"])
+    schematic_file = st.file_uploader("Upload Schematic", type=["jpg", "png", "jpeg", "webp", "heic"])
     
     # Choice for Student Circuit: Upload OR Take Photo
     input_method = st.radio("Student Circuit Input:", ["Upload File", "Take Photo"])
