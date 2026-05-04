@@ -134,6 +134,7 @@ if student_file:
             with st.spinner("AI locating components..."):
                 prompt_seg = """
                 Identify components on the breadboard. Specifically locate:
+                - power rail (red: +ve and black: -ve)
                 - slide-switch
                 - 4-pin Push Button
                 - LDR
