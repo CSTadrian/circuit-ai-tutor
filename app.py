@@ -378,8 +378,8 @@ if student_file:
             with st.spinner(UI[l]["analyzing"]):
                 prompt = """
                     Identify components on the breadboard. Specifically:
+                    - POWER SUPPLY: You MUST identify the power input module. It has exactly 2 pins: the red wire/pin (+ve/Vcc) and the black wire/pin (-ve/GND).
                     - SLIDE-SWITCH: You MUST identify exactly 3 pins (legs) positioned continuously in a single straight row. 
-                    - power rail (red: +ve and black: -ve)
                     - 4-pin Push Button, LDR, LED
                     - resistor (check color bands: '5-band 300ohm', '1000 ohm', or '10k ohm')
                     Return JSON: 'name', 'center': [y,x], 'legs': [[y,x],...]
@@ -450,21 +450,23 @@ if student_file:
                 prompt = f"""
                     Task: {selected_task}. 
                     Electrical Rules: 
-                    1. SLIDE-SWITCH: 3 pins in one row. Pin 2 is Common.
-                    2. SERIES & PATHS: Components must share a single node (same row) to connect. The exact sequential order of components in a series branch does NOT matter. (e.g., [+ve -> Resistor -> LED -> GND] is functionally equivalent to [+ve -> Switch -> LED -> Resistor -> GND]). Evaluate the semantic flow from +ve to GND, not the visual sequence.
-                    3. RESISTOR VALUES: Ignore specific resistor values (e.g., 300 ohm vs 1k ohm vs 10k ohm). Treat all resistors as functionally equivalent for this analysis.
+                    1. POWER SUPPLY: The Power Supply component provides Vcc (+ve) and GND (-ve). All circuits MUST form a valid, closed loop originating from the Power Supply Vcc pin and terminating at the Power Supply GND pin.
+                    2. SLIDE-SWITCH: 3 pins in one row. Pin 2 is Common.
+                    3. SERIES & PATHS: Components must share a single node (same row) to connect. The exact sequential order of components in a series branch does NOT matter. (e.g., [+ve -> Resistor -> LED -> GND] is functionally equivalent to [+ve -> Switch -> LED -> Resistor -> GND]). Evaluate the semantic flow from +ve to GND, not the visual sequence.
+                    4. RESISTOR VALUES: Ignore specific resistor values (e.g., 300 ohm vs 1k ohm vs 10k ohm). Treat all resistors as functionally equivalent for this analysis.
                     
                     Component Data (Available Pins):
                     {summary}
 
                     Instructions:
-                    - Identify errors based on the 'Component Data' provided.
+                    - Identify errors based on the 'Component Data' provided. Trace the circuit from the Power Supply +ve pin to the GND pin.
                     - For 'location', you MUST use the [LY, LX] coordinates of the specific pin that is causing the error. Do not invent new coordinates.
                     - Categories: "open_circuit", "wrong_component", "wrong_orientation".
 
                     Compare to Target Schematic. Return JSON with 'feedback' and 'detected_errors'.
                     {UI[l]["prompt_addition"]}
                     """
+                
                 
                 try:
                     # UPDATED API CALL: New Schema structure
