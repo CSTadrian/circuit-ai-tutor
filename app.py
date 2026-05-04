@@ -157,6 +157,32 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+import cv2
+import numpy as np
+
+def draw_power_rails(image, breadboard_coords):
+    """
+    Draws vertical pale blue lines representing the power rails.
+    Color: Pale Blue (RGB: 173, 216, 230)
+    """
+    # Define Pale Blue in BGR for OpenCV
+    pale_blue = (230, 216, 173) 
+    overlay = image.copy()
+    
+    # Logic: Define the x-coordinates for the 4 power rail columns 
+    # (Typically 2 on the left, 2 on the right)
+    h, w, _ = image.shape
+    rail_x_offsets = [0.05, 0.10, 0.90, 0.95] # Normalized percentages of width
+    
+    for x_offset in rail_x_offsets:
+        x = int(w * x_offset)
+        # Draw vertical line from top to bottom of the breadboard region
+        cv2.line(overlay, (x, 0), (x, h), pale_blue, 10)
+        
+    # Apply transparency so the physical holes are still visible
+    alpha = 0.4
+    return cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0)
+    
 
 def detect_horizontal_rows(pil_img):
     """
@@ -449,20 +475,27 @@ if student_file:
                 # UPDATED PROMPT: Explicitly categorizing errors
                 prompt = f"""
                     Task: {selected_task}. 
-                    Electrical Rules: 
+                    
+                    Structural Connectivity Rules:
+                    1. TERMINAL STRIPS (Center): Pins in the same ROW (horizontal) are electrically connected.
+                    2. POWER RAILS (Edges): The two leftmost and two rightmost columns are Power Rails. Pins in the same COLUMN (vertical) are electrically connected. 
+                    3. PALE BLUE OVERLAYS: Any component pin placed on a vertical pale blue line is automatically connected to the Power Supply (Vcc or GND) corresponding to that rail.
+                
+                    Electrical Analysis Rules: 
                     1. POWER SUPPLY: The Power Supply component provides Vcc (+ve) and GND (-ve). All circuits MUST form a valid, closed loop originating from the Power Supply Vcc pin and terminating at the Power Supply GND pin.
                     2. SLIDE-SWITCH: 3 pins in one row. Pin 2 is Common.
-                    3. SERIES & PATHS: Components must share a single node (same row) to connect. The exact sequential order of components in a series branch does NOT matter. (e.g., [+ve -> Resistor -> LED -> GND] is functionally equivalent to [+ve -> Switch -> LED -> Resistor -> GND]). Evaluate the semantic flow from +ve to GND, not the visual sequence.
-                    4. RESISTOR VALUES: Ignore specific resistor values (e.g., 300 ohm vs 1k ohm vs 10k ohm). Treat all resistors as functionally equivalent for this analysis.
-                    
+                    3. SERIES & PATHS: Components must share a single node (horizontal row for center, vertical column for rails) to connect. The exact sequential order does NOT matter. Evaluate the semantic flow from +ve to GND.
+                    4. RESISTOR VALUES: Ignore specific resistor values. Treat all resistors as functionally equivalent.
+                
                     Component Data (Available Pins):
                     {summary}
-
-                    Instructions:
+                
+                    Instructions & Evaluation:
                     - Identify errors based on the 'Component Data' provided. Trace the circuit from the Power Supply +ve pin to the GND pin.
-                    - For 'location', you MUST use the [LY, LX] coordinates of the specific pin that is causing the error. Do not invent new coordinates.
-                    - Categories: "open_circuit", "wrong_component", "wrong_orientation".
-
+                    - If a student connects a component horizontally across a Power Rail (expecting horizontal connection where it is vertical), flag as "wrong_orientation".
+                    - If a circuit is broken because the student expects horizontal connectivity on the edges, flag as "open_circuit" and explain the vertical rail logic in the feedback.
+                    - For 'location', you MUST use the [LY, LX] coordinates of the specific pin causing the error.
+                
                     Compare to Target Schematic. Return JSON with 'feedback' and 'detected_errors'.
                     {UI[l]["prompt_addition"]}
                     """
