@@ -3,16 +3,15 @@ import streamlit as st
 import pandas as pd
 import json
 import os
-import io  # <-- Required for mobile memory buffer
-from PIL import Image as PILImage, ImageDraw, ImageOps  # <-- ImageOps for EXIF rotation
+import io  
+from PIL import Image as PILImage, ImageDraw, ImageOps 
 
 # --- NEW SDK IMPORTS ---
 from google import genai
 from google.genai import types
 from google.oauth2 import service_account
 
-# --- NEW: TASK CONFIGURATION ---
-# Define your tasks and their corresponding filenames in the 'data' folder
+# --- TASK CONFIGURATION ---
 TASKS = {
     "Task 1: Basic LED Circuit": "task1_led.png",
     "Task 2: Resistor in Series": "task2_series_led.png",
@@ -35,13 +34,13 @@ else:
     st.error("GCP Service Account secrets not found!")
     st.stop()
 
-# --- Hide the Streamlit main menu, GitHub link, Deploy button, and footer ---
+# --- Hide the Streamlit main menu and footer ---
 hide_menu_style = """
     <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    header {visibility: hidden;} /* Hides the top right menu entirely */
-    [data-testid="stToolbar"] {visibility: hidden !important;} /* Strictly hides the GitHub/Deploy icon */
+    header {visibility: hidden;}
+    [data-testid="stToolbar"] {visibility: hidden !important;}
     </style>
     """
 st.markdown(hide_menu_style, unsafe_allow_html=True)
@@ -60,20 +59,12 @@ def draw_coordinate_grid(image):
     return image
 
 def process_uploaded_image(uploaded_file):
-    """Ensures image is upright, in RGB format, and resized to prevent mobile crashes."""
-    # Open the image (works for both file paths and byte streams)
+    """Ensures image is upright, in RGB format, and resized."""
     img = PILImage.open(uploaded_file)
-    
-    # 1. Fix Android/iOS rotation issues
     img = ImageOps.exif_transpose(img) 
-    
-    # 2. Convert to RGB (strips out weird mobile alpha channels)
     img = img.convert("RGB")
-    
-    # 3. FIX FOR ANDROID ZOOM ISSUE: Resize the image to a safe maximum resolution
     max_size = (1600, 1600)
     img.thumbnail(max_size, PILImage.Resampling.LANCZOS)
-    
     return img
     
 # --- 3. SESSION STATE ---
@@ -90,18 +81,29 @@ def reset_flow():
 st.title("🔌 AI Circuit Tutor: Human-in-the-Loop Debugging")
 
 with st.sidebar:
-    st.header("Inputs")
+    st.header("Setup")
     
-    # 1) NEW: User ID dropdown (00 to 50)
+    # User ID Selection
     user_id_options = [f"{i:02d}" for i in range(51)]
     user_id = st.selectbox("Select User ID", user_id_options)
     
-    # 2) NEW: Task Selection (replaces schematic file upload)
+    # Task Selection
     selected_task = st.selectbox("Select Task", list(TASKS.keys()))
     
-    # Choice for Student Circuit: Upload OR Take Photo
-    input_method = st.radio("Student Circuit Input:", ["Upload File", "Take Photo"])
+    # --- UPDATED: PREVIEW SCHEMATIC IMMEDIATELY ---
+    schematic_path = os.path.join(DATA_FOLDER, TASKS[selected_task])
+    if os.path.exists(schematic_path):
+        # We load it here for the sidebar preview
+        raw_schematic = process_uploaded_image(schematic_path)
+        st.image(raw_schematic, caption=f"Target Schematic: {TASKS[selected_task]}", use_container_width=True)
+    else:
+        st.error(f"File {TASKS[selected_task]} not found in {DATA_FOLDER}")
+        st.stop()
     
+    st.divider()
+    
+    # Student Circuit Input
+    input_method = st.radio("Student Circuit Input:", ["Upload File", "Take Photo"])
     student_file = None
     if input_method == "Upload File":
         student_file = st.file_uploader("Upload Student Circuit", type=["jpg", "png", "jpeg"])
@@ -113,30 +115,19 @@ with st.sidebar:
         st.rerun()
 
 # --- MAIN LOOP ---
-if selected_task and student_file:
+if student_file:
     try:
-        # Load schematic locally based on selected task
-        schematic_filename = TASKS[selected_task]
-        schematic_path = os.path.join(DATA_FOLDER, schematic_filename)
-        
-        if not os.path.exists(schematic_path):
-            st.error(f"Schematic file not found at {schematic_path}. Please ensure the 'data' folder exists and contains the images.")
-            st.stop()
-            
-        raw_schematic = process_uploaded_image(schematic_path)
-        
-        # Load student image from upload/camera
+        # We already defined raw_schematic in the sidebar logic above
         raw_student = process_uploaded_image(io.BytesIO(student_file.getvalue()))
-        
     except Exception as e:
-        st.error(f"Error loading images: {e}. Please try again.")
+        st.error(f"Error loading student image: {e}")
         st.stop()
         
     # --- STEP 1: DETECTION ---
     if st.session_state.step == 1:
-        st.markdown(f"**Current User:** {user_id} | **Task:** {selected_task}")
+        st.markdown(f"### Current User: **{user_id}** | Task: **{selected_task}**")
         col1, col2 = st.columns(2)
-        col1.image(raw_schematic, caption=f"Reference Schematic ({schematic_filename})")
+        col1.image(raw_schematic, caption="Reference Schematic")
         col2.image(draw_coordinate_grid(raw_student.copy()), caption="Student Breadboard")
 
         if st.button("🔍 Step 1: Detect Components", type="primary"):
@@ -167,7 +158,8 @@ if selected_task and student_file:
                 )
                 records = []
                 for item in resp.parsed:
-                    name, cy, cx = item.get('name', 'Comp'), item.get('center', [500, 500])[0], item.get('center', [500, 500])[1]
+                    name = item.get('name', 'Comp')
+                    cy, cx = item.get('center', [500, 500])
                     for i, (ly, lx) in enumerate(item.get('legs', [])):
                         records.append({"Component": f"{name} (Pin {i+1})", "CX": cx, "CY": cy, "LX": lx, "LY": ly})
                 st.session_state.components_df = pd.DataFrame(records)
@@ -204,23 +196,20 @@ if selected_task and student_file:
             st.session_state.step = 3
             st.rerun()
 
-    # --- STEP 3: ANALYSIS & RETURN BUTTON ---
+    # --- STEP 3: ANALYSIS ---
     elif st.session_state.step == 3:
         st.subheader("🧠 Step 3: Pedagogical Diagnosis")
         
         if st.session_state.analysis_result is None:
             with st.spinner("Evaluating circuit logic..."):
                 coord_summary = st.session_state.components_df.to_string(index=False)
-                
-                # UPDATED: Replaced manual task_id string with selected_task from dropdown
                 analysis_prompt = f"""
                 Task: {selected_task}. 
+                Check if the student's circuit (annotated) matches the logic of the reference schematic.
                 
-                CRITICAL COMPONENT RULES:
-                - The 4-pin push button flows HORIZONTALLY when NOT PRESSED.
-                - When PRESSED, the pins connected are both VERTICAL and DIAGONAL.
+                RULES:
+                - 4-pin push button: HORIZONTAL flow when open. VERTICAL/DIAGONAL when pressed.
                 
-                Check the loop and logic using exactly these rules. 
                 Data: {coord_summary}. 
                 Return JSON: 'feedback', 'error_locations': [[y,x]]
                 """
@@ -238,7 +227,6 @@ if selected_task and student_file:
                 )
                 st.session_state.analysis_result = resp.parsed
 
-        # Display Final Diagnosis Image
         res = st.session_state.analysis_result
         diag_img = st.session_state.annotated_img.copy()
         draw = ImageDraw.Draw(diag_img)
@@ -247,17 +235,18 @@ if selected_task and student_file:
             px, py = ex * w / 1000, ey * h / 1000
             draw.ellipse([px-25, py-25, px+25, py+25], outline="red", width=10)
         
-        st.image(diag_img, caption="AI Diagnosis (Red = Check this area)")
+        st.image(diag_img, caption="AI Diagnosis")
         st.info(res.get("feedback"))
 
-        # --- NAVIGATION BUTTONS ---
         col_nav1, col_nav2 = st.columns(2)
         with col_nav1:
             if st.button("🔙 Back to Adjust Pins", use_container_width=True):
-                st.session_state.analysis_result = None # Clear old feedback
+                st.session_state.analysis_result = None 
                 st.session_state.step = 2
                 st.rerun()
         with col_nav2:
             if st.button("🎉 New Task", use_container_width=True):
                 reset_flow()
                 st.rerun()
+else:
+    st.info("Please select a task and provide a photo of your circuit to begin.")
