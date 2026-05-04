@@ -349,7 +349,7 @@ with st.sidebar:
         st.error(f"Missing {TASKS[selected_task]}")
         st.stop()
     
-    student_file = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp"])
+    student_file = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp","heic"])
     if st.button(UI[l]["reset"]): 
         reset_flow()
         st.rerun()
