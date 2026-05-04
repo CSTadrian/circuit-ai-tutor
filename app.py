@@ -50,11 +50,23 @@ def draw_coordinate_grid(image):
     return image
 
 def process_uploaded_image(uploaded_file):
-    """Ensures image is upright and in RGB format."""
+    """Ensures image is upright, in RGB format, and resized to prevent mobile crashes."""
+    # Open the image
     img = PILImage.open(uploaded_file)
-    # This line is the magic fix for Android/iOS rotation issues:
+    
+    # 1. Fix Android/iOS rotation issues
     img = ImageOps.exif_transpose(img) 
-    return img.convert("RGB")
+    
+    # 2. Convert to RGB (strips out weird mobile alpha channels)
+    img = img.convert("RGB")
+    
+    # 3. FIX FOR ANDROID ZOOM ISSUE: Resize the image to a safe maximum resolution
+    # This maintains the aspect ratio but ensures neither side is larger than 1600px
+    max_size = (1600, 1600)
+    img.thumbnail(max_size, PILImage.Resampling.LANCZOS)
+    
+    return img
+    
 
 # --- 3. SESSION STATE ---
 if "step" not in st.session_state: st.session_state.step = 1
