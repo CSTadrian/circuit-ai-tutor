@@ -4,8 +4,8 @@ import pandas as pd
 import json
 import os
 import io
-from datetime import datetime
 import pytz
+from datetime import datetime
 from PIL import Image as PILImage, ImageDraw, ImageOps 
 
 # --- NEW SDK IMPORTS ---
@@ -17,7 +17,7 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
-# --- TASK CONFIGURATION ---
+# --- 1. CONFIGURATION & TASK SETUP ---
 TASKS = {
     "Task 1: Basic LED Circuit": "task1_led.png",
     "Task 2: Resistor in Series": "task2_series_led.png",
@@ -26,13 +26,16 @@ TASKS = {
     "Task 5: Exam 1": "task5.png",
 }
 DATA_FOLDER = "data"
+MODEL_ID = "gemini-3.1-pro-preview"
 
-# --- GOOGLE DRIVE INITIALIZATION ---
+# Google Drive Config
 PARENT_FOLDER_ID = "1_cn9lfvMLaozDTx8pvU6LP62J9AVFrvz"
 CSV_FILENAME = "circuit_audit_logs.csv"
 
+# --- 2. AUTHENTICATION & INITIALIZATION ---
 @st.cache_resource
 def init_drive():
+    """Initializes Google Drive API via OAuth secrets."""
     oauth_info = st.secrets["google_oauth"]
     drive_creds = Credentials(
         token=None,
@@ -46,121 +49,54 @@ def init_drive():
         drive_creds.refresh(Request())
     return build('drive', 'v3', credentials=drive_creds)
 
+# Initialize Clients
 drive_service = init_drive()
 
-def pil_to_bytes(img):
-    """Helper to convert PIL image to byte stream for Google Drive upload."""
-    buf = io.BytesIO()
-    img.save(buf, format='PNG')
-    return buf.getvalue()
-
-def save_to_drive(user_id, task_name, ai_feedback, images_dict):
-    """Saves 4 images and updates the CSV log in Google Drive."""
-    
-    # 1. Setup Data Variables
-    hk_tz = pytz.timezone('Asia/Hong_Kong')
-    hk_time_str = datetime.now(hk_tz).strftime('%Y-%m-%d %H:%M:%S')
-    
-    # Extract Task Number (e.g., "Task 4: Switch" -> "4")
-    task_num = task_name.split(":")[0].replace("Task", "").strip()
-    file_prefix = f"user{user_id}_task{task_num}"
-    
-    # 2. Upload Images to Google Drive
-    for img_key, img_obj in images_dict.items():
-        if img_obj is not None:
-            try:
-                img_bytes = pil_to_bytes(img_obj)
-                file_name = f"{file_prefix}_{img_key}.png"
-                img_metadata = {'name': file_name, 'parents': [PARENT_FOLDER_ID]}
-                media_img = MediaIoBaseUpload(io.BytesIO(img_bytes), mimetype='image/png')
-                drive_service.files().create(body=img_metadata, media_body=media_img).execute()
-            except Exception as e:
-                st.error(f"Failed to save {img_key} to Drive: {e}")
-
-    # 3. Update the CSV
-    new_row = {
-        "User ID": user_id,
-        "Time Uploaded": hk_time_str,
-        "Image 1 Filename": f"{file_prefix}_1.png",
-        "Image 4 Filename": f"{file_prefix}_4.png",
-        "AI Output": ai_feedback
-    }
-    
-    df_new = pd.DataFrame([new_row])
-
-    # Check if the CSV already exists in Drive
-    query = f"name='{CSV_FILENAME}' and '{PARENT_FOLDER_ID}' in parents and trashed=false"
-    results = drive_service.files().list(q=query, fields="files(id)").execute()
-    items = results.get('files', [])
-
-    try:
-        if not items:
-            # Create a new CSV file
-            csv_bytes = df_new.to_csv(index=False).encode('utf-8')
-            csv_metadata = {'name': CSV_FILENAME, 'parents': [PARENT_FOLDER_ID]}
-            csv_media = MediaIoBaseUpload(io.BytesIO(csv_bytes), mimetype='text/csv', resumable=True)
-            drive_service.files().create(body=csv_metadata, media_body=csv_media, fields='id').execute()
-        else:
-            # Download, append, and update existing CSV
-            file_id = items[0]['id']
-            request = drive_service.files().get_media(fileId=file_id)
-            fh = io.BytesIO()
-            downloader = MediaIoBaseDownload(fh, request)
-            done = False
-            while not done:
-                _, done = downloader.next_chunk()
-            fh.seek(0)
-            
-            df_existing = pd.read_csv(fh)
-            df_combined = pd.concat([df_existing, df_new], ignore_index=True)
-            csv_bytes = df_combined.to_csv(index=False).encode('utf-8')
-            
-            csv_media = MediaIoBaseUpload(io.BytesIO(csv_bytes), mimetype='text/csv', resumable=True)
-            drive_service.files().update(fileId=file_id, media_body=csv_media).execute()
-            
-        st.success(f"Successfully logged data to Drive for User {user_id}!")
-    except Exception as e:
-        st.error(f"Failed to update CSV in Drive: {e}")
-
-# --- 1. INITIALIZATION & CONFIG ---
-st.set_page_config(page_title="AI Circuit Tutor", layout="wide")
-MODEL_ID = "gemini-3.1-pro-preview"
-
-# Authentication
 if "gcp_service_account" in st.secrets:
     creds_info = st.secrets["gcp_service_account"]
-    credentials = service_account.Credentials.from_service_account_info(creds_info, scopes=["https://www.googleapis.com/auth/cloud-platform"])
+    credentials = service_account.Credentials.from_service_account_info(
+        creds_info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
     client = genai.Client(vertexai=True, project=creds_info["project_id"], location="global", credentials=credentials)
 else:
     st.error("GCP Service Account secrets not found!")
     st.stop()
 
-# --- Hide the Streamlit main menu and footer ---
+# --- 3. UI CUSTOMIZATION (Hiding Menus) ---
+st.set_page_config(page_title="AI Circuit Tutor", layout="wide")
 hide_menu_style = """
     <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     [data-testid="stToolbar"] {visibility: hidden !important;}
+    .stDeployButton {display:none;}
     </style>
     """
 st.markdown(hide_menu_style, unsafe_allow_html=True)
 
-# --- 2. HELPER FUNCTIONS ---
-def draw_coordinate_grid(image):
-    if image.mode != "RGB":
-        image = image.convert("RGB")
-    draw = ImageDraw.Draw(image)
-    w, h = image.size
-    line_color = (255, 0, 0) 
-    for i in range(0, 1001, 100):
-        x_px, y_px = i * w / 1000, i * h / 1000
-        draw.line([(x_px, 0), (x_px, 15)], fill=line_color, width=2)
-        draw.line([(0, y_px), (15, y_px)], fill=line_color, width=2)
-    return image
+# --- 4. IMAGE & DRIVE HELPERS ---
+def process_uploaded_image(uploaded_file):
+    """
+    Android-Proof Processor:
+    1. Fixes rotation (exif_transpose)
+    2. Resizes to 1600px max side to prevent mobile browser memory crashes
+    3. Standardizes to RGB
+    """
+    try:
+        img = PILImage.open(uploaded_file)
+        img = ImageOps.exif_transpose(img) 
+        img = img.convert("RGB")
+        
+        # Max resolution for stability and AI cost-efficiency
+        max_res = (1600, 1600)
+        img.thumbnail(max_res, PILImage.Resampling.LANCZOS)
+        return img
+    except Exception as e:
+        st.error(f"Image Loading Error: {e}")
+        return None
 
 def draw_pins_on_image(image, df_components):
-    """Helper to draw pins/legs based on DataFrame coordinates."""
     img_copy = image.copy()
     draw = ImageDraw.Draw(img_copy)
     w, h = img_copy.size
@@ -171,114 +107,116 @@ def draw_pins_on_image(image, df_components):
         draw.ellipse([end[0]-6, end[1]-6, end[0]+6, end[1]+6], fill=(255, 255, 0), outline=(0,0,0))
     return img_copy
 
-def process_uploaded_image(uploaded_file):
-    """Ensures image is upright, converted, and shrunk to a safe size for mobile."""
-    try:
-        # Open the image
-        img = PILImage.open(uploaded_file)
-        
-        # 1. Fix the 'Sideways' Android photo issue
-        img = ImageOps.exif_transpose(img) 
-        
-        # 2. Force RGB (removes extra 'alpha' layers that Android sometimes adds)
-        img = img.convert("RGB")
-        
-        # 3. THE CRITICAL FIX: Downscale the image
-        # This keeps the aspect ratio but ensures the longest side is 1600px.
-        # This reduces memory usage by 70-80% without losing circuit detail.
-        max_resolution = (1600, 1600)
-        img.thumbnail(max_resolution, PILImage.Resampling.LANCZOS)
-        
-        return img
-    except Exception as e:
-        st.error(f"Failed to process image: {e}")
-        return None
-        
-    
-# --- 3. SESSION STATE ---
+def draw_coordinate_grid(image):
+    draw = ImageDraw.Draw(image)
+    w, h = image.size
+    for i in range(0, 1001, 100):
+        x_px, y_px = i * w / 1000, i * h / 1000
+        draw.line([(x_px, 0), (x_px, 15)], fill=(255, 0, 0), width=2)
+        draw.line([(0, y_px), (15, y_px)], fill=(255, 0, 0), width=2)
+    return image
+
+def save_to_drive(user_id, task_name, ai_feedback, images_dict):
+    hk_tz = pytz.timezone('Asia/Hong_Kong')
+    hk_time_str = datetime.now(hk_tz).strftime('%Y-%m-%d %H:%M:%S')
+    task_num = task_name.split(":")[0].replace("Task", "").strip()
+    file_prefix = f"user{user_id}_task{task_num}"
+
+    # Upload Images
+    for img_key, img_obj in images_dict.items():
+        if img_obj:
+            buf = io.BytesIO()
+            img_obj.save(buf, format='PNG')
+            img_metadata = {'name': f"{file_prefix}_{img_key}.png", 'parents': [PARENT_FOLDER_ID]}
+            media = MediaIoBaseUpload(io.BytesIO(buf.getvalue()), mimetype='image/png')
+            drive_service.files().create(body=img_metadata, media_body=media).execute()
+
+    # Log to CSV
+    new_row = pd.DataFrame([{
+        "User ID": user_id, "Time": hk_time_str, 
+        "Raw": f"{file_prefix}_1.png", "Final": f"{file_prefix}_4.png", 
+        "Feedback": ai_feedback
+    }])
+
+    query = f"name='{CSV_FILENAME}' and '{PARENT_FOLDER_ID}' in parents and trashed=false"
+    items = drive_service.files().list(q=query, fields="files(id)").execute().get('files', [])
+
+    if not items:
+        csv_bytes = new_row.to_csv(index=False).encode('utf-8')
+        meta = {'name': CSV_FILENAME, 'parents': [PARENT_FOLDER_ID]}
+        media = MediaIoBaseUpload(io.BytesIO(csv_bytes), mimetype='text/csv')
+        drive_service.files().create(body=meta, media_body=media).execute()
+    else:
+        file_id = items[0]['id']
+        request = drive_service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        MediaIoBaseDownload(fh, request).next_chunk()
+        fh.seek(0)
+        df_combined = pd.concat([pd.read_csv(fh), new_row], ignore_index=True)
+        media = MediaIoBaseUpload(io.BytesIO(df_combined.to_csv(index=False).encode('utf-8')), mimetype='text/csv')
+        drive_service.files().update(fileId=file_id, media_body=media).execute()
+    st.success("Successfully logged to Drive!")
+
+# --- 5. SESSION STATE ---
 if "step" not in st.session_state: st.session_state.step = 1
 if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
 if "analysis_result" not in st.session_state: st.session_state.analysis_result = None
-
-# Store all 4 images for the Drive upload payload
-if "img1_raw" not in st.session_state: st.session_state.img1_raw = None
-if "img2_initial_ai" not in st.session_state: st.session_state.img2_initial_ai = None
-if "img3_user_mod" not in st.session_state: st.session_state.img3_user_mod = None
-if "img4_final_ai" not in st.session_state: st.session_state.img4_final_ai = None
+for i in range(1, 5): 
+    if f"img{i}" not in st.session_state: st.session_state[f"img{i}"] = None
 
 def reset_flow():
-    st.session_state.step = 1
-    st.session_state.components_df = pd.DataFrame()
-    st.session_state.analysis_result = None
-    st.session_state.img1_raw = None
-    st.session_state.img2_initial_ai = None
-    st.session_state.img3_user_mod = None
-    st.session_state.img4_final_ai = None
+    for key in ["step", "components_df", "analysis_result", "img1", "img2", "img3", "img4"]:
+        if "df" in key: st.session_state[key] = pd.DataFrame()
+        elif "step" in key: st.session_state[key] = 1
+        else: st.session_state[key] = None
 
-# --- 4. UI ---
-st.title("🔌 AI Circuit Tutor: Human-in-the-Loop Debugging")
+# --- 6. MAIN UI ---
+st.title("🔌 AI Circuit Tutor")
 
 with st.sidebar:
     st.header("Setup")
-    
-    user_id_options = [f"{i:02d}" for i in range(51)]
-    user_id = st.selectbox("Select User ID", user_id_options)
-    
+    user_id = st.selectbox("Select User ID", [f"{i:02d}" for i in range(51)])
     selected_task = st.selectbox("Select Task", list(TASKS.keys()))
     
-    schematic_path = os.path.join(DATA_FOLDER, TASKS[selected_task])
-    if os.path.exists(schematic_path):
-        raw_schematic = process_uploaded_image(schematic_path)
-        st.image(raw_schematic, caption=f"Target Schematic: {TASKS[selected_task]}", use_container_width=True)
+    # Load Schematic
+    path = os.path.join(DATA_FOLDER, TASKS[selected_task])
+    if os.path.exists(path):
+        raw_schematic = process_uploaded_image(path)
+        st.image(raw_schematic, caption="Target Schematic")
     else:
-        st.error(f"File {TASKS[selected_task]} not found in {DATA_FOLDER}")
+        st.error(f"Missing {TASKS[selected_task]}")
         st.stop()
     
-    st.divider()
-    
-    # --- UPDATED: Simplified input (removed radio button) ---
-    student_file = st.file_uploader("Upload Schematic", type=["jpg", "png", "jpeg", "webp", "heic"])
-
-    if st.button("Reset Entire Process"): 
+    student_file = st.file_uploader("Upload Student Photo", type=["jpg", "png", "jpeg", "webp"])
+    if st.button("Reset Process"): 
         reset_flow()
         st.rerun()
-        
 
-# --- MAIN LOOP ---
+# --- 7. APPLICATION LOGIC ---
 if student_file:
-    try:
-        raw_student = process_uploaded_image(io.BytesIO(student_file.getvalue()))
-        # Save Image 1
-        st.session_state.img1_raw = raw_student 
-    except Exception as e:
-        st.error(f"Error loading student image: {e}")
-        st.stop()
-        
-    # --- STEP 1: DETECTION ---
+    # Always process the student image into img1 if it exists
+    if st.session_state.img1 is None:
+        st.session_state.img1 = process_uploaded_image(io.BytesIO(student_file.getvalue()))
+    
+    raw_student = st.session_state.img1
+
+    # STEP 1: DETECTION
     if st.session_state.step == 1:
-        st.markdown(f"### Current User: **{user_id}** | Task: **{selected_task}**")
         col1, col2 = st.columns(2)
-        col1.image(raw_schematic, caption="Reference Schematic")
-        col2.image(draw_coordinate_grid(raw_student.copy()), caption="Student Breadboard")
+        col1.image(raw_schematic, caption="Schematic")
+        col2.image(draw_coordinate_grid(raw_student.copy()), caption="Your Circuit")
 
         if st.button("🔍 Step 1: Detect Components", type="primary"):
-            with st.spinner("AI locating components..."):
-                prompt_seg = """
+            with st.spinner("AI analyzing breadboard..."):
+                prompt = """
                 Identify components on the breadboard. Specifically locate:
                 - power rail (red: +ve and black: -ve)
-                - slide-switch
-                - 4-pin Push Button
-                - LDR
-                - LED 
-                - 220µF capacitor
-                - resistor (Read the color bands to specify if it is '5-band 300ohm', '1000 ohm', or '10k ohm')
-                
+                - slide-switch, 4-pin Push Button, LDR, LED
+                - resistor (check color bands: '5-band 300ohm', '1000 ohm', or '10k ohm')
                 Return JSON: 'name', 'center': [y,x], 'legs': [[y,x],...]
                 """
-                
                 resp = client.models.generate_content(
-                    model=MODEL_ID,
-                    contents=[raw_student, prompt_seg],
+                    model=MODEL_ID, contents=[raw_student, prompt],
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
                         response_schema={"type":"ARRAY", "items":{"type":"OBJECT", "properties":{
@@ -290,124 +228,83 @@ if student_file:
                 )
                 records = []
                 for item in resp.parsed:
-                    name = item.get('name', 'Comp')
-                    cy, cx = item.get('center', [500, 500])
+                    cy, cx = item.get('center', [500,500])
                     for i, (ly, lx) in enumerate(item.get('legs', [])):
-                        records.append({"Component": f"{name} (Pin {i+1})", "CX": cx, "CY": cy, "LX": lx, "LY": ly})
+                        records.append({"Component": f"{item.get('name')} (Pin {i+1})", "CX": cx, "CY": cy, "LX": lx, "LY": ly})
                 
                 st.session_state.components_df = pd.DataFrame(records)
-                
-                # Save Image 2 (Initial AI Output)
-                st.session_state.img2_initial_ai = draw_pins_on_image(draw_coordinate_grid(raw_student.copy()), st.session_state.components_df)
-
+                st.session_state.img2 = draw_pins_on_image(draw_coordinate_grid(raw_student.copy()), st.session_state.components_df)
                 st.session_state.step = 2
                 st.rerun()
 
-    # --- STEP 2: TUNING ---
+    # STEP 2: TUNING
     elif st.session_state.step == 2:
         st.subheader("⚙️ Step 2: Fine-Tune Component Pins")
-        edit_col, img_col = st.columns([1, 1.5])
+        edit_col, img_col = st.columns([1, 2])
         updated_data = []
-        
         with edit_col:
             for i, row in st.session_state.components_df.iterrows():
                 with st.expander(f"📍 {row['Component']}"):
-                    lx = st.slider(f"X_{i}", 0, 1000, int(row["LX"]), key=f"sl_x_{i}")
-                    ly = st.slider(f"Y_{i}", 0, 1000, int(row["LY"]), key=f"sl_y_{i}")
+                    lx = st.slider(f"X_{i}", 0, 1000, int(row["LX"]), key=f"x{i}")
+                    ly = st.slider(f"Y_{i}", 0, 1000, int(row["LY"]), key=f"y{i}")
                     updated_data.append({"Component": row["Component"], "CX": row["CX"], "CY": row["CY"], "LX": lx, "LY": ly})
             edited_df = pd.DataFrame(updated_data)
 
         with img_col:
-            display_img = draw_pins_on_image(draw_coordinate_grid(raw_student.copy()), edited_df)
-            st.image(display_img, caption="Verify Orange Legs & Yellow Pins")
+            st.session_state.img3 = draw_pins_on_image(draw_coordinate_grid(raw_student.copy()), edited_df)
+            st.image(st.session_state.img3, caption="Verify Orange Legs & Yellow Pins")
 
         if st.button("✅ Confirm & Analyze Circuit", type="primary"):
             st.session_state.components_df = edited_df
-            st.session_state.img3_user_mod = display_img # Save Image 3 (User Modified)
             st.session_state.step = 3
             st.rerun()
 
-    # --- STEP 3: ANALYSIS & DRIVE SAVE ---
+    # STEP 3: ANALYSIS
     elif st.session_state.step == 3:
-        st.subheader("🧠 Step 3: Pedagogical Diagnosis")
-        
+        st.subheader("🧠 Step 3: AI Diagnosis")
         if st.session_state.analysis_result is None:
-            with st.spinner("Evaluating circuit logic..."):
-                coord_summary = st.session_state.components_df.to_string(index=False)
-                
-                # --- UPDATED: Analysis Prompt with Flexible Order Rule ---
-                analysis_prompt = f"""
+            with st.spinner("Checking electrical logic..."):
+                summary = st.session_state.components_df.to_string(index=False)
+                prompt = f"""
                 Task: {selected_task}. 
-                Verify if the student's breadboard matches the electrical logic of the schematic.
-                
-                CRITICAL LOGIC RULES:
-                1. SERIES ORDER FLEXIBILITY: In a series loop (e.g., Battery -> Switch -> Resistor -> LED -> Battery), the physical order of the components does NOT matter. 
-                   If the student placed the resistor before the switch, but they are still in the same continuous loop, mark it as CORRECT.
-                2. 4-PIN PUSH BUTTON: Flows HORIZONTALLY when open. VERTICAL/DIAGONAL only when pressed.
-                3. POLARITY: Ensure LED and Electrolytic Capacitors are oriented correctly relative to the power rail (+ve to red rail, -ve to black rail).
-                
-                Data: {coord_summary}. 
-                Return JSON: 'feedback', 'error_locations': [[y,x]]
+                Rules: 
+                1. SERIES order flexibility (Switch before or after Resistor is fine).
+                2. 4-pin Button: Flows HORIZONTALLY when open.
+                3. Polarity: LED/Capacitor must match power rail (+ve to red).
+                Data: {summary}. Return JSON: 'feedback', 'error_locations': [[y,x]]
                 """
-                
                 resp = client.models.generate_content(
-                    model=MODEL_ID,
-                    contents=[raw_schematic, st.session_state.img3_user_mod, analysis_prompt],
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema={"type":"OBJECT", "properties":{
-                            "feedback":{"type":"STRING"},
-                            "error_locations":{"type":"ARRAY", "items":{"type":"ARRAY", "items":{"type":"INTEGER"}}}
-                        }}
-                    )
+                    model=MODEL_ID, contents=[raw_schematic, st.session_state.img3, prompt],
+                    config=types.GenerateContentConfig(response_mime_type="application/json")
                 )
-                st.session_state.analysis_result = resp.parsed
-
-                # Generate and Save Image 4 (Final AI Output)
-                res = st.session_state.analysis_result
-                diag_img = st.session_state.img3_user_mod.copy()
+                st.session_state.analysis_result = json.loads(resp.text)
+                
+                # Create Final Image
+                diag_img = st.session_state.img3.copy()
                 draw = ImageDraw.Draw(diag_img)
                 w, h = diag_img.size
-                for ey, ex in res.get("error_locations", []):
+                for ey, ex in st.session_state.analysis_result.get("error_locations", []):
                     px, py = ex * w / 1000, ey * h / 1000
                     draw.ellipse([px-25, py-25, px+25, py+25], outline="red", width=10)
-                
-                st.session_state.img4_final_ai = diag_img
+                st.session_state.img4 = diag_img
 
-        st.image(st.session_state.img4_final_ai, caption="AI Diagnosis")
+        st.image(st.session_state.img4)
         st.info(st.session_state.analysis_result.get("feedback"))
 
-        st.divider()
-        
-        # --- SAVE ACTIONS ---
-        col_action1, col_action2, col_action3 = st.columns(3)
-        
-        with col_action1:
-            if st.button("💾 Save Images & Logs to Drive", type="primary", use_container_width=True):
-                with st.spinner("Uploading to Google Drive..."):
-                    payload = {
-                        "1": st.session_state.img1_raw,
-                        "2": st.session_state.img2_initial_ai,
-                        "3": st.session_state.img3_user_mod,
-                        "4": st.session_state.img4_final_ai
-                    }
-                    save_to_drive(
-                        user_id=user_id,
-                        task_name=selected_task,
-                        ai_feedback=st.session_state.analysis_result.get("feedback"),
-                        images_dict=payload
-                    )
-                    
-        with col_action2:
-            if st.button("🔙 Back to Adjust Pins", use_container_width=True):
-                st.session_state.analysis_result = None 
-                st.session_state.img4_final_ai = None
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            if st.button("💾 Save to Drive", type="primary", use_container_width=True):
+                save_to_drive(user_id, selected_task, st.session_state.analysis_result.get("feedback"), 
+                             {"1": st.session_state.img1, "2": st.session_state.img2, 
+                              "3": st.session_state.img3, "4": st.session_state.img4})
+        with col_b:
+            if st.button("🔙 Back", use_container_width=True):
+                st.session_state.analysis_result = None
                 st.session_state.step = 2
                 st.rerun()
-                
-        with col_action3:
+        with col_c:
             if st.button("🎉 New Task", use_container_width=True):
                 reset_flow()
                 st.rerun()
 else:
-    st.info("Please select a task and provide a photo of your circuit to begin.")
+    st.info("Upload a photo to begin.")
