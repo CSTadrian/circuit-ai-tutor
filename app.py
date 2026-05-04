@@ -34,10 +34,63 @@ MODEL_ID = "gemini-3.1-pro-preview"
 PARENT_FOLDER_ID = "1_cn9lfvMLaozDTx8pvU6LP62J9AVFrvz"
 CSV_FILENAME = "circuit_audit_logs.csv"
 
+# --- NEW: LANGUAGE DICTIONARY ---
+UI = {
+    "en": {
+        "title": "🔌 AI Circuit Tutor",
+        "setup": "Setup",
+        "user_id": "Select User ID",
+        "task": "Select Task",
+        "target": "Target Schematic",
+        "upload": "Upload Student Photo",
+        "reset": "Reset Process",
+        "schematic": "Schematic",
+        "your_circuit": "Your Circuit (Pale Blue = Detected Rows)",
+        "step1_btn": "🔍 Step 1: Detect Components",
+        "analyzing": "AI analyzing breadboard...",
+        "step2_title": "⚙️ Step 2: Fine-Tune Component Pins (Auto-Snapping)",
+        "step2_confirm": "✅ Confirm & Analyze Circuit",
+        "snapped": "*(Y auto-snapped to nearest row: {y})*",
+        "verify": "Verify Orange Legs & Yellow Pins (Snapped to Blue Rows)",
+        "step3_title": "🧠 Step 3: AI Diagnosis",
+        "checking": "Checking electrical logic...",
+        "ai_diag": "AI Diagnosis: Red circles indicate potential wiring issues",
+        "save": "💾 Save to Drive",
+        "back": "🔙 Back",
+        "new": "🎉 New Task",
+        "upload_prompt": "Upload a photo to begin.",
+        "prompt_addition": ""
+    },
+    "hk": {
+        "title": "🔌 AI 電路導師",
+        "setup": "設定",
+        "user_id": "選擇學生 ID",
+        "task": "選擇任務",
+        "target": "目標電路圖",
+        "upload": "上傳學生電路照片",
+        "reset": "重置流程",
+        "schematic": "電路圖",
+        "your_circuit": "你的電路（淺藍色線 = 偵測到的行）",
+        "step1_btn": "🔍 第一步：偵測零件",
+        "analyzing": "AI 正在分析麵包板...",
+        "step2_title": "⚙️ 第二步：微調零件引腳（自動對齊）",
+        "step2_confirm": "✅ 確認並分析電路",
+        "snapped": "*(Y 軸已自動對齊至最近的行：{y})*",
+        "verify": "請核對橙色引腳與黃色接點（已對齊至淺藍色行）",
+        "step3_title": "🧠 第三步：AI 診斷",
+        "checking": "正在檢查電路邏輯...",
+        "ai_diag": "AI 診斷：紅圈表示潛在的接線問題",
+        "save": "💾 儲存至 Drive",
+        "back": "🔙 返回",
+        "new": "🎉 新任務",
+        "upload_prompt": "請上傳照片以開始。",
+        "prompt_addition": "Please provide the 'feedback' text entirely in written formal Cantonese (Traditional Chinese). Ensure the tone is encouraging for a primary/secondary school student."
+    }
+}
+
 # --- 2. AUTHENTICATION & INITIALIZATION ---
 @st.cache_resource
 def get_drive_creds():
-    """Caches ONLY the credentials, not the network connection."""
     oauth_info = st.secrets["google_oauth"]
     creds = Credentials(
         token=None,
@@ -50,16 +103,10 @@ def get_drive_creds():
     return creds
 
 def get_drive_service():
-    """Creates a fresh service object with a new connection."""
     creds = get_drive_creds()
     if not creds.valid:
         creds.refresh(Request())
-    # static_discovery=False prevents some library-level caching issues
     return build('drive', 'v3', credentials=creds, static_discovery=False)
-
-# REMOVE this line from your global scope:
-# drive_service = init_drive()
-
 
 if "gcp_service_account" in st.secrets:
     creds_info = st.secrets["gcp_service_account"]
@@ -86,9 +133,8 @@ st.markdown("""
 
 def detect_horizontal_rows(pil_img):
     """
-    Finds the exact CENTER of the breadboard holes by using 
-    a Horizontal Projection Profile (summing pixel intensities across rows).
-    This prevents lines from appearing between rows and catches all rows.
+    UPDATED: Uses a mathematical algorithm to "fill in the blanks" 
+    if shadows cause the camera to miss a row.
     """
     img_cv = np.array(pil_img)
     if len(img_cv.shape) == 3:
@@ -96,64 +142,62 @@ def detect_horizontal_rows(pil_img):
     else:
         gray = img_cv
 
-    # 1. Pre-process: Blur slightly to reduce noise
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    
-    # Use Adaptive Thresholding to handle uneven shadows/lighting on the breadboard
-    # Holes become WHITE (255), background becomes BLACK (0)
     thresh = cv2.adaptiveThreshold(
         blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
         cv2.THRESH_BINARY_INV, 21, 10
     )
 
     height, width = thresh.shape
-
-    # 2. Horizontal Projection
-    # Sum all white pixels along the X-axis for every single Y row.
-    # Rows with holes will have a massive spike in pixel sum.
     row_sums = np.sum(thresh, axis=1)
 
-    # 3. Smooth the sums slightly to merge jagged peaks belonging to the exact same row
-    window_size = max(int(height * 0.005), 3) # ~0.5% of height window
+    window_size = max(int(height * 0.005), 3)
     kernel = np.ones(window_size) / window_size
     smoothed_sums = np.convolve(row_sums, kernel, mode='same')
 
-    # 4. Find Peaks (Local Maxima)
-    # These peaks represent the mathematical center of the horizontal holes.
-    min_peak_distance = max(int(height * 0.012), 5) # Breadboard rows are at least ~1.2% apart
-    
-    # Set a baseline threshold to ignore random noise/shadows (15% of the strongest row)
-    threshold_val = np.max(smoothed_sums) * 0.15 
+    min_peak_distance = max(int(height * 0.012), 5)
+    # Lowered threshold slightly to catch dimmer rows
+    threshold_val = np.max(smoothed_sums) * 0.08 
 
     peaks = []
     for i in range(min_peak_distance, height - min_peak_distance):
-        # If this row has enough holes to beat the threshold
         if smoothed_sums[i] > threshold_val:
-            # Check if it is the absolute peak in its local neighborhood
             local_window = smoothed_sums[i - min_peak_distance : i + min_peak_distance + 1]
             if smoothed_sums[i] == np.max(local_window):
-                # Prevent duplicate lines if two pixels tie for the peak
                 if not peaks or (i - peaks[-1]) >= min_peak_distance:
                     peaks.append(i)
 
-    # Convert the pixel rows into the 0-1000 coordinate system
+    # --- NEW: MATH FILL-IN ALGORITHM ---
+    if len(peaks) > 5:
+        # 1. Find the median distance between valid rows
+        distances = [peaks[i] - peaks[i-1] for i in range(1, len(peaks))]
+        median_dist = np.median(distances)
+        
+        filled_peaks = []
+        for i in range(len(peaks)-1):
+            filled_peaks.append(peaks[i])
+            gap = peaks[i+1] - peaks[i]
+            
+            # 2. If there is a gap that is roughly 1.5x to 4x the normal distance,
+            # it means we missed rows due to lighting. We mathematically insert them.
+            # (We ignore > 5x because that might be the physical trench in the middle of the board)
+            if 1.5 * median_dist < gap < 5 * median_dist:
+                num_missing = int(round(gap / median_dist)) - 1
+                step = gap / (num_missing + 1)
+                for j in range(1, num_missing + 1):
+                    filled_peaks.append(int(peaks[i] + j * step))
+                    
+        filled_peaks.append(peaks[-1])
+        peaks = filled_peaks
+
     return [int((y / height) * 1000) for y in peaks]
 
 
-    
 def process_uploaded_image(uploaded_file):
-    """
-    Android-Proof Processor:
-    1. Fixes rotation (exif_transpose)
-    2. Resizes to 1600px max side to prevent mobile browser memory crashes
-    3. Standardizes to RGB
-    """
     try:
         img = PILImage.open(uploaded_file)
         img = ImageOps.exif_transpose(img) 
         img = img.convert("RGB")
-        
-        # Max resolution for stability and AI cost-efficiency
         max_res = (1600, 1600)
         img.thumbnail(max_res, PILImage.Resampling.LANCZOS)
         return img
@@ -162,17 +206,14 @@ def process_uploaded_image(uploaded_file):
         return None
 
 def draw_coordinate_grid(image, snap_rows=None):
-    """Draws red axis marks and optional pale blue Hough Transform rows."""
     draw = ImageDraw.Draw(image)
     w, h = image.size
     
-    # Draw Pale Blue Hough Rows First
     if snap_rows:
         for ry in snap_rows:
             y_px = ry * h / 1000
             draw.line([(0, y_px), (w, y_px)], fill=(173, 216, 230), width=2)
             
-    # Draw Red Axis Lines
     for i in range(0, 1001, 100):
         x_px, y_px = i * w / 1000, i * h / 1000
         draw.line([(x_px, 0), (x_px, 15)], fill=(255, 0, 0), width=2)
@@ -191,27 +232,23 @@ def draw_pins_on_image(image, df_components):
     return img_copy
 
 def save_to_drive(user_id, task_name, ai_feedback, images_dict):
-    # 1. Get a fresh service for this specific transaction
     service = get_drive_service()
-    
     hk_tz = pytz.timezone('Asia/Hong_Kong')
     hk_time_str = datetime.now(hk_tz).strftime('%Y-%m-%d %H:%M:%S')
     task_num = task_name.split(":")[0].replace("Task", "").strip()
     file_prefix = f"user{user_id}_task{task_num}"
 
     try:
-        # 2. Upload Images
         for img_key, img_obj in images_dict.items():
             if img_obj:
                 buf = io.BytesIO()
                 img_obj.save(buf, format='PNG')
-                buf.seek(0)  # Reset buffer pointer to the beginning
+                buf.seek(0) 
                 
                 img_metadata = {'name': f"{file_prefix}_{img_key}.png", 'parents': [PARENT_FOLDER_ID]}
                 media = MediaIoBaseUpload(buf, mimetype='image/png', resumable=True)
                 service.files().create(body=img_metadata, media_body=media).execute()
 
-        # 3. Log to CSV
         new_row = pd.DataFrame([{
             "User ID": user_id, "Time": hk_time_str, 
             "Raw": f"{file_prefix}_1.png", "Final": f"{file_prefix}_4.png", 
@@ -228,7 +265,6 @@ def save_to_drive(user_id, task_name, ai_feedback, images_dict):
             service.files().create(body=meta, media_body=media).execute()
         else:
             file_id = items[0]['id']
-            # Download existing CSV
             request = service.files().get_media(fileId=file_id)
             fh = io.BytesIO()
             downloader = MediaIoBaseDownload(fh, request)
@@ -240,7 +276,6 @@ def save_to_drive(user_id, task_name, ai_feedback, images_dict):
             df_existing = pd.read_csv(fh)
             df_combined = pd.concat([df_existing, new_row], ignore_index=True)
             
-            # Upload updated CSV
             updated_csv_bytes = df_combined.to_csv(index=False).encode('utf-8')
             media = MediaIoBaseUpload(io.BytesIO(updated_csv_bytes), mimetype='text/csv')
             service.files().update(fileId=file_id, media_body=media).execute()
@@ -257,6 +292,7 @@ if "analysis_result" not in st.session_state: st.session_state.analysis_result =
 if "hough_rows" not in st.session_state: st.session_state.hough_rows = []
 for i in range(1, 5): 
     if f"img{i}" not in st.session_state: st.session_state[f"img{i}"] = None
+if "lang" not in st.session_state: st.session_state.lang = "en"
 
 def reset_flow():
     for key in ["step", "components_df", "analysis_result", "img1", "img2", "img3", "img4"]:
@@ -266,47 +302,49 @@ def reset_flow():
     st.session_state.hough_rows = []
 
 # --- 6. MAIN UI ---
-st.title("🔌 AI Circuit Tutor")
+
+# LANGUAGE TOGGLE
+lang_select = st.radio("🌐", ["English", "繁體中文"], horizontal=True, label_visibility="collapsed")
+l = "en" if lang_select == "English" else "hk"
+
+st.title(UI[l]["title"])
 
 with st.sidebar:
-    st.header("Setup")
-    user_id = st.selectbox("Select User ID", [f"{i:02d}" for i in range(51)])
-    selected_task = st.selectbox("Select Task", list(TASKS.keys()))
+    st.header(UI[l]["setup"])
+    user_id = st.selectbox(UI[l]["user_id"], [f"{i:02d}" for i in range(51)])
+    selected_task = st.selectbox(UI[l]["task"], list(TASKS.keys()))
     
-    # Load Schematic
     path = os.path.join(DATA_FOLDER, TASKS[selected_task])
     if os.path.exists(path):
         raw_schematic = process_uploaded_image(path)
-        st.image(raw_schematic, caption="Target Schematic")
+        st.image(raw_schematic, caption=UI[l]["target"])
     else:
         st.error(f"Missing {TASKS[selected_task]}")
         st.stop()
     
-    student_file = st.file_uploader("Upload Student Photo", type=["jpg", "png", "jpeg", "webp"])
-    if st.button("Reset Process"): 
+    student_file = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp"])
+    if st.button(UI[l]["reset"]): 
         reset_flow()
         st.rerun()
 
 # --- 7. APPLICATION LOGIC ---
 if student_file:
-    # Always process the student image into img1 if it exists
     if st.session_state.img1 is None:
         st.session_state.img1 = process_uploaded_image(io.BytesIO(student_file.getvalue()))
     
     raw_student = st.session_state.img1
 
-    # Detect horizontal rows once when the image is first loaded
     if not st.session_state.hough_rows:
         st.session_state.hough_rows = detect_horizontal_rows(raw_student)
 
     # STEP 1: DETECTION
     if st.session_state.step == 1:
         col1, col2 = st.columns(2)
-        col1.image(raw_schematic, caption="Schematic")
-        col2.image(draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows), caption="Your Circuit (Pale Blue = Detected Rows)")
+        col1.image(raw_schematic, caption=UI[l]["schematic"])
+        col2.image(draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows), caption=UI[l]["your_circuit"])
 
-        if st.button("🔍 Step 1: Detect Components", type="primary"):
-            with st.spinner("AI analyzing breadboard..."):
+        if st.button(UI[l]["step1_btn"], type="primary"):
+            with st.spinner(UI[l]["analyzing"]):
                 prompt = """
                 Identify components on the breadboard. Specifically locate:
                 - power rail (red: +ve and black: -ve)
@@ -339,7 +377,7 @@ if student_file:
 
     # STEP 2: TUNING
     elif st.session_state.step == 2:
-        st.subheader("⚙️ Step 2: Fine-Tune Component Pins (Auto-Snapping)")
+        st.subheader(UI[l]["step2_title"])
         edit_col, img_col = st.columns([1, 2])
         updated_data = []
         with edit_col:
@@ -348,13 +386,12 @@ if student_file:
                     lx = st.slider(f"X_{i}", 0, 1000, int(row["LX"]), key=f"x{i}")
                     raw_ly = st.slider(f"Y_{i}", 0, 1000, int(row["LY"]), key=f"y{i}")
                     
-                    # --- MAGNETIC SNAP LOGIC ---
                     snapped_ly = raw_ly
                     if st.session_state.hough_rows:
                         snapped_ly = min(st.session_state.hough_rows, key=lambda ry: abs(ry - raw_ly))
                     
                     if raw_ly != snapped_ly:
-                        st.caption(f"*(Y auto-snapped to nearest row: {snapped_ly})*")
+                        st.caption(UI[l]["snapped"].format(y=snapped_ly))
                         
                     updated_data.append({"Component": row["Component"], "CX": row["CX"], "CY": row["CY"], "LX": lx, "LY": snapped_ly})
             edited_df = pd.DataFrame(updated_data)
@@ -362,21 +399,22 @@ if student_file:
         with img_col:
             base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows)
             st.session_state.img3 = draw_pins_on_image(base_grid_img, edited_df)
-            st.image(st.session_state.img3, caption="Verify Orange Legs & Yellow Pins (Snapped to Blue Rows)")
+            st.image(st.session_state.img3, caption=UI[l]["verify"])
 
-        if st.button("✅ Confirm & Analyze Circuit", type="primary"):
+        if st.button(UI[l]["step2_confirm"], type="primary"):
             st.session_state.components_df = edited_df
             st.session_state.step = 3
             st.rerun()
 
     # STEP 3: ANALYSIS
     elif st.session_state.step == 3:
-        st.subheader("🧠 Step 3: AI Diagnosis")
+        st.subheader(UI[l]["step3_title"])
         
         if st.session_state.analysis_result is None or st.session_state.img4 is None:
-            with st.spinner("Checking electrical logic..."):
+            with st.spinner(UI[l]["checking"]):
                 summary = st.session_state.components_df.to_string(index=False)
                 
+                # Appends language instruction based on toggle state
                 prompt = f"""
                 Task: {selected_task}. 
                 Electrical Rules: 
@@ -387,10 +425,10 @@ if student_file:
                 
                 Component Data: {summary}. 
                 Compare to Target Schematic. Return JSON with 'feedback' and 'error_locations'.
+                {UI[l]["prompt_addition"]}
                 """
                 
                 try:
-                    # Added a response_schema to GUARANTEE a dictionary is returned
                     resp = client.models.generate_content(
                         model=MODEL_ID, 
                         contents=[raw_schematic, st.session_state.img3, prompt],
@@ -410,16 +448,12 @@ if student_file:
                         )
                     )
                     
-                    # Use .parsed if using a schema, it's safer than json.loads
                     result = resp.parsed
-                    
-                    # Double-check: If for some reason it's a list, take the first item
                     if isinstance(result, list) and len(result) > 0:
                         result = result[0]
                     
                     st.session_state.analysis_result = result
                     
-                    # Create Final Image (Red circles on errors)
                     diag_img = st.session_state.img3.copy()
                     draw = ImageDraw.Draw(diag_img)
                     w, h = diag_img.size
@@ -437,31 +471,28 @@ if student_file:
                     st.error(f"AI Analysis failed: {e}")
                     st.session_state.step = 2
 
-        # --- CLEAN DISPLAY LOGIC (No Duplicates) ---
         if st.session_state.img4:
-            st.image(st.session_state.img4, caption="AI Diagnosis: Red circles indicate potential wiring issues")
+            st.image(st.session_state.img4, caption=UI[l]["ai_diag"])
         
         if st.session_state.analysis_result:
-            # We use .get() safely here because the schema above guarantees it's a dict
             feedback_text = st.session_state.analysis_result.get("feedback", "No feedback provided.")
             st.info(feedback_text)
 
-            # BUTTONS AREA
             col_a, col_b, col_c = st.columns(3)
             with col_a:
-                if st.button("💾 Save to Drive", type="primary", use_container_width=True):
+                if st.button(UI[l]["save"], type="primary", use_container_width=True):
                     save_to_drive(user_id, selected_task, feedback_text, 
                                  {"1": st.session_state.img1, "2": st.session_state.img2, 
                                   "3": st.session_state.img3, "4": st.session_state.img4})
             with col_b:
-                if st.button("🔙 Back", use_container_width=True):
+                if st.button(UI[l]["back"], use_container_width=True):
                     st.session_state.analysis_result = None
                     st.session_state.step = 2
                     st.rerun()
             with col_c:
-                if st.button("🎉 New Task", use_container_width=True):
+                if st.button(UI[l]["new"], use_container_width=True):
                     reset_flow()
                     st.rerun()
                     
 else:
-    st.info("Upload a photo to begin.")
+    st.info(UI[l]["upload_prompt"])
