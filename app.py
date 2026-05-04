@@ -452,8 +452,7 @@ if student_file:
                     Electrical Rules: 
                     1. SLIDE-SWITCH: 3 pins in one row. Pin 2 is Common.
                     2. SERIES & PATHS: Components must share a single node (same row) to connect. The exact sequential order of components in a series branch does NOT matter. (e.g., [+ve -> Resistor -> LED -> GND] is functionally equivalent to [+ve -> Switch -> LED -> Resistor -> GND]). Evaluate the semantic flow from +ve to GND, not the visual sequence.
-                    3. POLARITY: LED long leg (+ve) must connect toward the positive path (Red Rail).
-                    4. RESISTOR VALUES: Ignore specific resistor values (e.g., 300 ohm vs 1k ohm vs 10k ohm). Treat all resistors as functionally equivalent for this analysis.
+                    3. RESISTOR VALUES: Ignore specific resistor values (e.g., 300 ohm vs 1k ohm vs 10k ohm). Treat all resistors as functionally equivalent for this analysis.
                     
                     Component Data (Available Pins):
                     {summary}
