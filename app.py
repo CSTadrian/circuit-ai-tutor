@@ -77,11 +77,11 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 
-# --- 4. IMAGE, COMPUTER VISION & DRIVE HELPERS ---
 def detect_horizontal_rows(pil_img):
     """
-    Finds the exact CENTER of the breadboard holes by 
-    calculating the centroids of detected blobs.
+    Finds the exact CENTER of the breadboard holes by using 
+    a Horizontal Projection Profile (summing pixel intensities across rows).
+    This prevents lines from appearing between rows and catches all rows.
     """
     img_cv = np.array(pil_img)
     if len(img_cv.shape) == 3:
@@ -89,56 +89,50 @@ def detect_horizontal_rows(pil_img):
     else:
         gray = img_cv
 
-    # 1. Pre-process: Blur slightly to remove noise, then threshold
+    # 1. Pre-process: Blur slightly to reduce noise
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    # Using OTSU to automatically find the best 'darkness' level for the holes
-    _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    
+    # Use Adaptive Thresholding to handle uneven shadows/lighting on the breadboard
+    # Holes become WHITE (255), background becomes BLACK (0)
+    thresh = cv2.adaptiveThreshold(
+        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+        cv2.THRESH_BINARY_INV, 21, 10
+    )
 
-    # 2. Find Contours (the 'blobs' representing the holes)
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    height, width = thresh.shape
 
-    y_centers = []
-    height, width = gray.shape
+    # 2. Horizontal Projection
+    # Sum all white pixels along the X-axis for every single Y row.
+    # Rows with holes will have a massive spike in pixel sum.
+    row_sums = np.sum(thresh, axis=1)
 
-    for cnt in contours:
-        # Filter by area so we only pick up breadboard holes, not big components
-        area = cv2.contourArea(cnt)
-        if 5 < area < 500:  # Adjust based on how close the camera is
-            M = cv2.moments(cnt)
-            if M["m00"] != 0:
-                # This is the 'Center of Mass' formula
-                # cX = int(M["m10"] / M["m00"])
-                cY = int(M["m01"] / M["m00"])
-                y_centers.append(cY)
+    # 3. Smooth the sums slightly to merge jagged peaks belonging to the exact same row
+    window_size = max(int(height * 0.005), 3) # ~0.5% of height window
+    kernel = np.ones(window_size) / window_size
+    smoothed_sums = np.convolve(row_sums, kernel, mode='same')
 
-    if not y_centers:
-        return []
+    # 4. Find Peaks (Local Maxima)
+    # These peaks represent the mathematical center of the horizontal holes.
+    min_peak_distance = max(int(height * 0.012), 5) # Breadboard rows are at least ~1.2% apart
+    
+    # Set a baseline threshold to ignore random noise/shadows (15% of the strongest row)
+    threshold_val = np.max(smoothed_sums) * 0.15 
 
-    # 3. Group the Y-centers into rows
-    y_centers.sort()
-    unique_rows = []
-    if y_centers:
-        current_row_group = [y_centers[0]]
-        
-        # If two hole-centers are within 10 pixels of each other, 
-        # they belong to the same horizontal row.
-        row_threshold = height * 0.015 # 1.5% of image height
-        
-        for i in range(1, len(y_centers)):
-            if y_centers[i] - current_row_group[-1] < row_threshold:
-                current_row_group.append(y_centers[i])
-            else:
-                # Average the Y-coordinates of this row to find the MID-LINE
-                unique_rows.append(int(np.mean(current_row_group)))
-                current_row_group = [y_centers[i]]
-        unique_rows.append(int(np.mean(current_row_group)))
+    peaks = []
+    for i in range(min_peak_distance, height - min_peak_distance):
+        # If this row has enough holes to beat the threshold
+        if smoothed_sums[i] > threshold_val:
+            # Check if it is the absolute peak in its local neighborhood
+            local_window = smoothed_sums[i - min_peak_distance : i + min_peak_distance + 1]
+            if smoothed_sums[i] == np.max(local_window):
+                # Prevent duplicate lines if two pixels tie for the peak
+                if not peaks or (i - peaks[-1]) >= min_peak_distance:
+                    peaks.append(i)
 
-    # 4. Filter out 'phantom' rows (rows with too few holes to be real)
-    # A real breadboard row should have many holes.
-    # (Optional: count occurrences in current_row_group before appending)
+    # Convert the pixel rows into the 0-1000 coordinate system
+    return [int((y / height) * 1000) for y in peaks]
 
-    # Convert to your 0-1000 coordinate system
-    return [int((y / height) * 1000) for y in unique_rows]
+
     
 def process_uploaded_image(uploaded_file):
     """
