@@ -450,17 +450,18 @@ if student_file:
                 prompt = f"""
                     Task: {selected_task}. 
                     Electrical Rules: 
-                    1. SLIDE-SWITCH: Always has 3 continuous pins in one row. The middle pin (Pin 2) is the 'Common' terminal. 
-                    2. SERIES: Components must share a single node.
-                    3. POLARITY: LED long leg (+ve) must connect toward the Red Rail.
-                    4. BUTTON: 4-pin buttons connect horizontally.
+                    1. SLIDE-SWITCH: 3 pins in one row. Pin 2 is Common.
+                    2. SERIES: Components must share a single node (same row).
+                    3. POLARITY: LED long leg (+ve) must connect toward Red Rail.
                     
-                    Identify errors and strictly categorize them into one of these types:
-                    - "open_circuit": Components meant to connect are in different rows (e.g., pin 16 vs 17) or missing connections.
-                    - "wrong_component": An incorrect component was used for the task.
-                    - "wrong_orientation": Component is physically placed wrong (e.g., slide-switch placed horizontally instead of vertically).
+                    Component Data (Available Pins):
+                    {summary}
 
-                    Component Data: {summary}. 
+                    Instructions:
+                    - Identify errors based on the 'Component Data' provided.
+                    - For 'location', you MUST use the [LY, LX] coordinates of the specific pin that is causing the error. Do not invent new coordinates.
+                    - Categories: "open_circuit", "wrong_component", "wrong_orientation".
+
                     Compare to Target Schematic. Return JSON with 'feedback' and 'detected_errors'.
                     {UI[l]["prompt_addition"]}
                     """
@@ -511,15 +512,28 @@ if student_file:
                         
                         if len(loc) == 2:
                             ey, ex = loc
+                            
+                            # --- NEW: SNAP TO NEAREST ACTUAL PIN ---
+                            # This ensures the circle isn't "floating" in empty space
+                            if not st.session_state.components_df.empty:
+                                # Calculate distance to all known pins
+                                df = st.session_state.components_df
+                                distances = np.sqrt((df['LX'] - ex)**2 + (df['LY'] - ey)**2)
+                                nearest_idx = distances.idxmin()
+                                # Use the actual pin coordinate instead of the AI's guess
+                                ex = df.loc[nearest_idx, 'LX']
+                                ey = df.loc[nearest_idx, 'LY']
+                            # ---------------------------------------
+
                             px, py = ex * w / 1000, ey * h / 1000
                             
-                            # Draw based on AI classification
                             if err_type == "wrong_component":
                                 draw.rectangle([px-35, py-35, px+35, py+35], outline="blue", width=8)
                             elif err_type == "wrong_orientation":
                                 draw.ellipse([px-30, py-30, px+30, py+30], outline="yellow", width=8)
-                            else: # Default to open_circuit
+                            else:
                                 draw.ellipse([px-25, py-25, px+25, py+25], outline="red", width=8)
+                                
                     
                     st.session_state.img4 = diag_img
                     
