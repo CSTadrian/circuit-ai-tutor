@@ -5,6 +5,8 @@ import json
 import os
 import io
 import pytz
+import cv2
+import numpy as np
 from datetime import datetime
 from PIL import Image as PILImage, ImageDraw, ImageOps 
 
@@ -64,7 +66,7 @@ else:
 
 # --- 3. UI CUSTOMIZATION (Hiding Menus) ---
 st.set_page_config(page_title="AI Circuit Tutor", layout="wide")
-hide_menu_style = """
+st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
@@ -72,10 +74,40 @@ hide_menu_style = """
     [data-testid="stToolbar"] {visibility: hidden !important;}
     .stDeployButton {display:none;}
     </style>
-    """
-st.markdown(hide_menu_style, unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
-# --- 4. IMAGE & DRIVE HELPERS ---
+
+# --- 4. IMAGE, COMPUTER VISION & DRIVE HELPERS ---
+
+def detect_horizontal_rows(pil_img):
+    """Uses Hough Transform to find the horizontal rows of the breadboard."""
+    img_cv = np.array(pil_img)
+    if len(img_cv.shape) == 3 and img_cv.shape[2] == 3:
+        gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
+    else:
+        gray = img_cv
+
+    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+    lines = cv2.HoughLinesP(edges, rho=1, theta=np.pi/180, threshold=80, minLineLength=100, maxLineGap=20)
+    
+    y_coords = []
+    if lines is not None:
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            if abs(y2 - y1) < 10: 
+                y_coords.append((y1 + y2) // 2)
+                
+    if not y_coords: return []
+    y_coords.sort()
+    
+    clustered_y = [y_coords[0]]
+    for y in y_coords[1:]:
+        if y - clustered_y[-1] > 15: 
+            clustered_y.append(y)
+            
+    height = pil_img.size[1]
+    return [int((y / height) * 1000) for y in clustered_y]
+
 def process_uploaded_image(uploaded_file):
     """
     Android-Proof Processor:
@@ -96,6 +128,24 @@ def process_uploaded_image(uploaded_file):
         st.error(f"Image Loading Error: {e}")
         return None
 
+def draw_coordinate_grid(image, snap_rows=None):
+    """Draws red axis marks and optional pale blue Hough Transform rows."""
+    draw = ImageDraw.Draw(image)
+    w, h = image.size
+    
+    # Draw Pale Blue Hough Rows First
+    if snap_rows:
+        for ry in snap_rows:
+            y_px = ry * h / 1000
+            draw.line([(0, y_px), (w, y_px)], fill=(173, 216, 230), width=2)
+            
+    # Draw Red Axis Lines
+    for i in range(0, 1001, 100):
+        x_px, y_px = i * w / 1000, i * h / 1000
+        draw.line([(x_px, 0), (x_px, 15)], fill=(255, 0, 0), width=2)
+        draw.line([(0, y_px), (15, y_px)], fill=(255, 0, 0), width=2)
+    return image
+
 def draw_pins_on_image(image, df_components):
     img_copy = image.copy()
     draw = ImageDraw.Draw(img_copy)
@@ -106,15 +156,6 @@ def draw_pins_on_image(image, df_components):
         draw.line([start, end], fill=(255, 165, 0), width=5)
         draw.ellipse([end[0]-6, end[1]-6, end[0]+6, end[1]+6], fill=(255, 255, 0), outline=(0,0,0))
     return img_copy
-
-def draw_coordinate_grid(image):
-    draw = ImageDraw.Draw(image)
-    w, h = image.size
-    for i in range(0, 1001, 100):
-        x_px, y_px = i * w / 1000, i * h / 1000
-        draw.line([(x_px, 0), (x_px, 15)], fill=(255, 0, 0), width=2)
-        draw.line([(0, y_px), (15, y_px)], fill=(255, 0, 0), width=2)
-    return image
 
 def save_to_drive(user_id, task_name, ai_feedback, images_dict):
     hk_tz = pytz.timezone('Asia/Hong_Kong')
@@ -161,6 +202,7 @@ def save_to_drive(user_id, task_name, ai_feedback, images_dict):
 if "step" not in st.session_state: st.session_state.step = 1
 if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
 if "analysis_result" not in st.session_state: st.session_state.analysis_result = None
+if "hough_rows" not in st.session_state: st.session_state.hough_rows = []
 for i in range(1, 5): 
     if f"img{i}" not in st.session_state: st.session_state[f"img{i}"] = None
 
@@ -169,6 +211,7 @@ def reset_flow():
         if "df" in key: st.session_state[key] = pd.DataFrame()
         elif "step" in key: st.session_state[key] = 1
         else: st.session_state[key] = None
+    st.session_state.hough_rows = []
 
 # --- 6. MAIN UI ---
 st.title("🔌 AI Circuit Tutor")
@@ -200,11 +243,15 @@ if student_file:
     
     raw_student = st.session_state.img1
 
+    # Detect horizontal rows once when the image is first loaded
+    if not st.session_state.hough_rows:
+        st.session_state.hough_rows = detect_horizontal_rows(raw_student)
+
     # STEP 1: DETECTION
     if st.session_state.step == 1:
         col1, col2 = st.columns(2)
         col1.image(raw_schematic, caption="Schematic")
-        col2.image(draw_coordinate_grid(raw_student.copy()), caption="Your Circuit")
+        col2.image(draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows), caption="Your Circuit (Pale Blue = Detected Rows)")
 
         if st.button("🔍 Step 1: Detect Components", type="primary"):
             with st.spinner("AI analyzing breadboard..."):
@@ -233,26 +280,37 @@ if student_file:
                         records.append({"Component": f"{item.get('name')} (Pin {i+1})", "CX": cx, "CY": cy, "LX": lx, "LY": ly})
                 
                 st.session_state.components_df = pd.DataFrame(records)
-                st.session_state.img2 = draw_pins_on_image(draw_coordinate_grid(raw_student.copy()), st.session_state.components_df)
+                base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows)
+                st.session_state.img2 = draw_pins_on_image(base_grid_img, st.session_state.components_df)
                 st.session_state.step = 2
                 st.rerun()
 
     # STEP 2: TUNING
     elif st.session_state.step == 2:
-        st.subheader("⚙️ Step 2: Fine-Tune Component Pins")
+        st.subheader("⚙️ Step 2: Fine-Tune Component Pins (Auto-Snapping)")
         edit_col, img_col = st.columns([1, 2])
         updated_data = []
         with edit_col:
             for i, row in st.session_state.components_df.iterrows():
                 with st.expander(f"📍 {row['Component']}"):
                     lx = st.slider(f"X_{i}", 0, 1000, int(row["LX"]), key=f"x{i}")
-                    ly = st.slider(f"Y_{i}", 0, 1000, int(row["LY"]), key=f"y{i}")
-                    updated_data.append({"Component": row["Component"], "CX": row["CX"], "CY": row["CY"], "LX": lx, "LY": ly})
+                    raw_ly = st.slider(f"Y_{i}", 0, 1000, int(row["LY"]), key=f"y{i}")
+                    
+                    # --- MAGNETIC SNAP LOGIC ---
+                    snapped_ly = raw_ly
+                    if st.session_state.hough_rows:
+                        snapped_ly = min(st.session_state.hough_rows, key=lambda ry: abs(ry - raw_ly))
+                    
+                    if raw_ly != snapped_ly:
+                        st.caption(f"*(Y auto-snapped to nearest row: {snapped_ly})*")
+                        
+                    updated_data.append({"Component": row["Component"], "CX": row["CX"], "CY": row["CY"], "LX": lx, "LY": snapped_ly})
             edited_df = pd.DataFrame(updated_data)
 
         with img_col:
-            st.session_state.img3 = draw_pins_on_image(draw_coordinate_grid(raw_student.copy()), edited_df)
-            st.image(st.session_state.img3, caption="Verify Orange Legs & Yellow Pins")
+            base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows)
+            st.session_state.img3 = draw_pins_on_image(base_grid_img, edited_df)
+            st.image(st.session_state.img3, caption="Verify Orange Legs & Yellow Pins (Snapped to Blue Rows)")
 
         if st.button("✅ Confirm & Analyze Circuit", type="primary"):
             st.session_state.components_df = edited_df
