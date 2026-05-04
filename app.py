@@ -52,13 +52,41 @@ st.title("🔌 AI Circuit Tutor: Human-in-the-Loop Debugging")
 with st.sidebar:
     st.header("Inputs")
     task_id = st.text_input("Task Name", "Task 4b")
+    
+    # Schematic is usually a file
     schematic_file = st.file_uploader("Upload Schematic", type=["jpg", "png", "jpeg"])
-    student_file = st.file_uploader("Upload Student Circuit", type=["jpg", "png", "jpeg"])
-    if st.button("Reset Entire Process"): reset_flow(); st.rerun()
+    
+    # Choice for Student Circuit: Upload OR Take Photo
+    input_method = st.radio("Student Circuit Input:", ["Upload File", "Take Photo"])
+    
+    student_file = None
+    if input_method == "Upload File":
+        student_file = st.file_uploader("Upload Student Circuit", type=["jpg", "png", "jpeg"])
+    else:
+        student_file = st.camera_input("Take a photo of the breadboard")
 
+    if st.button("Reset Entire Process"): 
+        reset_flow()
+        st.rerun()
+
+def process_uploaded_image(uploaded_file):
+    """Ensures image is upright and in RGB format."""
+    img = PILImage.open(uploaded_file)
+    # This line is the magic fix for Android/iOS rotation issues:
+    img = ImageOps.exif_transpose(img) 
+    return img.convert("RGB")
+
+# --- Inside your main loop ---
 if schematic_file and student_file:
-    raw_schematic = PILImage.open(schematic_file).convert("RGB")
-    raw_student = PILImage.open(student_file).convert("RGB")
+    # Use a try-except to catch platform-specific upload errors
+    try:
+        # We wrap in BytesIO to ensure the buffer is stable for mobile
+        raw_schematic = process_uploaded_image(io.BytesIO(schematic_file.read()))
+        raw_student = process_uploaded_image(io.BytesIO(student_file.read()))
+    except Exception as e:
+        st.error(f"Error loading image: {e}. Please try taking the photo again.")
+        st.stop()
+        
 
     # --- STEP 1: DETECTION ---
     if st.session_state.step == 1:
