@@ -343,74 +343,99 @@ if student_file:
             st.session_state.step = 3
             st.rerun()
 
+    # STEP 3: ANALYSIS
     elif st.session_state.step == 3:
         st.subheader("🧠 Step 3: AI Diagnosis")
         
-        # Only run the AI if we don't have a result OR if the image hasn't been generated
         if st.session_state.analysis_result is None or st.session_state.img4 is None:
             with st.spinner("Checking electrical logic..."):
                 summary = st.session_state.components_df.to_string(index=False)
                 
-                # Updated Prompt to handle 3-pin Slide Switches
                 prompt = f"""
                 Task: {selected_task}. 
                 Electrical Rules: 
-                1. SLIDE-SWITCH: Has 3 pins. The MIDDLE pin is 'Common'. The switch connects Middle to Left OR Middle to Right. 
-                   Ensure the power path goes through the Middle pin.
+                1. SLIDE-SWITCH: Has 3 pins. MIDDLE pin is 'Common'. Path MUST go through Middle.
                 2. SERIES: Components must share a single node.
                 3. POLARITY: LED long leg (+ve) must connect toward the Red Rail.
                 4. BUTTON: 4-pin buttons connect horizontally.
                 
                 Component Data: {summary}. 
-                Compare to Target Schematic. Return JSON: 'feedback', 'error_locations': [[y,x]]
+                Compare to Target Schematic. Return JSON with 'feedback' and 'error_locations'.
                 """
                 
                 try:
+                    # Added a response_schema to GUARANTEE a dictionary is returned
                     resp = client.models.generate_content(
                         model=MODEL_ID, 
                         contents=[raw_schematic, st.session_state.img3, prompt],
-                        config=types.GenerateContentConfig(response_mime_type="application/json")
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            response_schema={
+                                "type": "OBJECT",
+                                "properties": {
+                                    "feedback": {"type": "STRING"},
+                                    "error_locations": {
+                                        "type": "ARRAY", 
+                                        "items": {"type": "ARRAY", "items": {"type": "INTEGER"}}
+                                    }
+                                },
+                                "required": ["feedback", "error_locations"]
+                            }
+                        )
                     )
-                    st.session_state.analysis_result = json.loads(resp.text)
+                    
+                    # Use .parsed if using a schema, it's safer than json.loads
+                    result = resp.parsed
+                    
+                    # Double-check: If for some reason it's a list, take the first item
+                    if isinstance(result, list) and len(result) > 0:
+                        result = result[0]
+                    
+                    st.session_state.analysis_result = result
                     
                     # Create Final Image (Red circles on errors)
                     diag_img = st.session_state.img3.copy()
                     draw = ImageDraw.Draw(diag_img)
                     w, h = diag_img.size
-                    for ey, ex in st.session_state.analysis_result.get("error_locations", []):
-                        px, py = ex * w / 1000, ey * h / 1000
-                        draw.ellipse([px-25, py-25, px+25, py+25], outline="red", width=10)
+                    
+                    errors = st.session_state.analysis_result.get("error_locations", [])
+                    for err in errors:
+                        if len(err) == 2:
+                            ey, ex = err
+                            px, py = ex * w / 1000, ey * h / 1000
+                            draw.ellipse([px-25, py-25, px+25, py+25], outline="red", width=10)
                     
                     st.session_state.img4 = diag_img
+
                 except Exception as e:
                     st.error(f"AI Analysis failed: {e}")
-                    st.session_state.step = 2 # Kick back to tuning if AI fails
+                    st.session_state.step = 2
 
-        # Safety Check: Only show the image if it actually exists
+        # --- CLEAN DISPLAY LOGIC (No Duplicates) ---
         if st.session_state.img4:
             st.image(st.session_state.img4, caption="AI Diagnosis: Red circles indicate potential wiring issues")
         
         if st.session_state.analysis_result:
-            st.info(st.session_state.analysis_result.get("feedback", "No feedback provided."))
-            
+            # We use .get() safely here because the schema above guarantees it's a dict
+            feedback_text = st.session_state.analysis_result.get("feedback", "No feedback provided.")
+            st.info(feedback_text)
 
-        st.image(st.session_state.img4)
-        st.info(st.session_state.analysis_result.get("feedback"))
-
-        col_a, col_b, col_c = st.columns(3)
-        with col_a:
-            if st.button("💾 Save to Drive", type="primary", use_container_width=True):
-                save_to_drive(user_id, selected_task, st.session_state.analysis_result.get("feedback"), 
-                             {"1": st.session_state.img1, "2": st.session_state.img2, 
-                              "3": st.session_state.img3, "4": st.session_state.img4})
-        with col_b:
-            if st.button("🔙 Back", use_container_width=True):
-                st.session_state.analysis_result = None
-                st.session_state.step = 2
-                st.rerun()
-        with col_c:
-            if st.button("🎉 New Task", use_container_width=True):
-                reset_flow()
-                st.rerun()
+            # BUTTONS AREA
+            col_a, col_b, col_c = st.columns(3)
+            with col_a:
+                if st.button("💾 Save to Drive", type="primary", use_container_width=True):
+                    save_to_drive(user_id, selected_task, feedback_text, 
+                                 {"1": st.session_state.img1, "2": st.session_state.img2, 
+                                  "3": st.session_state.img3, "4": st.session_state.img4})
+            with col_b:
+                if st.button("🔙 Back", use_container_width=True):
+                    st.session_state.analysis_result = None
+                    st.session_state.step = 2
+                    st.rerun()
+            with col_c:
+                if st.button("🎉 New Task", use_container_width=True):
+                    reset_flow()
+                    st.rerun()
+                    
 else:
     st.info("Upload a photo to begin.")
