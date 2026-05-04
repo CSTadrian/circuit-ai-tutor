@@ -221,7 +221,7 @@ with st.sidebar:
     st.divider()
     
     # --- UPDATED: Simplified input (removed radio button) ---
-    schematic_file = st.file_uploader("Upload Schematic", type=["jpg", "png", "jpeg", "webp", "heic"])
+    student_file = st.file_uploader("Upload Schematic", type=["jpg", "png", "jpeg", "webp", "heic"])
 
     if st.button("Reset Entire Process"): 
         reset_flow()
