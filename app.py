@@ -3,7 +3,8 @@ import streamlit as st
 import pandas as pd
 import json
 import os
-from PIL import Image as PILImage, ImageDraw
+import io  # <-- ADDED: Required for mobile memory buffer
+from PIL import Image as PILImage, ImageDraw, ImageOps  # <-- ADDED ImageOps for EXIF rotation
 
 # --- NEW SDK IMPORTS ---
 from google import genai
@@ -11,7 +12,7 @@ from google.genai import types
 from google.oauth2 import service_account
 
 # --- 1. INITIALIZATION & CONFIG ---
-st.set_page_config(page_title="AI Circuit Tutor (Iterative XAI)", layout="wide")
+st.set_page_config(page_title="AI Circuit Tutor", layout="wide")
 MODEL_ID = "gemini-3.1-pro-preview"
 
 # Authentication
@@ -24,12 +25,13 @@ else:
     st.stop()
 
 
-# Hide the Streamlit main menu (which contains the GitHub link) and the footer
+# --- UPDATED: Hide the Streamlit main menu, GitHub link, Deploy button, and footer ---
 hide_menu_style = """
     <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    .stDeployButton {display:none;}
+    header {visibility: hidden;} /* Hides the top right menu entirely */
+    [data-testid="stToolbar"] {visibility: hidden !important;} /* Strictly hides the GitHub/Deploy icon */
     </style>
     """
 st.markdown(hide_menu_style, unsafe_allow_html=True)
@@ -46,6 +48,13 @@ def draw_coordinate_grid(image):
         draw.line([(x_px, 0), (x_px, 15)], fill=line_color, width=2)
         draw.line([(0, y_px), (15, y_px)], fill=line_color, width=2)
     return image
+
+def process_uploaded_image(uploaded_file):
+    """Ensures image is upright and in RGB format."""
+    img = PILImage.open(uploaded_file)
+    # This line is the magic fix for Android/iOS rotation issues:
+    img = ImageOps.exif_transpose(img) 
+    return img.convert("RGB")
 
 # --- 3. SESSION STATE ---
 if "step" not in st.session_state: st.session_state.step = 1
@@ -80,25 +89,17 @@ with st.sidebar:
         reset_flow()
         st.rerun()
 
-def process_uploaded_image(uploaded_file):
-    """Ensures image is upright and in RGB format."""
-    img = PILImage.open(uploaded_file)
-    # This line is the magic fix for Android/iOS rotation issues:
-    img = ImageOps.exif_transpose(img) 
-    return img.convert("RGB")
-
-# --- Inside your main loop ---
+# --- MAIN LOOP ---
 if schematic_file and student_file:
     # Use a try-except to catch platform-specific upload errors
     try:
-        # We wrap in BytesIO to ensure the buffer is stable for mobile
-        raw_schematic = process_uploaded_image(io.BytesIO(schematic_file.read()))
-        raw_student = process_uploaded_image(io.BytesIO(student_file.read()))
+        # UPDATED: Use .getvalue() instead of .read() for better Streamlit mobile compatibility
+        raw_schematic = process_uploaded_image(io.BytesIO(schematic_file.getvalue()))
+        raw_student = process_uploaded_image(io.BytesIO(student_file.getvalue()))
     except Exception as e:
         st.error(f"Error loading image: {e}. Please try taking the photo again.")
         st.stop()
         
-
     # --- STEP 1: DETECTION ---
     if st.session_state.step == 1:
         col1, col2 = st.columns(2)
@@ -107,7 +108,6 @@ if schematic_file and student_file:
 
         if st.button("🔍 Step 1: Detect Components", type="primary"):
             with st.spinner("AI locating components..."):
-                # UPDATED PROMPT: Explicitly ask for the specific components and resistor values
                 prompt_seg = """
                 Identify components on the breadboard. Specifically locate:
                 - slide-switch
@@ -177,7 +177,6 @@ if schematic_file and student_file:
             with st.spinner("Evaluating circuit logic..."):
                 coord_summary = st.session_state.components_df.to_string(index=False)
                 
-                # UPDATED PROMPT: Explicitly declare the exact vertical/horizontal/diagonal routing logic
                 analysis_prompt = f"""
                 Task: {task_id}. 
                 
