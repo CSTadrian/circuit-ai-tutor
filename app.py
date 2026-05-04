@@ -36,10 +36,10 @@ CSV_FILENAME = "circuit_audit_logs.csv"
 
 # --- 2. AUTHENTICATION & INITIALIZATION ---
 @st.cache_resource
-def init_drive():
-    """Initializes Google Drive API via OAuth secrets."""
+def get_drive_creds():
+    """Caches ONLY the credentials, not the network connection."""
     oauth_info = st.secrets["google_oauth"]
-    drive_creds = Credentials(
+    creds = Credentials(
         token=None,
         refresh_token=oauth_info["refresh_token"],
         client_id=oauth_info["client_id"],
@@ -47,12 +47,19 @@ def init_drive():
         token_uri="https://oauth2.googleapis.com/token",
         scopes=['https://www.googleapis.com/auth/drive.file']
     )
-    if not drive_creds.valid:
-        drive_creds.refresh(Request())
-    return build('drive', 'v3', credentials=drive_creds)
+    return creds
 
-# Initialize Clients
-drive_service = init_drive()
+def get_drive_service():
+    """Creates a fresh service object with a new connection."""
+    creds = get_drive_creds()
+    if not creds.valid:
+        creds.refresh(Request())
+    # static_discovery=False prevents some library-level caching issues
+    return build('drive', 'v3', credentials=creds, static_discovery=False)
+
+# REMOVE this line from your global scope:
+# drive_service = init_drive()
+
 
 if "gcp_service_account" in st.secrets:
     creds_info = st.secrets["gcp_service_account"]
@@ -184,46 +191,65 @@ def draw_pins_on_image(image, df_components):
     return img_copy
 
 def save_to_drive(user_id, task_name, ai_feedback, images_dict):
+    # 1. Get a fresh service for this specific transaction
+    service = get_drive_service()
+    
     hk_tz = pytz.timezone('Asia/Hong_Kong')
     hk_time_str = datetime.now(hk_tz).strftime('%Y-%m-%d %H:%M:%S')
     task_num = task_name.split(":")[0].replace("Task", "").strip()
     file_prefix = f"user{user_id}_task{task_num}"
 
-    # Upload Images
-    for img_key, img_obj in images_dict.items():
-        if img_obj:
-            buf = io.BytesIO()
-            img_obj.save(buf, format='PNG')
-            img_metadata = {'name': f"{file_prefix}_{img_key}.png", 'parents': [PARENT_FOLDER_ID]}
-            media = MediaIoBaseUpload(io.BytesIO(buf.getvalue()), mimetype='image/png')
-            drive_service.files().create(body=img_metadata, media_body=media).execute()
+    try:
+        # 2. Upload Images
+        for img_key, img_obj in images_dict.items():
+            if img_obj:
+                buf = io.BytesIO()
+                img_obj.save(buf, format='PNG')
+                buf.seek(0)  # Reset buffer pointer to the beginning
+                
+                img_metadata = {'name': f"{file_prefix}_{img_key}.png", 'parents': [PARENT_FOLDER_ID]}
+                media = MediaIoBaseUpload(buf, mimetype='image/png', resumable=True)
+                service.files().create(body=img_metadata, media_body=media).execute()
 
-    # Log to CSV
-    new_row = pd.DataFrame([{
-        "User ID": user_id, "Time": hk_time_str, 
-        "Raw": f"{file_prefix}_1.png", "Final": f"{file_prefix}_4.png", 
-        "Feedback": ai_feedback
-    }])
+        # 3. Log to CSV
+        new_row = pd.DataFrame([{
+            "User ID": user_id, "Time": hk_time_str, 
+            "Raw": f"{file_prefix}_1.png", "Final": f"{file_prefix}_4.png", 
+            "Feedback": ai_feedback
+        }])
 
-    query = f"name='{CSV_FILENAME}' and '{PARENT_FOLDER_ID}' in parents and trashed=false"
-    items = drive_service.files().list(q=query, fields="files(id)").execute().get('files', [])
+        query = f"name='{CSV_FILENAME}' and '{PARENT_FOLDER_ID}' in parents and trashed=false"
+        items = service.files().list(q=query, fields="files(id)").execute().get('files', [])
 
-    if not items:
-        csv_bytes = new_row.to_csv(index=False).encode('utf-8')
-        meta = {'name': CSV_FILENAME, 'parents': [PARENT_FOLDER_ID]}
-        media = MediaIoBaseUpload(io.BytesIO(csv_bytes), mimetype='text/csv')
-        drive_service.files().create(body=meta, media_body=media).execute()
-    else:
-        file_id = items[0]['id']
-        request = drive_service.files().get_media(fileId=file_id)
-        fh = io.BytesIO()
-        MediaIoBaseDownload(fh, request).next_chunk()
-        fh.seek(0)
-        df_combined = pd.concat([pd.read_csv(fh), new_row], ignore_index=True)
-        media = MediaIoBaseUpload(io.BytesIO(df_combined.to_csv(index=False).encode('utf-8')), mimetype='text/csv')
-        drive_service.files().update(fileId=file_id, media_body=media).execute()
-    st.success("Successfully logged to Drive!")
-
+        if not items:
+            csv_bytes = new_row.to_csv(index=False).encode('utf-8')
+            meta = {'name': CSV_FILENAME, 'parents': [PARENT_FOLDER_ID]}
+            media = MediaIoBaseUpload(io.BytesIO(csv_bytes), mimetype='text/csv')
+            service.files().create(body=meta, media_body=media).execute()
+        else:
+            file_id = items[0]['id']
+            # Download existing CSV
+            request = service.files().get_media(fileId=file_id)
+            fh = io.BytesIO()
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            while not done:
+                status, done = downloader.next_chunk()
+            
+            fh.seek(0)
+            df_existing = pd.read_csv(fh)
+            df_combined = pd.concat([df_existing, new_row], ignore_index=True)
+            
+            # Upload updated CSV
+            updated_csv_bytes = df_combined.to_csv(index=False).encode('utf-8')
+            media = MediaIoBaseUpload(io.BytesIO(updated_csv_bytes), mimetype='text/csv')
+            service.files().update(fileId=file_id, media_body=media).execute()
+            
+        st.success("Successfully logged to Drive!")
+        
+    except Exception as e:
+        st.error(f"Drive Save Error: {e}")
+        
 # --- 5. SESSION STATE ---
 if "step" not in st.session_state: st.session_state.step = 1
 if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
