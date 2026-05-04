@@ -346,12 +346,13 @@ if student_file:
         if st.button(UI[l]["step1_btn"], type="primary"):
             with st.spinner(UI[l]["analyzing"]):
                 prompt = """
-                Identify components on the breadboard. Specifically locate:
-                - power rail (red: +ve and black: -ve)
-                - slide-switch (always 3 pins), 4-pin Push Button, LDR, LED
-                - resistor (check color bands: '5-band 300ohm', '1000 ohm', or '10k ohm')
-                Return JSON: 'name', 'center': [y,x], 'legs': [[y,x],...]
-                """
+                    Identify components on the breadboard. Specifically:
+                    - SLIDE-SWITCH: You MUST identify exactly 3 pins (legs) positioned continuously in a single straight row. 
+                    - power rail (red: +ve and black: -ve)
+                    - 4-pin Push Button, LDR, LED
+                    - resistor (check color bands: '5-band 300ohm', '1000 ohm', or '10k ohm')
+                    Return JSON: 'name', 'center': [y,x], 'legs': [[y,x],...]
+                    """
                 resp = client.models.generate_content(
                     model=MODEL_ID, contents=[raw_student, prompt],
                     config=types.GenerateContentConfig(
@@ -416,17 +417,17 @@ if student_file:
                 
                 # Appends language instruction based on toggle state
                 prompt = f"""
-                Task: {selected_task}. 
-                Electrical Rules: 
-                1. SLIDE-SWITCH: Has 3 pins. MIDDLE pin is 'Common'. Path MUST go through Middle.
-                2. SERIES: Components must share a single node.
-                3. POLARITY: LED long leg (+ve) must connect toward the Red Rail.
-                4. BUTTON: 4-pin buttons connect horizontally.
-                
-                Component Data: {summary}. 
-                Compare to Target Schematic. Return JSON with 'feedback' and 'error_locations'.
-                {UI[l]["prompt_addition"]}
-                """
+                    Task: {selected_task}. 
+                    Electrical Rules: 
+                    1. SLIDE-SWITCH: Always has 3 continuous pins in one row. The middle pin (Pin 2) is the 'Common' terminal. For a circuit to be closed, electricity MUST flow through the middle pin to one of the side pins.
+                    2. SERIES: Components must share a single node.
+                    3. POLARITY: LED long leg (+ve) must connect toward the Red Rail.
+                    4. BUTTON: 4-pin buttons connect horizontally.
+                    
+                    Component Data: {summary}. 
+                    Compare to Target Schematic. Return JSON with 'feedback' and 'error_locations'.
+                    {UI[l]["prompt_addition"]}
+                    """
                 
                 try:
                     resp = client.models.generate_content(
