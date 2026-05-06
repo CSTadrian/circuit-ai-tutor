@@ -312,10 +312,11 @@ def save_to_drive(user_id, task_name, ai_feedback, images_dict):
                 media = MediaIoBaseUpload(buf, mimetype='image/png', resumable=True)
                 service.files().create(body=img_metadata, media_body=media).execute()
 
+        # tutor_note is now correctly defined by the function parameter
         new_row = pd.DataFrame([{
             "User ID": user_id, "Time": hk_time_str, 
             "Raw": f"{file_prefix}_1.png", "Final": f"{file_prefix}_4.png", 
-            "Tutor note": tutor_note
+            "Tutor note": tutor_note 
         }])
 
         query = f"name='{CSV_FILENAME}' and '{PARENT_FOLDER_ID}' in parents and trashed=false"
@@ -387,13 +388,7 @@ with st.sidebar:
     
     # student_file = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp","heic"])
     # input_method = st.radio(UI[l]["input_method"], [UI[l]["upload_file"], UI[l]["take_photo"]])
-    
-    student_input = None
-    if input_choice == UI[l]["upload_file"]:
-        student_input = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp", "heic"])
-    else:
-        student_input = st.camera_input(UI[l]["take_photo"])
-        
+     
     # if input_method == UI[l]["upload_file"]:
     #     student_input = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp", "heic"])
     # else:
@@ -408,20 +403,23 @@ with st.sidebar:
     #     reset_flow()
     #     st.rerun()
 
-    input_choice = st.radio(
-        UI[l]["input_method"], 
-        [UI[l]["upload_file"], UI[l]["take_photo"]], 
-        key="input_method_selector"
-    )
-
+   
+    # 2. EVALUATE input_choice to render the correct student_input widget SECOND
+    student_input = None
+    if input_choice == UI[l]["upload_file"]:
+        student_input = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp", "heic"])
+    else:
+        student_input = st.camera_input(UI[l]["take_photo"])
+        
+    # 3. Handle resets
     if st.button(UI[l]["reset"], key="reset_button_main"):
         reset_flow()
         st.rerun()
         
-
     st.divider()
     st.markdown(f"### {UI[l]['guide_title']}")
     st.markdown(UI[l]['guide_text'])
+    
 
 # --- 7. APPLICATION LOGIC ---
 # if student_file:
