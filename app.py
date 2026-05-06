@@ -171,13 +171,12 @@ st.markdown("""
 
 def detect_breadboard_vertical_structure(pil_img):
     """
-    Detects the structural X-coordinates of the breadboard:
-    1. Left and Right power rails (using Red/Blue line detection).
-    2. Center dividing gap.
+    Detects the structural X-coordinates of the breadboard with 
+    safety checks to prevent empty array errors.
     """
     img_cv = np.array(pil_img)
     if len(img_cv.shape) != 3:
-        return None # Grayscale fallback
+        return None 
 
     hsv = cv2.cvtColor(img_cv, cv2.COLOR_RGB2HSV)
     gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
@@ -199,32 +198,38 @@ def detect_breadboard_vertical_structure(pil_img):
     left_color_x = np.where(col_sums_colors[:half_width] > np.max(col_sums_colors[:half_width]) * 0.3)[0]
     right_color_x = np.where(col_sums_colors[half_width:] > np.max(col_sums_colors[half_width:]) * 0.3)[0] + half_width
 
-    # Safely extract rail bounds (with fallbacks if lighting hides colors)
     l_outer = left_color_x[0] if len(left_color_x) > 0 else int(width * 0.05)
     l_inner = left_color_x[-1] if len(left_color_x) > 0 else int(width * 0.15)
     r_inner = right_color_x[0] if len(right_color_x) > 0 else int(width * 0.85)
     r_outer = right_color_x[-1] if len(right_color_x) > 0 else int(width * 0.95)
 
-    # 3. Detect the center gap (The trough with no holes)
-    # We look between the inner left and inner right rails for a "valley" of edges.
-    search_start = l_inner + int((r_inner - l_inner) * 0.3)
-    search_end = l_inner + int((r_inner - l_inner) * 0.7)
+    # 3. Detect the center gap (Safety Check Added Here)
+    # Ensure search_start is always less than search_end
+    search_start = min(l_inner + int((r_inner - l_inner) * 0.3), width - 2)
+    search_end = max(l_inner + int((r_inner - l_inner) * 0.7), search_start + 1)
     
     edges = cv2.Canny(gray, 50, 150)
     gap_col_sums = np.sum(edges[:, search_start:search_end], axis=0)
     
-    # Smooth the edges to find the distinct smooth trough
-    kernel = np.ones(int(width*0.02)) / int(width*0.02)
-    smoothed_gap = np.convolve(gap_col_sums, kernel, mode='same')
+    # Kernel must be at least 1 pixel wide
+    kernel_width = max(int(width * 0.02), 1)
+    kernel = np.ones(kernel_width) / kernel_width
     
-    if len(smoothed_gap) > 0:
+    # Final check: only convolve if the array is not empty
+    if gap_col_sums.size > 0:
+        smoothed_gap = np.convolve(gap_col_sums, kernel, mode='same')
         center_x_relative = np.argmin(smoothed_gap)
         center_gap_x = search_start + center_x_relative
     else:
         center_gap_x = width // 2
 
-    return {"L_outer": l_outer, "L_inner": l_inner, "R_inner": r_inner, "R_outer": r_outer, "Center": center_gap_x}
-
+    return {
+        "L_outer": l_outer, 
+        "L_inner": l_inner, 
+        "R_inner": r_inner, 
+        "R_outer": r_outer, 
+        "Center": center_gap_x
+    }
 
 def detect_horizontal_rows(pil_img):
     img_cv = np.array(pil_img)
