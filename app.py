@@ -365,6 +365,8 @@ def reset_flow():
         else: st.session_state[key] = None
     st.session_state.hough_rows = []
 
+
+  
 # --- 6. MAIN UI ---
 
 # LANGUAGE TOGGLE
@@ -380,31 +382,23 @@ with st.sidebar:
     
     path = os.path.join(DATA_FOLDER, TASKS[selected_task])
     if os.path.exists(path):
+        # Using the helper to ensure schematic is also correctly oriented
         raw_schematic = process_uploaded_image(path)
         st.image(raw_schematic, caption=UI[l]["target"])
     else:
         st.error(f"Missing {TASKS[selected_task]}")
         st.stop()
-    
-    # student_file = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp","heic"])
-    # input_method = st.radio(UI[l]["input_method"], [UI[l]["upload_file"], UI[l]["take_photo"]])
-     
-    # if input_method == UI[l]["upload_file"]:
-    #     student_input = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp", "heic"])
-    # else:
-    #     student_input = st.camera_input(UI[l]["take_photo"])
 
-    # if st.button(UI[l]["reset"]): 
-    #     reset_flow()
-    #     st.rerun()
- 
-    # # if st.button(UI[l]["reset"]): 
-    # if st.button(UI[l]["reset"], key="reset_button_main"):
-    #     reset_flow()
-    #     st.rerun()
+    st.divider()
 
-   
-    # 2. EVALUATE input_choice to render the correct student_input widget SECOND
+    # FIX: Define input_choice HERE before using it below
+    input_choice = st.radio(
+        UI[l]["input_method"], 
+        [UI[l]["upload_file"], UI[l]["take_photo"]],
+        key="input_method_selector"
+    )
+
+    # 2. Render the correct input widget based on the choice
     student_input = None
     if input_choice == UI[l]["upload_file"]:
         student_input = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp", "heic"])
@@ -419,17 +413,17 @@ with st.sidebar:
     st.divider()
     st.markdown(f"### {UI[l]['guide_title']}")
     st.markdown(UI[l]['guide_text'])
-    
 
 # --- 7. APPLICATION LOGIC ---
-# if student_file:
-#     if st.session_state.img1 is None:
-#         st.session_state.img1 = process_uploaded_image(io.BytesIO(student_file.getvalue()))
-
-# --- 7. APPLICATION LOGIC ---
-if student_input: # Changed from student_file
+if student_input:
     if st.session_state.img1 is None:
-        st.session_state.img1 = process_uploaded_image(io.BytesIO(student_input.getvalue()))
+        # Wrap in BytesIO to ensure a stable buffer for mobile browsers
+        try:
+            image_bytes = student_input.getvalue()
+            st.session_state.img1 = process_uploaded_image(io.BytesIO(image_bytes))
+        except Exception as e:
+            st.error(f"Image Error: {e}")
+            st.stop()
         
     raw_student = st.session_state.img1
 
@@ -440,18 +434,20 @@ if student_input: # Changed from student_file
     if st.session_state.step == 1:
         col1, col2 = st.columns(2)
         col1.image(raw_schematic, caption=UI[l]["schematic"])
-        col2.image(draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows), caption=UI[l]["your_circuit"])
+        # Ensure we are drawing on a copy to avoid mutating session state
+        grid_view = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows)
+        col2.image(grid_view, caption=UI[l]["your_circuit"])
 
         if st.button(UI[l]["step1_btn"], type="primary"):
             with st.spinner(UI[l]["analyzing"]):
                 prompt = """
                     Identify components on the breadboard. Specifically:
-                    - POWER SUPPLY: You MUST identify the power input module. It has exactly 2 pins: the red wire/pin (+ve/Vcc) and the black wire/pin (-ve/GND).
-                    - SLIDE-SWITCH: You MUST identify exactly 3 pins (legs) positioned continuously in a single straight row. 
+                    - POWER SUPPLY: The red/black power input module (2 pins).
+                    - SLIDE-SWITCH: 3 pins in a single straight row. 
                     - 4-pin Push Button, LDR, LED
                     - resistor (check color bands: '5-band 300ohm', '1000 ohm', or '10k ohm')
                     Return JSON: 'name', 'center': [y,x], 'legs': [[y,x],...]
-                    """
+                """
                 resp = client.models.generate_content(
                     model=MODEL_ID, contents=[raw_student, prompt],
                     config=types.GenerateContentConfig(
