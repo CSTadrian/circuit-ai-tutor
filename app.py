@@ -507,7 +507,7 @@ if active_input:
                 summary = st.session_state.components_df.to_string(index=False)
                 
                 # UPDATED PROMPT: Explicitly categorizing errors
-                rompt = f"""
+                prompt = f"""
                     Task: {selected_task}. 
                     
                     Structural Connectivity Rules:
