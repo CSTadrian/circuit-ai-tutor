@@ -8,7 +8,7 @@ import pytz
 import cv2
 import numpy as np
 from datetime import datetime
-from PIL import Image as PILImage, ImageDraw, ImageOps 
+from PIL import Image as PILImage, ImageDraw, ImageOps
 
 # --- NEW SDK IMPORTS ---
 from google import genai
