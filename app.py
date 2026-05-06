@@ -247,27 +247,27 @@ def detect_horizontal_rows(pil_img):
     return [int((y / height) * 1000) for y in peaks]
 
 
-def process_uploaded_image(file_input):
-    """
-    Robust image loader to fix Android/iOS rotation and buffering issues.
-    """
-    try:
-        # If input is a path (str), open it. If it's a file stream, read it.
-        if isinstance(file_input, str):
-            img = PILImage.open(file_input)
-        else:
-            img = PILImage.open(io.BytesIO(file_input.read() if hasattr(file_input, 'read') else file_input))
-            
-        # Fix orientation metadata (crucial for phones)
-        img = ImageOps.exif_transpose(img)
-        img = img.convert("RGB")
+def process_uploaded_image(file_bytes):
+    # 1. Open the image
+    img = Image.open(file_bytes)
+    
+    # 2. Fix orientation (crucial for mobile/camera photos)
+    img = ImageOps.exif_transpose(img)
+    
+    # 3. ENLARGE: Double the dimensions
+    original_width, original_height = img.size
+    new_size = (original_width * 2, original_height * 2)
+    
+    # Use LANCZOS for a high-quality "upscale"
+    img = img.resize(new_size, Image.Resampling.LANCZOS)
+    
+    # 4. Optional: Keep your existing limit if the image is now TOO big 
+    # (e.g., if doubling makes it 8000px, it might crash the AI's memory)
+    # MAX_SIZE = 2000
+    # if max(img.size) > MAX_SIZE:
+    #     img.thumbnail((MAX_SIZE, MAX_SIZE), Image.Resampling.LANCZOS)
         
-        # Resize to prevent mobile memory crashes
-        img.thumbnail((1200, 1200), PILImage.Resampling.LANCZOS)
-        return img
-    except Exception as e:
-        st.error(f"Image Load Failed: {e}")
-        return None
+    return img
         
 
 def draw_coordinate_grid(image, snap_rows=None):
