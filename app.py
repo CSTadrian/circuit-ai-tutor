@@ -170,10 +170,6 @@ st.markdown("""
 # --- 4. COMPUTER VISION & DRAWING FUNCTIONS ---
 
 def detect_breadboard_vertical_structure(pil_img):
-    """
-    Detects the structural X-coordinates of the breadboard with 
-    safety checks to prevent empty array errors.
-    """
     img_cv = np.array(pil_img)
     if len(img_cv.shape) != 3:
         return None 
@@ -182,52 +178,58 @@ def detect_breadboard_vertical_structure(pil_img):
     gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
     height, width = img_cv.shape[:2]
 
-    # 1. Detect Red and Blue printed lines
-    lower_red1, upper_red1 = np.array([0, 70, 50]), np.array([10, 255, 255])
-    lower_red2, upper_red2 = np.array([170, 70, 50]), np.array([180, 255, 255])
-    mask_red = cv2.bitwise_or(cv2.inRange(hsv, lower_red1, upper_red1), cv2.inRange(hsv, lower_red2, upper_red2))
+    # 1. ROBUST COLOR DETECTION (Wider ranges for glare)
+    # Red: handles both ends of the HSV spectrum
+    lower_red1, upper_red1 = np.array([0, 50, 40]), np.array([15, 255, 255])
+    lower_red2, upper_red2 = np.array([160, 50, 40]), np.array([180, 255, 255])
+    mask_red = cv2.bitwise_or(cv2.inRange(hsv, lower_red1, upper_red1), 
+                              cv2.inRange(hsv, lower_red2, upper_red2))
     
-    lower_blue, upper_blue = np.array([100, 100, 50]), np.array([130, 255, 255])
+    # Blue: wider saturation/value range to catch faded lines
+    lower_blue, upper_blue = np.array([90, 40, 40]), np.array([140, 255, 255])
     mask_blue = cv2.inRange(hsv, lower_blue, upper_blue)
 
     mask_colors = cv2.bitwise_or(mask_red, mask_blue)
-    col_sums_colors = np.sum(mask_colors, axis=0)
+    col_sums = np.sum(mask_colors, axis=0)
 
-    # 2. Find the left and right rail color zones
-    half_width = width // 2
-    left_color_x = np.where(col_sums_colors[:half_width] > np.max(col_sums_colors[:half_width]) * 0.3)[0]
-    right_color_x = np.where(col_sums_colors[half_width:] > np.max(col_sums_colors[half_width:]) * 0.3)[0] + half_width
-
-    l_outer = left_color_x[0] if len(left_color_x) > 0 else int(width * 0.05)
-    l_inner = left_color_x[-1] if len(left_color_x) > 0 else int(width * 0.15)
-    r_inner = right_color_x[0] if len(right_color_x) > 0 else int(width * 0.85)
-    r_outer = right_color_x[-1] if len(right_color_x) > 0 else int(width * 0.95)
-
-    # 3. Detect the center gap (Safety Check Added Here)
-    # Ensure search_start is always less than search_end
-    search_start = min(l_inner + int((r_inner - l_inner) * 0.3), width - 2)
-    search_end = max(l_inner + int((r_inner - l_inner) * 0.7), search_start + 1)
+    # 2. LOCAL PEAK DETECTION (Finds rails even if one side is darker/glared)
+    half = width // 2
     
-    edges = cv2.Canny(gray, 50, 150)
+    def find_rail_bounds(data, offset=0):
+        # Find the max in this specific half to set a local threshold
+        if len(data) == 0 or np.max(data) == 0: return None
+        thresh = np.max(data) * 0.25
+        peaks = np.where(data > thresh)[0]
+        if len(peaks) > 0:
+            return peaks[0] + offset, peaks[-1] + offset
+        return None
+
+    left_bounds = find_rail_bounds(col_sums[:half])
+    right_bounds = find_rail_bounds(col_sums[half:], offset=half)
+
+    # Fallbacks if detection fails
+    l_outer, l_inner = left_bounds if left_bounds else (int(width*0.05), int(width*0.15))
+    r_inner, r_outer = right_bounds if right_bounds else (int(width*0.85), int(width*0.95))
+
+    # 3. CENTER GAP DETECTION (Looking for the vertical "valley")
+    # We look specifically between the inner rails
+    search_start = l_inner + int((r_inner - l_inner) * 0.35)
+    search_end = l_inner + int((r_inner - l_inner) * 0.65)
+    
+    edges = cv2.Canny(gray, 30, 100) # Lower thresholds to find the gap edges
     gap_col_sums = np.sum(edges[:, search_start:search_end], axis=0)
     
-    # Kernel must be at least 1 pixel wide
-    kernel_width = max(int(width * 0.02), 1)
-    kernel = np.ones(kernel_width) / kernel_width
-    
-    # Final check: only convolve if the array is not empty
     if gap_col_sums.size > 0:
-        smoothed_gap = np.convolve(gap_col_sums, kernel, mode='same')
-        center_x_relative = np.argmin(smoothed_gap)
-        center_gap_x = search_start + center_x_relative
+        # We look for the minimum edge density (the smooth plastic gap)
+        kernel = np.ones(max(1, int(width * 0.03))) / max(1, int(width * 0.03))
+        smoothed = np.convolve(gap_col_sums, kernel, mode='same')
+        center_gap_x = search_start + np.argmin(smoothed)
     else:
         center_gap_x = width // 2
 
     return {
-        "L_outer": l_outer, 
-        "L_inner": l_inner, 
-        "R_inner": r_inner, 
-        "R_outer": r_outer, 
+        "L_outer": l_outer, "L_inner": l_inner, 
+        "R_inner": r_inner, "R_outer": r_outer, 
         "Center": center_gap_x
     }
 
