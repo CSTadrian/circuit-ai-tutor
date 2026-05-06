@@ -7,6 +7,7 @@ import io
 import pytz
 import cv2
 import numpy as np
+import base64  # Added per your previous correction
 from datetime import datetime
 from PIL import Image as PILImage, ImageDraw, ImageOps
 
@@ -166,74 +167,48 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-
-# --- 4. COMPUTER VISION & DRAWING FUNCTIONS ---
-
-def detect_breadboard_vertical_structure(pil_img):
+# --- NEW CV FUNCTION: FIND BREADBOARD BOUNDARIES ---
+def find_breadboard_x_bounds(pil_img):
+    """
+    Uses edge density to locate the actual breadboard horizontally within the image.
+    """
     img_cv = np.array(pil_img)
-    if len(img_cv.shape) != 3:
-        return None 
-
-    hsv = cv2.cvtColor(img_cv, cv2.COLOR_RGB2HSV)
-    gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
-    height, width = img_cv.shape[:2]
-
-    # 1. ROBUST COLOR DETECTION (Wider ranges for glare)
-    # Red: handles both ends of the HSV spectrum
-    lower_red1, upper_red1 = np.array([0, 50, 40]), np.array([15, 255, 255])
-    lower_red2, upper_red2 = np.array([160, 50, 40]), np.array([180, 255, 255])
-    mask_red = cv2.bitwise_or(cv2.inRange(hsv, lower_red1, upper_red1), 
-                              cv2.inRange(hsv, lower_red2, upper_red2))
-    
-    # Blue: wider saturation/value range to catch faded lines
-    lower_blue, upper_blue = np.array([90, 40, 40]), np.array([140, 255, 255])
-    mask_blue = cv2.inRange(hsv, lower_blue, upper_blue)
-
-    mask_colors = cv2.bitwise_or(mask_red, mask_blue)
-    col_sums = np.sum(mask_colors, axis=0)
-
-    # 2. LOCAL PEAK DETECTION (Finds rails even if one side is darker/glared)
-    half = width // 2
-    
-    def find_rail_bounds(data, offset=0):
-        # Find the max in this specific half to set a local threshold
-        if len(data) == 0 or np.max(data) == 0: return None
-        thresh = np.max(data) * 0.25
-        peaks = np.where(data > thresh)[0]
-        if len(peaks) > 0:
-            return peaks[0] + offset, peaks[-1] + offset
-        return None
-
-    left_bounds = find_rail_bounds(col_sums[:half])
-    right_bounds = find_rail_bounds(col_sums[half:], offset=half)
-
-    # Fallbacks if detection fails
-    l_outer, l_inner = left_bounds if left_bounds else (int(width*0.05), int(width*0.15))
-    r_inner, r_outer = right_bounds if right_bounds else (int(width*0.85), int(width*0.95))
-
-    # 3. CENTER GAP DETECTION (Looking for the vertical "valley")
-    # We look specifically between the inner rails
-    search_start = l_inner + int((r_inner - l_inner) * 0.35)
-    search_end = l_inner + int((r_inner - l_inner) * 0.65)
-    
-    edges = cv2.Canny(gray, 30, 100) # Lower thresholds to find the gap edges
-    gap_col_sums = np.sum(edges[:, search_start:search_end], axis=0)
-    
-    if gap_col_sums.size > 0:
-        # We look for the minimum edge density (the smooth plastic gap)
-        kernel = np.ones(max(1, int(width * 0.03))) / max(1, int(width * 0.03))
-        smoothed = np.convolve(gap_col_sums, kernel, mode='same')
-        center_gap_x = search_start + np.argmin(smoothed)
+    if len(img_cv.shape) == 3:
+        gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
     else:
-        center_gap_x = width // 2
+        gray = img_cv
 
-    return {
-        "L_outer": l_outer, "L_inner": l_inner, 
-        "R_inner": r_inner, "R_outer": r_outer, 
-        "Center": center_gap_x
-    }
+    # Use Canny to find edges (breadboard holes create very dense edge signatures)
+    edges = cv2.Canny(gray, 50, 150)
+    
+    # Project edge density vertically
+    col_sums = np.sum(edges, axis=0)
+
+    # Smooth the distribution to find the main body
+    window_size = max(int(img_cv.shape[1] * 0.02), 5)
+    kernel = np.ones(window_size) / window_size
+    smoothed = np.convolve(col_sums, kernel, mode='same')
+
+    # Threshold for what we consider "inside" the breadboard
+    threshold_val = np.max(smoothed) * 0.25
+    active_cols = np.where(smoothed > threshold_val)[0]
+
+    if len(active_cols) > 0:
+        x_start = int(active_cols[0])
+        x_end = int(active_cols[-1])
+        
+        # Verify it looks like a breadboard (takes up at least 30% of width)
+        if (x_end - x_start) > img_cv.shape[1] * 0.3:
+            return x_start, x_end
+
+    # Fallback if detection fails
+    return 0, img_cv.shape[1]
 
 def detect_horizontal_rows(pil_img):
+    """
+    Detects breadboard rows AFTER resizing. 
+    The higher resolution helps the algorithm find holes more accurately.
+    """
     img_cv = np.array(pil_img)
     if len(img_cv.shape) == 3:
         gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
@@ -241,7 +216,10 @@ def detect_horizontal_rows(pil_img):
         gray = img_cv
 
     blurred = cv2.GaussianBlur(gray, (7, 7), 0)
-    thresh = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 31, 10)
+    thresh = cv2.adaptiveThreshold(
+        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+        cv2.THRESH_BINARY_INV, 31, 10
+    )
 
     height, width = thresh.shape
     row_sums = np.sum(thresh, axis=1)
@@ -278,9 +256,13 @@ def detect_horizontal_rows(pil_img):
         filled_peaks.append(peaks[-1])
         peaks = filled_peaks
 
+    # Normalize back to 0-1000 scale based on the NEW height
     return [int((y / height) * 1000) for y in peaks]
     
 def process_uploaded_image(file_input):
+    """
+    Robust image loader to fix Android/iOS rotation and buffering issues.
+    """
     try:
         if isinstance(file_input, str):
             img = PILImage.open(file_input)
@@ -305,47 +287,44 @@ def process_uploaded_image(file_input):
         return None
 
 def draw_coordinate_grid(image, snap_rows=None):
+    """
+    Draws realistic internal breadboard connections dynamically based on the detected board bounds.
+    """
     draw = ImageDraw.Draw(image)
-    w, h = image.size
+    w_img, h_img = image.size
     pale_blue = (173, 216, 230)
     
-    # 1. Detect structural anchors (Colors + Center Gap)
-    bounds = detect_breadboard_vertical_structure(image)
-    if not bounds:
-        bounds = {"L_outer": int(w*0.05), "L_inner": int(w*0.12), "R_inner": int(w*0.88), "R_outer": int(w*0.95), "Center": int(w*0.5)}
+    # 1. Dynamically locate the breadboard body
+    x_start, x_end = find_breadboard_x_bounds(image)
+    bb_w = x_end - x_start
 
-    # 2. Y-Axis logic for vertical power rails 
-    if snap_rows and len(snap_rows) > 0:
-        start_y = max(0, int(snap_rows[0] * h / 1000) - int(h * 0.02))
-        end_y = min(h, int(snap_rows[-1] * h / 1000) + int(h * 0.02))
-    else:
-        start_y, end_y = 0, h
+    # 2. Calculate standard breadboard proportional offsets relative to the bounding box
+    rail_1 = x_start + int(bb_w * 0.05)
+    rail_2 = x_start + int(bb_w * 0.12)
+    rail_3 = x_start + int(bb_w * 0.88)
+    rail_4 = x_start + int(bb_w * 0.95)
+
+    ae_start = x_start + int(bb_w * 0.20)
+    ae_end = x_start + int(bb_w * 0.45)
+    fj_start = x_start + int(bb_w * 0.55)
+    fj_end = x_start + int(bb_w * 0.80)
+
+    # 3. Draw Vertical Power Rails
+    for rx in [rail_1, rail_2, rail_3, rail_4]:
+        draw.line([(rx, 0), (rx, h_img)], fill=pale_blue, width=3)
     
-    # 3. Draw Vertical Power Rails 
-    # Placed using the red/blue color detections
-    l_rail_1 = bounds["L_outer"] + int((bounds["L_inner"] - bounds["L_outer"]) * 0.25)
-    l_rail_2 = bounds["L_outer"] + int((bounds["L_inner"] - bounds["L_outer"]) * 0.75)
-    r_rail_1 = bounds["R_inner"] + int((bounds["R_outer"] - bounds["R_inner"]) * 0.25)
-    r_rail_2 = bounds["R_inner"] + int((bounds["R_outer"] - bounds["R_inner"]) * 0.75)
-    
-    for x_px in [l_rail_1, l_rail_2, r_rail_1, r_rail_2]:
-        draw.line([(x_px, start_y), (x_px, end_y)], fill=pale_blue, width=3)
-    
-    # 4. Draw Split Horizontal Rows (A-E and F-J) mapped to the center gap
+    # 4. Draw Split Horizontal Rows
     if snap_rows:
-        ae_start = bounds["L_inner"] + int(w * 0.03)
-        ae_end   = bounds["Center"] - int(w * 0.02)
-        fj_start = bounds["Center"] + int(w * 0.02)
-        fj_end   = bounds["R_inner"] - int(w * 0.03)
-        
         for ry in snap_rows:
-            y_px = ry * h / 1000
+            y_px = ry * h_img / 1000
+            # Left block (A-E)
             draw.line([(ae_start, y_px), (ae_end, y_px)], fill=pale_blue, width=3)
+            # Right block (F-J)
             draw.line([(fj_start, y_px), (fj_end, y_px)], fill=pale_blue, width=3)
             
     # Draw red reference markers on edges
     for i in range(0, 1001, 100):
-        x_px, y_px = i * w / 1000, i * h / 1000
+        x_px, y_px = i * w_img / 1000, i * h_img / 1000
         draw.line([(x_px, 0), (x_px, 30)], fill=(255, 0, 0), width=4)
         draw.line([(0, y_px), (30, y_px)], fill=(255, 0, 0), width=4)
     return image
@@ -361,7 +340,7 @@ def draw_pins_on_image(image, df_components):
         draw.ellipse([end[0]-6, end[1]-6, end[0]+6, end[1]+6], fill=(255, 255, 0), outline=(0,0,0))
     return img_copy
 
-def save_to_drive(user_id, task_name, ai_feedback, images_dict):
+def save_to_drive(user_id, task_name, tutor_note, images_dict):
     service = get_drive_service()
     hk_tz = pytz.timezone('Asia/Hong_Kong')
     hk_time_str = datetime.now(hk_tz).strftime('%Y-%m-%d %H:%M:%S')
@@ -379,10 +358,11 @@ def save_to_drive(user_id, task_name, ai_feedback, images_dict):
                 media = MediaIoBaseUpload(buf, mimetype='image/png', resumable=True)
                 service.files().create(body=img_metadata, media_body=media).execute()
 
+        # CSV LOGIC UPDATED TO ONLY SAVE TUTOR NOTE
         new_row = pd.DataFrame([{
             "User ID": user_id, "Time": hk_time_str, 
             "Raw": f"{file_prefix}_1.png", "Final": f"{file_prefix}_4.png", 
-            "Feedback": ai_feedback
+            "Tutor Note": tutor_note
         }])
 
         query = f"name='{CSV_FILENAME}' and '{PARENT_FOLDER_ID}' in parents and trashed=false"
@@ -560,6 +540,7 @@ if active_input:
             with st.spinner(UI[l]["checking"]):
                 summary = st.session_state.components_df.to_string(index=False)
                 
+                # UPDATED PROMPT: Requesting tutor_note to support correction request
                 prompt = f"""
                     Task: {selected_task}. 
                     
@@ -583,7 +564,7 @@ if active_input:
                     - If a circuit is broken because the student expects horizontal connectivity on the edges, flag as "open_circuit" and explain the vertical rail logic in the feedback.
                     - For 'location', you MUST use the [LY, LX] coordinates of the specific pin causing the error.
                 
-                    Compare to Target Schematic. Return JSON with 'feedback' and 'detected_errors'.
+                    Compare to Target Schematic. Return JSON with 'feedback', 'tutor_note' (private grading data), and 'detected_errors'.
                     {UI[l]["prompt_addition"]}
                     """
                 
@@ -597,6 +578,7 @@ if active_input:
                                 "type": "OBJECT",
                                 "properties": {
                                     "feedback": {"type": "STRING"},
+                                    "tutor_note": {"type": "STRING", "description": "Specific, factual note about student errors suitable for saving to grading CSV logs."},
                                     "detected_errors": {
                                         "type": "ARRAY", 
                                         "items": {
@@ -608,7 +590,7 @@ if active_input:
                                         }
                                     }
                                 },
-                                "required": ["feedback", "detected_errors"]
+                                "required": ["feedback", "tutor_note", "detected_errors"]
                             }
                         )
                     )
@@ -658,12 +640,15 @@ if active_input:
         
         if st.session_state.analysis_result:
             feedback_text = st.session_state.analysis_result.get("feedback", "No feedback provided.")
+            tutor_note = st.session_state.analysis_result.get("tutor_note", "No tutor note generated.")
+            
             st.info(feedback_text)
 
             col_a, col_b, col_c = st.columns(3)
             with col_a:
                 if st.button(UI[l]["save"], type="primary", use_container_width=True):
-                    save_to_drive(user_id, selected_task, feedback_text, 
+                    # Passing only the tutor_note into save_to_drive per requested logic
+                    save_to_drive(user_id, selected_task, tutor_note, 
                                  {"1": st.session_state.img1, "2": st.session_state.img2, 
                                   "3": st.session_state.img3, "4": st.session_state.img4})
             with col_b:
