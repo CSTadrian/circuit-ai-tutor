@@ -386,23 +386,38 @@ with st.sidebar:
         st.stop()
     
     # student_file = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp","heic"])
-    input_method = st.radio(UI[l]["input_method"], [UI[l]["upload_file"], UI[l]["take_photo"]])
+    # input_method = st.radio(UI[l]["input_method"], [UI[l]["upload_file"], UI[l]["take_photo"]])
     
     student_input = None
-    if input_method == UI[l]["upload_file"]:
+    if input_choice == UI[l]["upload_file"]:
         student_input = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp", "heic"])
     else:
         student_input = st.camera_input(UI[l]["take_photo"])
+        
+    # if input_method == UI[l]["upload_file"]:
+    #     student_input = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp", "heic"])
+    # else:
+    #     student_input = st.camera_input(UI[l]["take_photo"])
 
-    if st.button(UI[l]["reset"]): 
-        reset_flow()
-        st.rerun()
-
-    
     # if st.button(UI[l]["reset"]): 
+    #     reset_flow()
+    #     st.rerun()
+ 
+    # # if st.button(UI[l]["reset"]): 
+    # if st.button(UI[l]["reset"], key="reset_button_main"):
+    #     reset_flow()
+    #     st.rerun()
+
+    input_choice = st.radio(
+        UI[l]["input_method"], 
+        [UI[l]["upload_file"], UI[l]["take_photo"]], 
+        key="input_method_selector"
+    )
+
     if st.button(UI[l]["reset"], key="reset_button_main"):
         reset_flow()
         st.rerun()
+        
 
     st.divider()
     st.markdown(f"### {UI[l]['guide_title']}")
