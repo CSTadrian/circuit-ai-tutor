@@ -399,7 +399,8 @@ with st.sidebar:
         st.rerun()
 
     
-    if st.button(UI[l]["reset"]): 
+    # if st.button(UI[l]["reset"]): 
+    if st.button(UI[l]["reset"], key="reset_button_main"):
         reset_flow()
         st.rerun()
 
