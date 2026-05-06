@@ -62,6 +62,7 @@ UI = {
         "upload_prompt": "Upload a photo to begin.",
         "prompt_addition": "", 
         "guide_title": "📖 Quick Guide",
+        "camera": "Take a Photo of your Circuit",
         "guide_text": """
         **How to Start:**
         1. Select Task & Upload Photo
@@ -100,6 +101,7 @@ UI = {
         "upload_prompt": "請上傳照片以開始。",
         # Add these key-value pairs to the "hk" dictionary:
         "guide_title": "📖 快速指南",
+        "camera": "拍攝電路照片",
         "guide_text": """
         **使用步驟：**
         1. 選擇任務並上傳照片
