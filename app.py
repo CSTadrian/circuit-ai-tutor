@@ -262,13 +262,24 @@ def process_uploaded_image(file_input):
         img = ImageOps.exif_transpose(img)
         img = img.convert("RGB")
         
-        # Resize to prevent mobile memory crashes
-        img.thumbnail((3600, 3600), PILImage.Resampling.LANCZOS)
+        w, h = img.size
+        new_size = (w * 2, h * 2)
+        
+        # We use LANCZOS for high quality to keep breadboard holes and wires sharp
+        img = img.resize(new_size, PILImage.Resampling.LANCZOS)
+        
+        # 3. SAFETY CAP: Prevent browser crashes if original was already massive
+        MAX_DIM = 4000 
+        if max(img.size) > MAX_DIM:
+            img.thumbnail((MAX_DIM, MAX_DIM), PILImage.Resampling.LANCZOS)
+            
         return img
     except Exception as e:
         st.error(f"Image Load Failed: {e}")
         return None
-        
+
+
+      
 
 def draw_coordinate_grid(image, snap_rows=None):
     draw = ImageDraw.Draw(image)
