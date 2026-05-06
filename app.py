@@ -159,11 +159,12 @@ else:
 st.set_page_config(page_title="AI Circuit Tutor", layout="wide")
 st.markdown("""
     <style>
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    [data-testid="stToolbar"] {visibility: hidden !important;}
-    .stDeployButton {display:none;}
+    .block-container {
+        padding-top: 1rem;
+        padding-bottom: 0rem;
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -432,14 +433,22 @@ if student_input:
 
     # STEP 1: DETECTION
     if st.session_state.step == 1:
-        col1, col2 = st.columns(2)
-        col1.image(raw_schematic, caption=UI[l]["schematic"])
-        # Ensure we are drawing on a copy to avoid mutating session state
+        # We remove the st.columns(2) to let images take the full width of the screen
+        
+        st.subheader(UI[l]["schematic"])
+        st.image(raw_schematic, use_container_width=True)
+        
+        st.divider() # Adds a visual break between the two large images
+        
+        st.subheader(UI[l]["your_circuit"])
+        # Drawing on a copy and expanding to full container width
         grid_view = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows)
-        col2.image(grid_view, caption=UI[l]["your_circuit"])
+        st.image(grid_view, use_container_width=True)
 
-        if st.button(UI[l]["step1_btn"], type="primary"):
-            with st.spinner(UI[l]["analyzing"]):
+        # Large, clear button for the next step
+        if st.button(UI[l]["step1_btn"], type="primary", use_container_width=True):
+            with st.spinner(UI[l]["analyzing"])
+            
                 prompt = """
                     Identify components on the breadboard. Specifically:
                     - POWER SUPPLY: The red/black power input module (2 pins).
