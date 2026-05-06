@@ -263,7 +263,7 @@ def process_uploaded_image(file_input):
         img = img.convert("RGB")
         
         w, h = img.size
-        new_size = (w * 2, h * 2)
+        new_size = (w * 2, h * 4)
         
         # We use LANCZOS for high quality to keep breadboard holes and wires sharp
         img = img.resize(new_size, PILImage.Resampling.LANCZOS)
