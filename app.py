@@ -447,7 +447,7 @@ if student_input:
 
         # Large, clear button for the next step
         if st.button(UI[l]["step1_btn"], type="primary", use_container_width=True):
-            with st.spinner(UI[l]["analyzing"])
+            with st.spinner(UI[l]["analyzing"]):
             
                 prompt = """
                     Identify components on the breadboard. Specifically:
