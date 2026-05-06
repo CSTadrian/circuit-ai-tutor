@@ -388,6 +388,8 @@ with st.sidebar:
         st.stop()
     
     student_file = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp","heic"])
+    camera_photo = st.camera_input(UI[l]["camera"])
+    
     if st.button(UI[l]["reset"]): 
         reset_flow()
         st.rerun()
@@ -397,11 +399,16 @@ with st.sidebar:
     st.markdown(UI[l]['guide_text'])
 
 # --- 7. APPLICATION LOGIC ---
-if student_file:
+# Determine which input to use (Priority to manual upload if both exist)
+active_input = student_file if student_file is not None else camera_photo
+
+if active_input:
     if st.session_state.img1 is None:
-        st.session_state.img1 = process_uploaded_image(io.BytesIO(student_file.getvalue()))
+        # Use the existing robust loader
+        st.session_state.img1 = process_uploaded_image(io.BytesIO(active_input.getvalue()))
     
     raw_student = st.session_state.img1
+    
 
     if not st.session_state.hough_rows:
         st.session_state.hough_rows = detect_horizontal_rows(raw_student)
