@@ -263,7 +263,7 @@ def process_uploaded_image(file_input):
         img = img.convert("RGB")
         
         # Resize to prevent mobile memory crashes
-        img.thumbnail((1200, 1200), PILImage.Resampling.LANCZOS)
+        img.thumbnail((3600, 3600), PILImage.Resampling.LANCZOS)
         return img
     except Exception as e:
         st.error(f"Image Load Failed: {e}")
