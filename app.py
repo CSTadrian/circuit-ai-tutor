@@ -169,49 +169,64 @@ st.markdown("""
 
 # --- 4. COMPUTER VISION & DRAWING FUNCTIONS ---
 
-def detect_breadboard_x_bounds(pil_img):
+def detect_breadboard_vertical_structure(pil_img):
     """
-    Dynamically finds the left and right boundaries of the actual breadboard
-    by looking for the horizontal density of the breadboard holes.
+    Detects the structural X-coordinates of the breadboard:
+    1. Left and Right power rails (using Red/Blue line detection).
+    2. Center dividing gap.
     """
     img_cv = np.array(pil_img)
-    if len(img_cv.shape) == 3:
-        gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
+    if len(img_cv.shape) != 3:
+        return None # Grayscale fallback
+
+    hsv = cv2.cvtColor(img_cv, cv2.COLOR_RGB2HSV)
+    gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
+    height, width = img_cv.shape[:2]
+
+    # 1. Detect Red and Blue printed lines
+    lower_red1, upper_red1 = np.array([0, 70, 50]), np.array([10, 255, 255])
+    lower_red2, upper_red2 = np.array([170, 70, 50]), np.array([180, 255, 255])
+    mask_red = cv2.bitwise_or(cv2.inRange(hsv, lower_red1, upper_red1), cv2.inRange(hsv, lower_red2, upper_red2))
+    
+    lower_blue, upper_blue = np.array([100, 100, 50]), np.array([130, 255, 255])
+    mask_blue = cv2.inRange(hsv, lower_blue, upper_blue)
+
+    mask_colors = cv2.bitwise_or(mask_red, mask_blue)
+    col_sums_colors = np.sum(mask_colors, axis=0)
+
+    # 2. Find the left and right rail color zones
+    half_width = width // 2
+    left_color_x = np.where(col_sums_colors[:half_width] > np.max(col_sums_colors[:half_width]) * 0.3)[0]
+    right_color_x = np.where(col_sums_colors[half_width:] > np.max(col_sums_colors[half_width:]) * 0.3)[0] + half_width
+
+    # Safely extract rail bounds (with fallbacks if lighting hides colors)
+    l_outer = left_color_x[0] if len(left_color_x) > 0 else int(width * 0.05)
+    l_inner = left_color_x[-1] if len(left_color_x) > 0 else int(width * 0.15)
+    r_inner = right_color_x[0] if len(right_color_x) > 0 else int(width * 0.85)
+    r_outer = right_color_x[-1] if len(right_color_x) > 0 else int(width * 0.95)
+
+    # 3. Detect the center gap (The trough with no holes)
+    # We look between the inner left and inner right rails for a "valley" of edges.
+    search_start = l_inner + int((r_inner - l_inner) * 0.3)
+    search_end = l_inner + int((r_inner - l_inner) * 0.7)
+    
+    edges = cv2.Canny(gray, 50, 150)
+    gap_col_sums = np.sum(edges[:, search_start:search_end], axis=0)
+    
+    # Smooth the edges to find the distinct smooth trough
+    kernel = np.ones(int(width*0.02)) / int(width*0.02)
+    smoothed_gap = np.convolve(gap_col_sums, kernel, mode='same')
+    
+    if len(smoothed_gap) > 0:
+        center_x_relative = np.argmin(smoothed_gap)
+        center_gap_x = search_start + center_x_relative
     else:
-        gray = img_cv
+        center_gap_x = width // 2
 
-    blurred = cv2.GaussianBlur(gray, (7, 7), 0)
-    thresh = cv2.adaptiveThreshold(
-        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-        cv2.THRESH_BINARY_INV, 31, 10
-    )
-
-    height, width = thresh.shape
-    col_sums = np.sum(thresh, axis=0)
-
-    # Smooth the column sums to avoid random spikes
-    window_size = max(int(width * 0.01), 5)
-    kernel = np.ones(window_size) / window_size
-    smoothed_sums = np.convolve(col_sums, kernel, mode='same')
-
-    # Find where the breadboard holes actually exist
-    threshold_val = np.max(smoothed_sums) * 0.20
-    valid_cols = np.where(smoothed_sums > threshold_val)[0]
-
-    if len(valid_cols) > 10:
-        min_x = int(valid_cols[0])
-        max_x = int(valid_cols[-1])
-        # Add slight padding inward to ensure lines hit exactly on holes
-        return max(0, min_x), min(width, max_x)
-        
-    return int(width * 0.05), int(width * 0.95) # Fallback
+    return {"L_outer": l_outer, "L_inner": l_inner, "R_inner": r_inner, "R_outer": r_outer, "Center": center_gap_x}
 
 
 def detect_horizontal_rows(pil_img):
-    """
-    Detects breadboard rows AFTER resizing. 
-    The higher resolution helps the algorithm find holes more accurately.
-    """
     img_cv = np.array(pil_img)
     if len(img_cv.shape) == 3:
         gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
@@ -219,10 +234,7 @@ def detect_horizontal_rows(pil_img):
         gray = img_cv
 
     blurred = cv2.GaussianBlur(gray, (7, 7), 0)
-    thresh = cv2.adaptiveThreshold(
-        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-        cv2.THRESH_BINARY_INV, 31, 10
-    )
+    thresh = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 31, 10)
 
     height, width = thresh.shape
     row_sums = np.sum(thresh, axis=1)
@@ -259,13 +271,9 @@ def detect_horizontal_rows(pil_img):
         filled_peaks.append(peaks[-1])
         peaks = filled_peaks
 
-    # Normalize back to 0-1000 scale based on the NEW height
     return [int((y / height) * 1000) for y in peaks]
     
 def process_uploaded_image(file_input):
-    """
-    Robust image loader to fix Android/iOS rotation and buffering issues.
-    """
     try:
         if isinstance(file_input, str):
             img = PILImage.open(file_input)
@@ -290,49 +298,42 @@ def process_uploaded_image(file_input):
         return None
 
 def draw_coordinate_grid(image, snap_rows=None):
-    """
-    Draws realistic internal breadboard connections dynamically mapped 
-    onto the actual detected boundaries of the breadboard in the image.
-    """
     draw = ImageDraw.Draw(image)
     w, h = image.size
     pale_blue = (173, 216, 230)
     
-    # 1. Dynamically Detect Breadboard Bounds (X-Axis)
-    min_x, max_x = detect_breadboard_x_bounds(image)
-    bb_w = max_x - min_x
-    
-    # 2. Determine Y-Axis bounds for vertical power rails 
-    # (So they don't draw endlessly across the desk background)
+    # 1. Detect structural anchors (Colors + Center Gap)
+    bounds = detect_breadboard_vertical_structure(image)
+    if not bounds:
+        bounds = {"L_outer": int(w*0.05), "L_inner": int(w*0.12), "R_inner": int(w*0.88), "R_outer": int(w*0.95), "Center": int(w*0.5)}
+
+    # 2. Y-Axis logic for vertical power rails 
     if snap_rows and len(snap_rows) > 0:
-        start_y = snap_rows[0] * h / 1000
-        end_y = snap_rows[-1] * h / 1000
-        # Give a small 2% padding above and below the first/last row
-        start_y = max(0, start_y - int(h * 0.02))
-        end_y = min(h, end_y + int(h * 0.02))
+        start_y = max(0, int(snap_rows[0] * h / 1000) - int(h * 0.02))
+        end_y = min(h, int(snap_rows[-1] * h / 1000) + int(h * 0.02))
     else:
         start_y, end_y = 0, h
     
-    # 3. Draw Vertical Power Rails (LHS & RHS)
-    # Scaled properly relative to standard internal breadboard proportions
-    rail_ratios = [0.05, 0.105, 0.895, 0.947]
-    for ratio in rail_ratios:
-        x_px = min_x + int(bb_w * ratio)
+    # 3. Draw Vertical Power Rails 
+    # Placed using the red/blue color detections
+    l_rail_1 = bounds["L_outer"] + int((bounds["L_inner"] - bounds["L_outer"]) * 0.25)
+    l_rail_2 = bounds["L_outer"] + int((bounds["L_inner"] - bounds["L_outer"]) * 0.75)
+    r_rail_1 = bounds["R_inner"] + int((bounds["R_outer"] - bounds["R_inner"]) * 0.25)
+    r_rail_2 = bounds["R_inner"] + int((bounds["R_outer"] - bounds["R_inner"]) * 0.75)
+    
+    for x_px in [l_rail_1, l_rail_2, r_rail_1, r_rail_2]:
         draw.line([(x_px, start_y), (x_px, end_y)], fill=pale_blue, width=3)
     
-    # 4. Draw Split Horizontal Rows (Columns A-E and F-J)
+    # 4. Draw Split Horizontal Rows (A-E and F-J) mapped to the center gap
     if snap_rows:
-        # A-E and F-J scaled cleanly inside the dynamic breadboard bounds
-        ae_start = min_x + int(bb_w * 0.21)
-        ae_end   = min_x + int(bb_w * 0.42)
-        fj_start = min_x + int(bb_w * 0.58)
-        fj_end   = min_x + int(bb_w * 0.79)
+        ae_start = bounds["L_inner"] + int(w * 0.03)
+        ae_end   = bounds["Center"] - int(w * 0.02)
+        fj_start = bounds["Center"] + int(w * 0.02)
+        fj_end   = bounds["R_inner"] - int(w * 0.03)
         
         for ry in snap_rows:
             y_px = ry * h / 1000
-            # Left block of pins (A-E)
             draw.line([(ae_start, y_px), (ae_end, y_px)], fill=pale_blue, width=3)
-            # Right block of pins (F-J)
             draw.line([(fj_start, y_px), (fj_end, y_px)], fill=pale_blue, width=3)
             
     # Draw red reference markers on edges
@@ -552,7 +553,6 @@ if active_input:
             with st.spinner(UI[l]["checking"]):
                 summary = st.session_state.components_df.to_string(index=False)
                 
-                # UPDATED PROMPT: Explicitly categorizing errors
                 prompt = f"""
                     Task: {selected_task}. 
                     
@@ -581,7 +581,6 @@ if active_input:
                     """
                 
                 try:
-                    # UPDATED API CALL: New Schema structure
                     resp = client.models.generate_content(
                         model=MODEL_ID, 
                         contents=[raw_schematic, st.session_state.img3, prompt],
@@ -617,7 +616,6 @@ if active_input:
                     draw = ImageDraw.Draw(diag_img)
                     w, h = diag_img.size
                     
-                    # UPDATED DRAWING LOGIC: Interpret error types
                     errors = st.session_state.analysis_result.get("detected_errors", [])
                     for err in errors:
                         err_type = err.get("error_type", "open_circuit")
@@ -626,17 +624,12 @@ if active_input:
                         if len(loc) == 2:
                             ey, ex = loc
                             
-                            # --- NEW: SNAP TO NEAREST ACTUAL PIN ---
-                            # This ensures the circle isn't "floating" in empty space
                             if not st.session_state.components_df.empty:
-                                # Calculate distance to all known pins
                                 df = st.session_state.components_df
                                 distances = np.sqrt((df['LX'] - ex)**2 + (df['LY'] - ey)**2)
                                 nearest_idx = distances.idxmin()
-                                # Use the actual pin coordinate instead of the AI's guess
                                 ex = df.loc[nearest_idx, 'LX']
                                 ey = df.loc[nearest_idx, 'LY']
-                            # ---------------------------------------
 
                             px, py = ex * w / 1000, ey * h / 1000
                             
