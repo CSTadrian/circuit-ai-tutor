@@ -166,6 +166,47 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+
+# --- 4. COMPUTER VISION & DRAWING FUNCTIONS ---
+
+def detect_breadboard_x_bounds(pil_img):
+    """
+    Dynamically finds the left and right boundaries of the actual breadboard
+    by looking for the horizontal density of the breadboard holes.
+    """
+    img_cv = np.array(pil_img)
+    if len(img_cv.shape) == 3:
+        gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
+    else:
+        gray = img_cv
+
+    blurred = cv2.GaussianBlur(gray, (7, 7), 0)
+    thresh = cv2.adaptiveThreshold(
+        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+        cv2.THRESH_BINARY_INV, 31, 10
+    )
+
+    height, width = thresh.shape
+    col_sums = np.sum(thresh, axis=0)
+
+    # Smooth the column sums to avoid random spikes
+    window_size = max(int(width * 0.01), 5)
+    kernel = np.ones(window_size) / window_size
+    smoothed_sums = np.convolve(col_sums, kernel, mode='same')
+
+    # Find where the breadboard holes actually exist
+    threshold_val = np.max(smoothed_sums) * 0.20
+    valid_cols = np.where(smoothed_sums > threshold_val)[0]
+
+    if len(valid_cols) > 10:
+        min_x = int(valid_cols[0])
+        max_x = int(valid_cols[-1])
+        # Add slight padding inward to ensure lines hit exactly on holes
+        return max(0, min_x), min(width, max_x)
+        
+    return int(width * 0.05), int(width * 0.95) # Fallback
+
+
 def detect_horizontal_rows(pil_img):
     """
     Detects breadboard rows AFTER resizing. 
@@ -250,27 +291,49 @@ def process_uploaded_image(file_input):
 
 def draw_coordinate_grid(image, snap_rows=None):
     """
-    Draws realistic internal breadboard connections (Vertical Power Rails + Split Center Rows)
+    Draws realistic internal breadboard connections dynamically mapped 
+    onto the actual detected boundaries of the breadboard in the image.
     """
     draw = ImageDraw.Draw(image)
     w, h = image.size
     pale_blue = (173, 216, 230)
     
-    # 1. Draw Vertical Power Rails (LHS & RHS)
-    # Using typical percentages for edge rails: 5%, 10% (Left), and 90%, 95% (Right)
-    rail_x_offsets = [0.05, 0.10, 0.90, 0.95]
-    for x_offset in rail_x_offsets:
-        x_px = int(w * x_offset)
-        draw.line([(x_px, 0), (x_px, h)], fill=pale_blue, width=3)
+    # 1. Dynamically Detect Breadboard Bounds (X-Axis)
+    min_x, max_x = detect_breadboard_x_bounds(image)
+    bb_w = max_x - min_x
     
-    # 2. Draw Split Horizontal Rows (Columns A-E and F-J)
+    # 2. Determine Y-Axis bounds for vertical power rails 
+    # (So they don't draw endlessly across the desk background)
+    if snap_rows and len(snap_rows) > 0:
+        start_y = snap_rows[0] * h / 1000
+        end_y = snap_rows[-1] * h / 1000
+        # Give a small 2% padding above and below the first/last row
+        start_y = max(0, start_y - int(h * 0.02))
+        end_y = min(h, end_y + int(h * 0.02))
+    else:
+        start_y, end_y = 0, h
+    
+    # 3. Draw Vertical Power Rails (LHS & RHS)
+    # Scaled properly relative to standard internal breadboard proportions
+    rail_ratios = [0.05, 0.105, 0.895, 0.947]
+    for ratio in rail_ratios:
+        x_px = min_x + int(bb_w * ratio)
+        draw.line([(x_px, start_y), (x_px, end_y)], fill=pale_blue, width=3)
+    
+    # 4. Draw Split Horizontal Rows (Columns A-E and F-J)
     if snap_rows:
+        # A-E and F-J scaled cleanly inside the dynamic breadboard bounds
+        ae_start = min_x + int(bb_w * 0.21)
+        ae_end   = min_x + int(bb_w * 0.42)
+        fj_start = min_x + int(bb_w * 0.58)
+        fj_end   = min_x + int(bb_w * 0.79)
+        
         for ry in snap_rows:
             y_px = ry * h / 1000
             # Left block of pins (A-E)
-            draw.line([(w * 0.18, y_px), (w * 0.45, y_px)], fill=pale_blue, width=3)
+            draw.line([(ae_start, y_px), (ae_end, y_px)], fill=pale_blue, width=3)
             # Right block of pins (F-J)
-            draw.line([(w * 0.55, y_px), (w * 0.82, y_px)], fill=pale_blue, width=3)
+            draw.line([(fj_start, y_px), (fj_end, y_px)], fill=pale_blue, width=3)
             
     # Draw red reference markers on edges
     for i in range(0, 1001, 100):
@@ -517,8 +580,6 @@ if active_input:
                     {UI[l]["prompt_addition"]}
                     """
                 
-                
-                
                 try:
                     # UPDATED API CALL: New Schema structure
                     resp = client.models.generate_content(
@@ -545,7 +606,6 @@ if active_input:
                             }
                         )
                     )
-                    
                     
                     result = resp.parsed
                     if isinstance(result, list) and len(result) > 0:
@@ -587,10 +647,8 @@ if active_input:
                             else:
                                 draw.ellipse([px-25, py-25, px+25, py+25], outline="red", width=8)
                                 
-                
                     st.session_state.img4 = diag_img
                     
-
                 except Exception as e:
                     st.error(f"AI Analysis failed: {e}")
                     st.session_state.step = 2
