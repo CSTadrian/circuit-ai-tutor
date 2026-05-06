@@ -21,12 +21,13 @@ from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
 # --- 1. CONFIGURATION & TASK SETUP ---
 TASKS = {
-    "Task 1: Basic LED Circuit": "task1_led.png",
-    "Task 2: Resistor in Series": "task2_series_led.png",
-    "Task 3: Parallel LED Setup": "task3_parallel_led.png",
-    "Task 4: Switch Control": "task4_switch.png",
-    "Task 5: Exam 1": "task5.png",
+    "Task 1: Basic LED Circuit": "task1_led.png",
+    "Task 2: Resistor in Series": "task2_series_led.png",
+    "Task 3: Parallel LED Setup": "task3_parallel_led.png",
+    "Task 4: Switch Control": "task4_switch.png",
+    "Task 5: Exam 1": "task5.png",
 }
+
 DATA_FOLDER = "data"
 MODEL_ID = "gemini-3.1-pro-preview"
 
@@ -148,14 +149,15 @@ else:
 # --- 3. UI CUSTOMIZATION (Hiding Menus) ---
 st.set_page_config(page_title="AI Circuit Tutor", layout="wide")
 st.markdown("""
-    <style>
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    [data-testid="stToolbar"] {visibility: hidden !important;}
-    .stDeployButton {display:none;}
-    </style>
-    """, unsafe_allow_html=True)
+    <style>
+    /* Hide the GitHub/Streamlit menu components */
+    #MainMenu, footer, header {visibility: hidden;}
+    [data-testid="stToolbar"], .stDeployButton {display:none !important;}
+    
+    /* Ensure no stray elements appear */
+    #root > div:nth-child(1) > div > div > div > div > section > div {padding-top: 0rem;}
+    </style>
+    """, unsafe_allow_html=True)
 
 import cv2
 import numpy as np
@@ -246,17 +248,28 @@ def detect_horizontal_rows(pil_img):
     return [int((y / height) * 1000) for y in peaks]
 
 
-def process_uploaded_image(uploaded_file):
-    try:
-        img = PILImage.open(uploaded_file)
-        img = ImageOps.exif_transpose(img) 
-        img = img.convert("RGB")
-        max_res = (1600, 1600)
-        img.thumbnail(max_res, PILImage.Resampling.LANCZOS)
-        return img
-    except Exception as e:
-        st.error(f"Image Loading Error: {e}")
-        return None
+def process_uploaded_image(file_input):
+    """
+    Robust image loader to fix Android/iOS rotation and buffering issues.
+    """
+    try:
+        # If input is a path (str), open it. If it's a file stream, read it.
+        if isinstance(file_input, str):
+            img = PILImage.open(file_input)
+        else:
+            img = PILImage.open(io.BytesIO(file_input.read() if hasattr(file_input, 'read') else file_input))
+            
+        # Fix orientation metadata (crucial for phones)
+        img = ImageOps.exif_transpose(img)
+        img = img.convert("RGB")
+        
+        # Resize to prevent mobile memory crashes
+        img.thumbnail((1200, 1200), PILImage.Resampling.LANCZOS)
+        return img
+    except Exception as e:
+        st.error(f"Image Load Failed: {e}")
+        return None
+        
 
 def draw_coordinate_grid(image, snap_rows=None):
     draw = ImageDraw.Draw(image)
