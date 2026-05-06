@@ -124,6 +124,87 @@ UI = {
 }
 
 # --- 2. AUTHENTICATION & INITIALIZATION ---
+def detect_breadboard_geometry(pil_img):
+    """
+    Scans the image to find the breadboard's boundaries (L, R, T, B) 
+    and the horizontal row positions.
+    """
+    img_cv = np.array(pil_img)
+    gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
+    blurred = cv2.GaussianBlur(gray, (7, 7), 0)
+    thresh = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 31, 10)
+
+    h, w = thresh.shape
+    
+    # --- 1. Find Horizontal Bounds (X-axis) ---
+    col_sums = np.sum(thresh, axis=0)
+    col_thresh = np.max(col_sums) * 0.2
+    active_cols = np.where(col_sums > col_thresh)[0]
+    if len(active_cols) > 0:
+        left, right = active_cols[0], active_cols[-1]
+    else:
+        left, right = int(w * 0.05), int(w * 0.95)
+
+    # --- 2. Find Vertical Rows (Y-axis) ---
+    row_sums = np.sum(thresh[:, left:right], axis=1)
+    window_size = max(int(h * 0.005), 5)
+    smoothed_sums = np.convolve(row_sums, np.ones(window_size)/window_size, mode='same')
+    
+    min_peak_dist = max(int(h * 0.012), 10)
+    peak_thresh = np.max(smoothed_sums) * 0.08
+    
+    peaks = []
+    for i in range(min_peak_dist, h - min_peak_dist):
+        if smoothed_sums[i] > peak_thresh:
+            if smoothed_sums[i] == np.max(smoothed_sums[i-min_peak_dist : i+min_peak_dist]):
+                if not peaks or (i - peaks[-1]) >= min_peak_dist:
+                    peaks.append(i)
+
+    # Convert peaks to 0-1000 scale
+    rows_1000 = [int((y / h) * 1000) for y in peaks]
+    
+    return {
+        "left": int((left / w) * 1000),
+        "right": int((right / w) * 1000),
+        "rows": rows_1000
+    }
+
+def draw_coordinate_grid(image, geo):
+    """
+    Draws connectivity lines based on detected geometry.
+    """
+    draw = ImageDraw.Draw(image)
+    w, h = image.size
+    pale_blue = (173, 216, 230)
+    
+    L, R = geo['left'] * w / 1000, geo['right'] * w / 1000
+    width_bb = R - L
+    
+    # 1. Power Rails (LHS & RHS)
+    # Positions based on typical breadboard proportions relative to its own width
+    rails = [L + width_bb * 0.03, L + width_bb * 0.07, R - width_bb * 0.07, R - width_bb * 0.03]
+    for rx in rails:
+        draw.line([(rx, 0), (rx, h)], fill=pale_blue, width=4)
+
+    # 2. Horizontal Rows (A-E and F-J)
+    center_gap_start = L + width_bb * 0.47
+    center_gap_end = L + width_bb * 0.53
+    block1_start, block1_end = L + width_bb * 0.15, center_gap_start
+    block2_start, block2_end = center_gap_end, R - width_bb * 0.15
+
+    for ry in geo['rows']:
+        y_px = ry * h / 1000
+        draw.line([(block1_start, y_px), (block1_end, y_px)], fill=pale_blue, width=3)
+        draw.line([(block2_start, y_px), (block2_end, y_px)], fill=pale_blue, width=3)
+
+    # Edge Markers
+    for i in range(0, 1001, 100):
+        draw.line([(i * w / 1000, 0), (i * w / 1000, 30)], fill=(255, 0, 0), width=4)
+        draw.line([(0, i * h / 1000), (30, i * h / 1000)], fill=(255, 0, 0), width=4)
+        
+    return image
+
+
 @st.cache_resource
 def get_drive_creds():
     oauth_info = st.secrets["google_oauth"]
@@ -346,6 +427,7 @@ def save_to_drive(user_id, task_name, ai_feedback, images_dict):
         
 # --- 5. SESSION STATE ---
 if "step" not in st.session_state: st.session_state.step = 1
+if "geo" not in st.session_state: st.session_state.geo = None
 if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
 if "analysis_result" not in st.session_state: st.session_state.analysis_result = None
 if "hough_rows" not in st.session_state: st.session_state.hough_rows = []
@@ -353,12 +435,17 @@ for i in range(1, 5):
     if f"img{i}" not in st.session_state: st.session_state[f"img{i}"] = None
 if "lang" not in st.session_state: st.session_state.lang = "en"
 
+# def reset_flow():
+#     for key in ["step", "components_df", "analysis_result", "img1", "img2", "img3", "img4"]:
+#         if "df" in key: st.session_state[key] = pd.DataFrame()
+#         elif "step" in key: st.session_state[key] = 1
+#         else: st.session_state[key] = None
+#     st.session_state.hough_rows = []
+
 def reset_flow():
-    for key in ["step", "components_df", "analysis_result", "img1", "img2", "img3", "img4"]:
-        if "df" in key: st.session_state[key] = pd.DataFrame()
-        elif "step" in key: st.session_state[key] = 1
-        else: st.session_state[key] = None
-    st.session_state.hough_rows = []
+    for k in ["step", "geo", "img1", "img2", "img3", "img4", "analysis_result"]:
+        st.session_state[k] = None
+    st.session_state.components_df = pd.DataFrame()
 
 # --- 6. MAIN UI ---
 
@@ -406,6 +493,7 @@ if active_input:
         st.session_state.img1 = process_uploaded_image(io.BytesIO(active_input.getvalue()))
     
     raw_student = st.session_state.img1
+    geo = st.session_state.geo
 
     # 2. Detect rows based on the ALREADY scaled image
     if not st.session_state.hough_rows:
