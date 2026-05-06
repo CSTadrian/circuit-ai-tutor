@@ -9,3 +9,4 @@ google-auth-oauthlib
 pytz
 opencv-python-headless
 numpy
+base64
