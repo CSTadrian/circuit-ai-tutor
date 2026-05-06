@@ -61,10 +61,11 @@ UI = {
         "upload_prompt": "Upload a photo to begin.",
         "prompt_addition": "", 
         "guide_title": "📖 Quick Guide",
-        "guide_text": """,
         "input_method": "Input Method:",
         "upload_file": "Upload File",
         "take_photo": "Take Photo",
+        "guide_title": "📖 Quick Guide",
+        "guide_text": """
         
         **How to Start:**
         1. Select Task & Upload Photo
@@ -103,11 +104,11 @@ UI = {
         "upload_prompt": "請上傳照片以開始。",
         # Add these key-value pairs to the "hk" dictionary:
         "guide_title": "📖 快速指南",
-        "guide_text": """,
         "input_method": "輸入方式：",
         "upload_file": "上傳檔案",
         "take_photo": "拍照",
         
+        "guide_text": """,
         **使用步驟：**
         1. 選擇任務並上傳照片
         2. 偵測零件（第一步）
