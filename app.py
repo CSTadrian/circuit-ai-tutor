@@ -507,40 +507,33 @@ if active_input:
                 summary = st.session_state.components_df.to_string(index=False)
                 
                 # UPDATED PROMPT: Explicitly categorizing errors
-                prompt = f"""
+                rompt = f"""
                     Task: {selected_task}. 
-
+                    
                     Structural Connectivity Rules:
                     1. TERMINAL STRIPS (Center): Pins in the same ROW (horizontal) are electrically connected.
-                    2. POWER RAILS (Edges): Pins in the same COLUMN (vertical) are electrically connected. 
-                    3. PALE BLUE OVERLAYS: Components on these vertical lines are connected to Vcc or GND.
-                    
-                    Electrical Analysis Rules (Component Specific):
-                    1. POWER SUPPLY: All circuits MUST form a closed loop from Vcc to GND.
-                    2. SLIDE-SWITCH (Internal Logic): 
-                       - A slide switch has 3 pins. Pin 2 (Middle) is the COMMON pin.
-                       - For a circuit to be closed, current MUST flow through Pin 2 and EITHER Pin 1 OR Pin 3.
-                       - VALID ON/OFF: Using Pin 2 + Pin 1 (Pin 3 empty) OR Pin 2 + Pin 3 (Pin 1 empty).
-                       - ERROR (Open Circuit): If the student connects Pin 1 and Pin 3 but skips Pin 2, the circuit is broken.
-                    3. ORIENTATION LOGIC:
-                       - VERTICAL PLACEMENT: The switch occupies 3 different ROWS. (e.g., Row 10, Row 11, Row 12). Pin 2 is in the middle row.
-                       - HORIZONTAL PLACEMENT: The switch occupies 3 different COLUMNS in the same ROW.
-                    4. SERIES & PATHS: Components share a node (row/column) to connect. Evaluate the semantic flow from +ve to GND.
-                    
+                    2. POWER RAILS (Edges): The two leftmost and two rightmost columns are Power Rails. Pins in the same COLUMN (vertical) are electrically connected. 
+                    3. PALE BLUE OVERLAYS: Any component pin placed on a vertical pale blue line is automatically connected to the Power Supply (Vcc or GND) corresponding to that rail.
+                
+                    Electrical Analysis Rules: 
+                    1. POWER SUPPLY: The Power Supply component provides Vcc (+ve) and GND (-ve). All circuits MUST form a valid, closed loop originating from the Power Supply Vcc pin and terminating at the Power Supply GND pin.
+                    2. SLIDE-SWITCH: 3 pins in one row. Pin 2 is Common.
+                    3. SERIES & PATHS: Components must share a single node (horizontal row for center, vertical column for rails) to connect. The exact sequential order does NOT matter. Evaluate the semantic flow from +ve to GND.
+                    4. RESISTOR VALUES: Ignore specific resistor values. Treat all resistors as functionally equivalent.
+                
                     Component Data (Available Pins):
                     {summary}
-                    
+                
                     Instructions & Evaluation:
-                    - Trace the path: Power Supply Vcc -> [Components] -> Power Supply GND.
-                    - SLIDE-SWITCH CHECK: Locate the slide switch in the 'Component Data'. Identify which pins are occupied. 
-                      * If Pin 2 is NOT connected to any other component or rail, flag as "open_circuit" (Missing Common Pin).
-                      * If the student connects to Pin 1 and Pin 3 only, flag as "open_circuit" (Switch bypass error).
-                    - ORIENTATION CHECK: If a component is placed horizontally across a Power Rail (where connectivity is vertical), flag as "wrong_orientation".
-                    - For 'location', use the [LY, LX] coordinates of the specific pin causing the error.
-                    
+                    - Identify errors based on the 'Component Data' provided. Trace the circuit from the Power Supply +ve pin to the GND pin.
+                    - If a student connects a component horizontally across a Power Rail (expecting horizontal connection where it is vertical), flag as "wrong_orientation".
+                    - If a circuit is broken because the student expects horizontal connectivity on the edges, flag as "open_circuit" and explain the vertical rail logic in the feedback.
+                    - For 'location', you MUST use the [LY, LX] coordinates of the specific pin causing the error.
+                
                     Compare to Target Schematic. Return JSON with 'feedback' and 'detected_errors'.
                     {UI[l]["prompt_addition"]}
                     """
+                
                 
                 
                 try:
