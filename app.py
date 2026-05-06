@@ -187,8 +187,8 @@ def draw_power_rails(image, breadboard_coords):
 
 def detect_horizontal_rows(pil_img):
     """
-    UPDATED: Uses a mathematical algorithm to "fill in the blanks" 
-    if shadows cause the camera to miss a row.
+    Detects breadboard rows AFTER resizing. 
+    The higher resolution helps the algorithm find holes more accurately.
     """
     img_cv = np.array(pil_img)
     if len(img_cv.shape) == 3:
@@ -196,21 +196,23 @@ def detect_horizontal_rows(pil_img):
     else:
         gray = img_cv
 
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    # Higher resolution requires a slightly larger blur kernel
+    blurred = cv2.GaussianBlur(gray, (7, 7), 0)
     thresh = cv2.adaptiveThreshold(
         blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-        cv2.THRESH_BINARY_INV, 21, 10
+        cv2.THRESH_BINARY_INV, 31, 10 # Increased block size for high-res
     )
 
     height, width = thresh.shape
     row_sums = np.sum(thresh, axis=1)
 
-    window_size = max(int(height * 0.005), 3)
+    # Window size scales with the new height
+    window_size = max(int(height * 0.005), 5)
     kernel = np.ones(window_size) / window_size
     smoothed_sums = np.convolve(row_sums, kernel, mode='same')
 
-    min_peak_distance = max(int(height * 0.012), 5)
-    # Lowered threshold slightly to catch dimmer rows
+    # min_peak_distance should scale with the new height
+    min_peak_distance = max(int(height * 0.012), 10)
     threshold_val = np.max(smoothed_sums) * 0.08 
 
     peaks = []
@@ -221,9 +223,8 @@ def detect_horizontal_rows(pil_img):
                 if not peaks or (i - peaks[-1]) >= min_peak_distance:
                     peaks.append(i)
 
-    # --- NEW: MATH FILL-IN ALGORITHM ---
+    # MATH FILL-IN ALGORITHM
     if len(peaks) > 5:
-        # 1. Find the median distance between valid rows
         distances = [peaks[i] - peaks[i-1] for i in range(1, len(peaks))]
         median_dist = np.median(distances)
         
@@ -231,20 +232,17 @@ def detect_horizontal_rows(pil_img):
         for i in range(len(peaks)-1):
             filled_peaks.append(peaks[i])
             gap = peaks[i+1] - peaks[i]
-            
-            # 2. If there is a gap that is roughly 1.5x to 4x the normal distance,
-            # it means we missed rows due to lighting. We mathematically insert them.
-            # (We ignore > 5x because that might be the physical trench in the middle of the board)
             if 1.5 * median_dist < gap < 5 * median_dist:
                 num_missing = int(round(gap / median_dist)) - 1
                 step = gap / (num_missing + 1)
                 for j in range(1, num_missing + 1):
                     filled_peaks.append(int(peaks[i] + j * step))
-                    
         filled_peaks.append(peaks[-1])
         peaks = filled_peaks
 
+    # Normalize back to 0-1000 scale based on the NEW height
     return [int((y / height) * 1000) for y in peaks]
+    
 
 
 def process_uploaded_image(file_input):
@@ -285,16 +283,22 @@ def draw_coordinate_grid(image, snap_rows=None):
     draw = ImageDraw.Draw(image)
     w, h = image.size
     
+    # Draw horizontal row detection lines
     if snap_rows:
         for ry in snap_rows:
+            # ry is normalized (0-1000), so it works regardless of resizing
             y_px = ry * h / 1000
-            draw.line([(0, y_px), (w, y_px)], fill=(173, 216, 230), width=2)
+            # Increased thickness to 3 for the 4x height image
+            draw.line([(0, y_px), (w, y_px)], fill=(173, 216, 230), width=3)
             
+    # Draw red reference markers on edges
     for i in range(0, 1001, 100):
         x_px, y_px = i * w / 1000, i * h / 1000
-        draw.line([(x_px, 0), (x_px, 15)], fill=(255, 0, 0), width=2)
-        draw.line([(0, y_px), (15, y_px)], fill=(255, 0, 0), width=2)
+        # Markers are longer to account for larger canvas
+        draw.line([(x_px, 0), (x_px, 30)], fill=(255, 0, 0), width=4)
+        draw.line([(0, y_px), (30, y_px)], fill=(255, 0, 0), width=4)
     return image
+    
 
 def draw_pins_on_image(image, df_components):
     img_copy = image.copy()
@@ -415,12 +419,12 @@ active_input = student_file if student_file is not None else camera_photo
 
 if active_input:
     if st.session_state.img1 is None:
-        # Use the existing robust loader
+        # 1. Resize/Scale first
         st.session_state.img1 = process_uploaded_image(io.BytesIO(active_input.getvalue()))
     
     raw_student = st.session_state.img1
-    
 
+    # 2. Detect rows based on the ALREADY scaled image
     if not st.session_state.hough_rows:
         st.session_state.hough_rows = detect_horizontal_rows(raw_student)
 
