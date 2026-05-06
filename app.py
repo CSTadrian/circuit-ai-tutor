@@ -314,7 +314,7 @@ def save_to_drive(user_id, task_name, ai_feedback, images_dict):
         new_row = pd.DataFrame([{
             "User ID": user_id, "Time": hk_time_str, 
             "Raw": f"{file_prefix}_1.png", "Final": f"{file_prefix}_4.png", 
-            "Feedback": ai_feedback
+            "Tutor note": tutor_note
         }])
 
         query = f"name='{CSV_FILENAME}' and '{PARENT_FOLDER_ID}' in parents and trashed=false"
@@ -384,7 +384,20 @@ with st.sidebar:
         st.error(f"Missing {TASKS[selected_task]}")
         st.stop()
     
-    student_file = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp","heic"])
+    # student_file = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp","heic"])
+    input_method = st.radio(UI[l]["input_method"], [UI[l]["upload_file"], UI[l]["take_photo"]])
+    
+    student_input = None
+    if input_method == UI[l]["upload_file"]:
+        student_input = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp", "heic"])
+    else:
+        student_input = st.camera_input(UI[l]["take_photo"])
+
+    if st.button(UI[l]["reset"]): 
+        reset_flow()
+        st.rerun()
+
+    
     if st.button(UI[l]["reset"]): 
         reset_flow()
         st.rerun()
@@ -394,10 +407,15 @@ with st.sidebar:
     st.markdown(UI[l]['guide_text'])
 
 # --- 7. APPLICATION LOGIC ---
-if student_file:
+# if student_file:
+#     if st.session_state.img1 is None:
+#         st.session_state.img1 = process_uploaded_image(io.BytesIO(student_file.getvalue()))
+
+# --- 7. APPLICATION LOGIC ---
+if student_input: # Changed from student_file
     if st.session_state.img1 is None:
-        st.session_state.img1 = process_uploaded_image(io.BytesIO(student_file.getvalue()))
-    
+        st.session_state.img1 = process_uploaded_image(io.BytesIO(student_input.getvalue()))
+        
     raw_student = st.session_state.img1
 
     if not st.session_state.hough_rows:
@@ -505,7 +523,7 @@ if student_file:
                     - If a circuit is broken because the student expects horizontal connectivity on the edges, flag as "open_circuit" and explain the vertical rail logic in the feedback.
                     - For 'location', you MUST use the [LY, LX] coordinates of the specific pin causing the error.
                 
-                    Compare to Target Schematic. Return JSON with 'feedback' and 'detected_errors'.
+                    Compare to Target Schematic. Return JSON with 'feedback', 'tutor_note' (a brief, private observation note for the tutor to log), and 'detected_errors'.
                     {UI[l]["prompt_addition"]}
                     """
                 
@@ -521,6 +539,7 @@ if student_file:
                                 "type": "OBJECT",
                                 "properties": {
                                     "feedback": {"type": "STRING"},
+                                    "tutor_note": {"type": "STRING"},
                                     "detected_errors": {
                                         "type": "ARRAY", 
                                         "items": {
@@ -591,14 +610,17 @@ if student_file:
         
         if st.session_state.analysis_result:
             feedback_text = st.session_state.analysis_result.get("feedback", "No feedback provided.")
+            tutor_note_text = st.session_state.analysis_result.get("tutor_note", "No tutor note recorded.")
             st.info(feedback_text)
 
             col_a, col_b, col_c = st.columns(3)
             with col_a:
                 if st.button(UI[l]["save"], type="primary", use_container_width=True):
-                    save_to_drive(user_id, selected_task, feedback_text, 
+                    # Pass the tutor_note_text instead of feedback_text
+                    save_to_drive(user_id, selected_task, tutor_note_text, 
                                  {"1": st.session_state.img1, "2": st.session_state.img2, 
                                   "3": st.session_state.img3, "4": st.session_state.img4})
+                    
             with col_b:
                 if st.button(UI[l]["back"], use_container_width=True):
                     st.session_state.analysis_result = None
