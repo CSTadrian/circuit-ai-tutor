@@ -7,7 +7,6 @@ import io
 import pytz
 import cv2
 import numpy as np
-import base64  # Added per your previous correction
 from datetime import datetime
 from PIL import Image as PILImage, ImageDraw, ImageOps
 
@@ -167,43 +166,6 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- NEW CV FUNCTION: FIND BREADBOARD BOUNDARIES ---
-def find_breadboard_x_bounds(pil_img):
-    """
-    Uses edge density to locate the actual breadboard horizontally within the image.
-    """
-    img_cv = np.array(pil_img)
-    if len(img_cv.shape) == 3:
-        gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
-    else:
-        gray = img_cv
-
-    # Use Canny to find edges (breadboard holes create very dense edge signatures)
-    edges = cv2.Canny(gray, 50, 150)
-    
-    # Project edge density vertically
-    col_sums = np.sum(edges, axis=0)
-
-    # Smooth the distribution to find the main body
-    window_size = max(int(img_cv.shape[1] * 0.02), 5)
-    kernel = np.ones(window_size) / window_size
-    smoothed = np.convolve(col_sums, kernel, mode='same')
-
-    # Threshold for what we consider "inside" the breadboard
-    threshold_val = np.max(smoothed) * 0.25
-    active_cols = np.where(smoothed > threshold_val)[0]
-
-    if len(active_cols) > 0:
-        x_start = int(active_cols[0])
-        x_end = int(active_cols[-1])
-        
-        # Verify it looks like a breadboard (takes up at least 30% of width)
-        if (x_end - x_start) > img_cv.shape[1] * 0.3:
-            return x_start, x_end
-
-    # Fallback if detection fails
-    return 0, img_cv.shape[1]
-
 def detect_horizontal_rows(pil_img):
     """
     Detects breadboard rows AFTER resizing. 
@@ -288,43 +250,31 @@ def process_uploaded_image(file_input):
 
 def draw_coordinate_grid(image, snap_rows=None):
     """
-    Draws realistic internal breadboard connections dynamically based on the detected board bounds.
+    Draws realistic internal breadboard connections (Vertical Power Rails + Split Center Rows)
     """
     draw = ImageDraw.Draw(image)
-    w_img, h_img = image.size
+    w, h = image.size
     pale_blue = (173, 216, 230)
     
-    # 1. Dynamically locate the breadboard body
-    x_start, x_end = find_breadboard_x_bounds(image)
-    bb_w = x_end - x_start
-
-    # 2. Calculate standard breadboard proportional offsets relative to the bounding box
-    rail_1 = x_start + int(bb_w * 0.05)
-    rail_2 = x_start + int(bb_w * 0.12)
-    rail_3 = x_start + int(bb_w * 0.88)
-    rail_4 = x_start + int(bb_w * 0.95)
-
-    ae_start = x_start + int(bb_w * 0.20)
-    ae_end = x_start + int(bb_w * 0.45)
-    fj_start = x_start + int(bb_w * 0.55)
-    fj_end = x_start + int(bb_w * 0.80)
-
-    # 3. Draw Vertical Power Rails
-    for rx in [rail_1, rail_2, rail_3, rail_4]:
-        draw.line([(rx, 0), (rx, h_img)], fill=pale_blue, width=3)
+    # 1. Draw Vertical Power Rails (LHS & RHS)
+    # Using typical percentages for edge rails: 5%, 10% (Left), and 90%, 95% (Right)
+    rail_x_offsets = [0.05, 0.10, 0.90, 0.95]
+    for x_offset in rail_x_offsets:
+        x_px = int(w * x_offset)
+        draw.line([(x_px, 0), (x_px, h)], fill=pale_blue, width=3)
     
-    # 4. Draw Split Horizontal Rows
+    # 2. Draw Split Horizontal Rows (Columns A-E and F-J)
     if snap_rows:
         for ry in snap_rows:
-            y_px = ry * h_img / 1000
-            # Left block (A-E)
-            draw.line([(ae_start, y_px), (ae_end, y_px)], fill=pale_blue, width=3)
-            # Right block (F-J)
-            draw.line([(fj_start, y_px), (fj_end, y_px)], fill=pale_blue, width=3)
+            y_px = ry * h / 1000
+            # Left block of pins (A-E)
+            draw.line([(w * 0.18, y_px), (w * 0.45, y_px)], fill=pale_blue, width=3)
+            # Right block of pins (F-J)
+            draw.line([(w * 0.55, y_px), (w * 0.82, y_px)], fill=pale_blue, width=3)
             
     # Draw red reference markers on edges
     for i in range(0, 1001, 100):
-        x_px, y_px = i * w_img / 1000, i * h_img / 1000
+        x_px, y_px = i * w / 1000, i * h / 1000
         draw.line([(x_px, 0), (x_px, 30)], fill=(255, 0, 0), width=4)
         draw.line([(0, y_px), (30, y_px)], fill=(255, 0, 0), width=4)
     return image
@@ -340,7 +290,7 @@ def draw_pins_on_image(image, df_components):
         draw.ellipse([end[0]-6, end[1]-6, end[0]+6, end[1]+6], fill=(255, 255, 0), outline=(0,0,0))
     return img_copy
 
-def save_to_drive(user_id, task_name, tutor_note, images_dict):
+def save_to_drive(user_id, task_name, ai_feedback, images_dict):
     service = get_drive_service()
     hk_tz = pytz.timezone('Asia/Hong_Kong')
     hk_time_str = datetime.now(hk_tz).strftime('%Y-%m-%d %H:%M:%S')
@@ -358,11 +308,10 @@ def save_to_drive(user_id, task_name, tutor_note, images_dict):
                 media = MediaIoBaseUpload(buf, mimetype='image/png', resumable=True)
                 service.files().create(body=img_metadata, media_body=media).execute()
 
-        # CSV LOGIC UPDATED TO ONLY SAVE TUTOR NOTE
         new_row = pd.DataFrame([{
             "User ID": user_id, "Time": hk_time_str, 
             "Raw": f"{file_prefix}_1.png", "Final": f"{file_prefix}_4.png", 
-            "Tutor Note": tutor_note
+            "Feedback": ai_feedback
         }])
 
         query = f"name='{CSV_FILENAME}' and '{PARENT_FOLDER_ID}' in parents and trashed=false"
@@ -540,7 +489,7 @@ if active_input:
             with st.spinner(UI[l]["checking"]):
                 summary = st.session_state.components_df.to_string(index=False)
                 
-                # UPDATED PROMPT: Requesting tutor_note to support correction request
+                # UPDATED PROMPT: Explicitly categorizing errors
                 prompt = f"""
                     Task: {selected_task}. 
                     
@@ -564,11 +513,14 @@ if active_input:
                     - If a circuit is broken because the student expects horizontal connectivity on the edges, flag as "open_circuit" and explain the vertical rail logic in the feedback.
                     - For 'location', you MUST use the [LY, LX] coordinates of the specific pin causing the error.
                 
-                    Compare to Target Schematic. Return JSON with 'feedback', 'tutor_note' (private grading data), and 'detected_errors'.
+                    Compare to Target Schematic. Return JSON with 'feedback' and 'detected_errors'.
                     {UI[l]["prompt_addition"]}
                     """
                 
+                
+                
                 try:
+                    # UPDATED API CALL: New Schema structure
                     resp = client.models.generate_content(
                         model=MODEL_ID, 
                         contents=[raw_schematic, st.session_state.img3, prompt],
@@ -578,7 +530,6 @@ if active_input:
                                 "type": "OBJECT",
                                 "properties": {
                                     "feedback": {"type": "STRING"},
-                                    "tutor_note": {"type": "STRING", "description": "Specific, factual note about student errors suitable for saving to grading CSV logs."},
                                     "detected_errors": {
                                         "type": "ARRAY", 
                                         "items": {
@@ -590,10 +541,11 @@ if active_input:
                                         }
                                     }
                                 },
-                                "required": ["feedback", "tutor_note", "detected_errors"]
+                                "required": ["feedback", "detected_errors"]
                             }
                         )
                     )
+                    
                     
                     result = resp.parsed
                     if isinstance(result, list) and len(result) > 0:
@@ -605,6 +557,7 @@ if active_input:
                     draw = ImageDraw.Draw(diag_img)
                     w, h = diag_img.size
                     
+                    # UPDATED DRAWING LOGIC: Interpret error types
                     errors = st.session_state.analysis_result.get("detected_errors", [])
                     for err in errors:
                         err_type = err.get("error_type", "open_circuit")
@@ -613,12 +566,17 @@ if active_input:
                         if len(loc) == 2:
                             ey, ex = loc
                             
+                            # --- NEW: SNAP TO NEAREST ACTUAL PIN ---
+                            # This ensures the circle isn't "floating" in empty space
                             if not st.session_state.components_df.empty:
+                                # Calculate distance to all known pins
                                 df = st.session_state.components_df
                                 distances = np.sqrt((df['LX'] - ex)**2 + (df['LY'] - ey)**2)
                                 nearest_idx = distances.idxmin()
+                                # Use the actual pin coordinate instead of the AI's guess
                                 ex = df.loc[nearest_idx, 'LX']
                                 ey = df.loc[nearest_idx, 'LY']
+                            # ---------------------------------------
 
                             px, py = ex * w / 1000, ey * h / 1000
                             
@@ -629,8 +587,10 @@ if active_input:
                             else:
                                 draw.ellipse([px-25, py-25, px+25, py+25], outline="red", width=8)
                                 
+                
                     st.session_state.img4 = diag_img
                     
+
                 except Exception as e:
                     st.error(f"AI Analysis failed: {e}")
                     st.session_state.step = 2
@@ -640,15 +600,12 @@ if active_input:
         
         if st.session_state.analysis_result:
             feedback_text = st.session_state.analysis_result.get("feedback", "No feedback provided.")
-            tutor_note = st.session_state.analysis_result.get("tutor_note", "No tutor note generated.")
-            
             st.info(feedback_text)
 
             col_a, col_b, col_c = st.columns(3)
             with col_a:
                 if st.button(UI[l]["save"], type="primary", use_container_width=True):
-                    # Passing only the tutor_note into save_to_drive per requested logic
-                    save_to_drive(user_id, selected_task, tutor_note, 
+                    save_to_drive(user_id, selected_task, feedback_text, 
                                  {"1": st.session_state.img1, "2": st.session_state.img2, 
                                   "3": st.session_state.img3, "4": st.session_state.img4})
             with col_b:
