@@ -43,13 +43,10 @@ UI = {
         "user_id": "Select User ID",
         "task": "Select Task",
         "target": "Target Schematic",
-        "input_mode": "Input Method",
-        "mode_upload": "Upload Image",
-        "mode_camera": "Use Camera",
         "upload": "Upload Student Photo",
         "reset": "Reset Process",
         "schematic": "Schematic",
-        "your_circuit": "Your Circuit (Pale Blue = Internal Connections)",
+        "your_circuit": "Your Circuit (Pale Blue = Detected Rows)",
         "step1_btn": "🔍 Step 1: Detect Components",
         "analyzing": "AI analyzing breadboard...",
         "step2_title": "⚙️ Step 2: Fine-Tune Component Pins (Auto-Snapping)",
@@ -62,7 +59,7 @@ UI = {
         "save": "💾 Save to Drive",
         "back": "🔙 Back",
         "new": "🎉 New Task",
-        "upload_prompt": "Please select an input method to upload or capture a photo.",
+        "upload_prompt": "Upload a photo to begin.",
         "prompt_addition": "", 
         "guide_title": "📖 Quick Guide",
         "camera": "Take a Photo of your Circuit",
@@ -85,13 +82,10 @@ UI = {
         "user_id": "選擇學生 ID",
         "task": "選擇任務",
         "target": "目標電路圖",
-        "input_mode": "輸入方式",
-        "mode_upload": "上傳圖片",
-        "mode_camera": "使用相機",
         "upload": "上傳學生電路照片",
         "reset": "重置流程",
         "schematic": "電路圖",
-        "your_circuit": "你的電路（淺藍色線 = 麵包板內部接線）",
+        "your_circuit": "你的電路（淺藍色線 = 偵測到的行）",
         "step1_btn": "🔍 第一步：偵測零件",
         "analyzing": "AI 正在分析麵包板...",
         "step2_title": "⚙️ 第二步：微調零件引腳（自動對齊）",
@@ -104,7 +98,8 @@ UI = {
         "save": "💾 儲存至 Drive",
         "back": "🔙 返回",
         "new": "🎉 新任務",
-        "upload_prompt": "請選擇上傳照片或拍攝新照片以開始。",
+        "upload_prompt": "請上傳照片以開始。",
+        # Add these key-value pairs to the "hk" dictionary:
         "guide_title": "📖 快速指南",
         "camera": "拍攝電路照片",
         "guide_text": """
@@ -166,6 +161,30 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+def draw_power_rails(image, breadboard_coords):
+    """
+    Draws vertical pale blue lines representing the power rails.
+    Color: Pale Blue (RGB: 173, 216, 230)
+    """
+    # Define Pale Blue in BGR for OpenCV
+    pale_blue = (230, 216, 173) 
+    overlay = image.copy()
+    
+    # Logic: Define the x-coordinates for the 4 power rail columns 
+    # (Typically 2 on the left, 2 on the right)
+    h, w, _ = image.shape
+    rail_x_offsets = [0.05, 0.10, 0.90, 0.95] # Normalized percentages of width
+    
+    for x_offset in rail_x_offsets:
+        x = int(w * x_offset)
+        # Draw vertical line from top to bottom of the breadboard region
+        cv2.line(overlay, (x, 0), (x, h), pale_blue, 10)
+        
+    # Apply transparency so the physical holes are still visible
+    alpha = 0.4
+    return cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0)
+    
+
 def detect_horizontal_rows(pil_img):
     """
     Detects breadboard rows AFTER resizing. 
@@ -177,19 +196,22 @@ def detect_horizontal_rows(pil_img):
     else:
         gray = img_cv
 
+    # Higher resolution requires a slightly larger blur kernel
     blurred = cv2.GaussianBlur(gray, (7, 7), 0)
     thresh = cv2.adaptiveThreshold(
         blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-        cv2.THRESH_BINARY_INV, 31, 10
+        cv2.THRESH_BINARY_INV, 31, 10 # Increased block size for high-res
     )
 
     height, width = thresh.shape
     row_sums = np.sum(thresh, axis=1)
 
+    # Window size scales with the new height
     window_size = max(int(height * 0.005), 5)
     kernel = np.ones(window_size) / window_size
     smoothed_sums = np.convolve(row_sums, kernel, mode='same')
 
+    # min_peak_distance should scale with the new height
     min_peak_distance = max(int(height * 0.012), 10)
     threshold_val = np.max(smoothed_sums) * 0.08 
 
@@ -221,24 +243,30 @@ def detect_horizontal_rows(pil_img):
     # Normalize back to 0-1000 scale based on the NEW height
     return [int((y / height) * 1000) for y in peaks]
     
+
+
 def process_uploaded_image(file_input):
     """
     Robust image loader to fix Android/iOS rotation and buffering issues.
     """
     try:
+        # If input is a path (str), open it. If it's a file stream, read it.
         if isinstance(file_input, str):
             img = PILImage.open(file_input)
         else:
             img = PILImage.open(io.BytesIO(file_input.read() if hasattr(file_input, 'read') else file_input))
             
+        # Fix orientation metadata (crucial for phones)
         img = ImageOps.exif_transpose(img)
         img = img.convert("RGB")
         
         w, h = img.size
         new_size = (w * 2, h * 4)
         
+        # We use LANCZOS for high quality to keep breadboard holes and wires sharp
         img = img.resize(new_size, PILImage.Resampling.LANCZOS)
         
+        # 3. SAFETY CAP: Prevent browser crashes if original was already massive
         MAX_DIM = 4000 
         if max(img.size) > MAX_DIM:
             img.thumbnail((MAX_DIM, MAX_DIM), PILImage.Resampling.LANCZOS)
@@ -248,37 +276,30 @@ def process_uploaded_image(file_input):
         st.error(f"Image Load Failed: {e}")
         return None
 
+
+      
+
 def draw_coordinate_grid(image, snap_rows=None):
-    """
-    Draws realistic internal breadboard connections (Vertical Power Rails + Split Center Rows)
-    """
     draw = ImageDraw.Draw(image)
     w, h = image.size
-    pale_blue = (173, 216, 230)
     
-    # 1. Draw Vertical Power Rails (LHS & RHS)
-    # Using typical percentages for edge rails: 5%, 10% (Left), and 90%, 95% (Right)
-    rail_x_offsets = [0.05, 0.10, 0.90, 0.95]
-    for x_offset in rail_x_offsets:
-        x_px = int(w * x_offset)
-        draw.line([(x_px, 0), (x_px, h)], fill=pale_blue, width=3)
-    
-    # 2. Draw Split Horizontal Rows (Columns A-E and F-J)
+    # Draw horizontal row detection lines
     if snap_rows:
         for ry in snap_rows:
+            # ry is normalized (0-1000), so it works regardless of resizing
             y_px = ry * h / 1000
-            # Left block of pins (A-E)
-            draw.line([(w * 0.18, y_px), (w * 0.45, y_px)], fill=pale_blue, width=3)
-            # Right block of pins (F-J)
-            draw.line([(w * 0.55, y_px), (w * 0.82, y_px)], fill=pale_blue, width=3)
+            # Increased thickness to 3 for the 4x height image
+            draw.line([(0, y_px), (w, y_px)], fill=(173, 216, 230), width=3)
             
     # Draw red reference markers on edges
     for i in range(0, 1001, 100):
         x_px, y_px = i * w / 1000, i * h / 1000
+        # Markers are longer to account for larger canvas
         draw.line([(x_px, 0), (x_px, 30)], fill=(255, 0, 0), width=4)
         draw.line([(0, y_px), (30, y_px)], fill=(255, 0, 0), width=4)
     return image
     
+
 def draw_pins_on_image(image, df_components):
     img_copy = image.copy()
     draw = ImageDraw.Draw(img_copy)
@@ -381,14 +402,8 @@ with st.sidebar:
         st.error(f"Missing {TASKS[selected_task]}")
         st.stop()
     
-    st.divider()
-    
-    # Input Method Toggle (Defaults to Upload)
-    input_mode = st.radio(UI[l]["input_mode"], [UI[l]["mode_upload"], UI[l]["mode_camera"]], horizontal=True)
-    if input_mode == UI[l]["mode_upload"]:
-        active_input = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp","heic"])
-    else:
-        active_input = st.camera_input(UI[l]["camera"])
+    student_file = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp","heic"])
+    camera_photo = st.camera_input(UI[l]["camera"])
     
     if st.button(UI[l]["reset"]): 
         reset_flow()
@@ -399,6 +414,8 @@ with st.sidebar:
     st.markdown(UI[l]['guide_text'])
 
 # --- 7. APPLICATION LOGIC ---
+# Determine which input to use (Priority to manual upload if both exist)
+active_input = student_file if student_file is not None else camera_photo
 
 if active_input:
     if st.session_state.img1 is None:
@@ -490,7 +507,7 @@ if active_input:
                 summary = st.session_state.components_df.to_string(index=False)
                 
                 # UPDATED PROMPT: Explicitly categorizing errors
-                prompt = f"""
+                rompt = f"""
                     Task: {selected_task}. 
                     
                     Structural Connectivity Rules:
@@ -587,7 +604,7 @@ if active_input:
                             else:
                                 draw.ellipse([px-25, py-25, px+25, py+25], outline="red", width=8)
                                 
-                
+                    
                     st.session_state.img4 = diag_img
                     
 
