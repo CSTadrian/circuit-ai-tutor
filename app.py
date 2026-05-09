@@ -20,12 +20,18 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
 # --- 1. CONFIGURATION & TASK SETUP ---
+# --- NEW: TASK CONFIGURATION ---
+# Define your tasks and their corresponding filenames in the 'data' folder
 TASKS = {
     "Task 1: Basic LED Circuit": "task1_led.png",
-    "Task 2: Resistor in Series": "task2_series_led.png",
+    "Task 2: LED in Series": "task2_series_led.png",
     "Task 3: Parallel LED Setup": "task3_parallel_led.png",
     "Task 4: Switch Control": "task4_switch.png",
-    "Task 5: Exam 1": "task5.png",
+    "Task 5: Button Control": "task5_button.png",
+    "Task 6: Capacitor": "task6_capacitor.png",
+    "Exam 1": "exam1.png",
+    "Exam 2": "exam2.png",
+    "Exam 3": "exam3.png"
 }
 
 DATA_FOLDER = "data"
