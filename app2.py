@@ -728,24 +728,6 @@ def get_ai_observation(student_data):
         return f"Circuit data parsing error: {e}"
         
 
-# --- 5. MAIN UI LAYOUT ---
-#  USER UPLOAD MODE
-# st.title("⚡ AI Circuit Auditor")
-
-# with st.sidebar:
-#     st.header("Teacher's Goal")
-#     schematic_file = st.file_uploader("Upload Target Schematic", type=["jpg", "png", "jpeg"])
-
-# # --- NEW: REGISTER HTML AS A CUSTOM COMPONENT ---
-# # This forces Streamlit to actually read the postMessages
-# if not os.path.exists("sim_frontend"):
-#     os.makedirs("sim_frontend")
-# with open("sim_frontend/index.html", "w", encoding="utf-8") as f:
-#     f.write(simulator_html)
-
-# # Declare component with a default object structure
-# sim_component = components.declare_component("sim_component", path="sim_frontend")
-# current_sim_data = sim_component(default='{"comps": [], "wires": []}')
 
 # --- 5. MAIN UI LAYOUT ---
 st.title("⚡ AI Circuit Auditor")
