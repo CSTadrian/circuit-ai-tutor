@@ -520,155 +520,276 @@ if active_input:
             st.rerun()
 
     # STEP 3: ANALYSIS
+    # STEP 3: ANALYSIS
+
     elif st.session_state.step == 3:
+
         st.subheader(UI[l]["step3_title"])
+
         
+
         if st.session_state.analysis_result is None or st.session_state.img4 is None:
+
             with st.spinner(UI[l]["checking"]):
+
                 summary = st.session_state.components_df.to_string(index=False)
+
                 
-                # UPDATED PROMPT: Explicitly categorizing errors and requesting semantic summaries
+
+                # UPDATED PROMPT: Explicitly categorizing errors
+
                 prompt = f"""
+
                     Task: {selected_task}. 
+
                     
+
                     Structural Connectivity Rules:
+
                     1. TERMINAL STRIPS (Center): Pins in the same ROW (horizontal) are electrically connected.
+
                     2. POWER RAILS (Edges): The two leftmost and two rightmost columns are Power Rails. Pins in the same COLUMN (vertical) are electrically connected. 
+
                     3. PALE BLUE OVERLAYS: Any component pin placed on a vertical pale blue line is automatically connected to the Power Supply (Vcc or GND) corresponding to that rail.
+
                 
+
                     Electrical Analysis Rules: 
-                    1. POWER SUPPLY: The Power Supply component provides Vcc (+ve) and GND (-ve). All circuits MUST form a valid, closed loop.
+
+                    1. POWER SUPPLY: The Power Supply component provides Vcc (+ve) and GND (-ve). All circuits MUST form a valid, closed loop originating from the Power Supply Vcc pin and terminating at the Power Supply GND pin.
+
                     2. SLIDE-SWITCH: 3 pins in one row. Pin 2 is Common.
-                    3. SERIES & PATHS: Components must share a single node to connect. The exact sequential order does NOT matter. Evaluate the semantic flow from +ve to GND.
+
+                    3. SERIES & PATHS: Components must share a single node (horizontal row for center, vertical column for rails) to connect. The exact sequential order does NOT matter. Evaluate the semantic flow from +ve to GND.
+
                     4. RESISTOR VALUES: Ignore specific resistor values. Treat all resistors as functionally equivalent.
+
                 
+
                     Component Data (Available Pins):
+
                     {summary}
+
                 
+
                     Instructions & Evaluation:
-                    - Identify specific connections that successfully match the target schematic semantics. Add these to 'success_summary'.
-                    - Identify specific errors based on the 'Component Data' provided. Add text explanations to 'error_summary'.
-                    - If a student connects a component horizontally across a Power Rail, flag as "wrong_orientation".
-                    - If a circuit is broken on the edges, flag as "open_circuit".
-                    - For 'location' in 'detected_errors', you MUST use the [LY, LX] coordinates of the specific pin causing the error.
+
+                    - Identify errors based on the 'Component Data' provided. Trace the circuit from the Power Supply +ve pin to the GND pin.
+
+                    - If a student connects a component horizontally across a Power Rail (expecting horizontal connection where it is vertical), flag as "wrong_orientation".
+
+                    - If a circuit is broken because the student expects horizontal connectivity on the edges, flag as "open_circuit" and explain the vertical rail logic in the feedback.
+
+                    - For 'location', you MUST use the [LY, LX] coordinates of the specific pin causing the error.
+
                 
-                    Compare to Target Schematic. Return JSON with 'feedback', 'detected_errors', 'success_summary', and 'error_summary'.
+
+                    Compare to Target Schematic. Return JSON with 'feedback' and 'detected_errors'.
+
                     {UI[l]["prompt_addition"]}
+
                     """
+
                 
+
+                
+
+                
+
                 try:
-                    # UPDATED API CALL: Added success_summary and error_summary arrays to the schema
+
+                    # UPDATED API CALL: New Schema structure
+
                     resp = client.models.generate_content(
+
                         model=MODEL_ID, 
+
                         contents=[raw_schematic, st.session_state.img3, prompt],
+
                         config=types.GenerateContentConfig(
+
                             response_mime_type="application/json",
+
                             response_schema={
+
                                 "type": "OBJECT",
+
                                 "properties": {
+
                                     "feedback": {"type": "STRING"},
-                                    "success_summary": {
-                                        "type": "ARRAY",
-                                        "items": {"type": "STRING"}
-                                    },
-                                    "error_summary": {
-                                        "type": "ARRAY",
-                                        "items": {"type": "STRING"}
-                                    },
+
                                     "detected_errors": {
+
                                         "type": "ARRAY", 
+
                                         "items": {
+
                                             "type": "OBJECT",
+
                                             "properties": {
+
                                                 "error_type": {"type": "STRING"},
+
                                                 "location": {"type": "ARRAY", "items": {"type": "INTEGER"}}
+
                                             }
+
                                         }
+
                                     }
+
                                 },
-                                "required": ["feedback", "detected_errors", "success_summary", "error_summary"]
+
+                                "required": ["feedback", "detected_errors"]
+
                             }
+
                         )
+
                     )
+
                     
+
+                    
+
                     result = resp.parsed
+
                     if isinstance(result, list) and len(result) > 0:
+
                         result = result[0]
+
                     
+
                     st.session_state.analysis_result = result
+
                     
+
                     diag_img = st.session_state.img3.copy()
+
                     draw = ImageDraw.Draw(diag_img)
+
                     w, h = diag_img.size
+
                     
+
                     # UPDATED DRAWING LOGIC: Interpret error types
+
                     errors = st.session_state.analysis_result.get("detected_errors", [])
+
                     for err in errors:
+
                         err_type = err.get("error_type", "open_circuit")
+
                         loc = err.get("location", [])
+
                         
+
                         if len(loc) == 2:
+
                             ey, ex = loc
+
                             
-                            # SNAP TO NEAREST ACTUAL PIN
+
+                            # --- NEW: SNAP TO NEAREST ACTUAL PIN ---
+
+                            # This ensures the circle isn't "floating" in empty space
+
                             if not st.session_state.components_df.empty:
+
+                                # Calculate distance to all known pins
+
                                 df = st.session_state.components_df
+
                                 distances = np.sqrt((df['LX'] - ex)**2 + (df['LY'] - ey)**2)
+
                                 nearest_idx = distances.idxmin()
+
+                                # Use the actual pin coordinate instead of the AI's guess
+
                                 ex = df.loc[nearest_idx, 'LX']
+
                                 ey = df.loc[nearest_idx, 'LY']
 
+                            # ---------------------------------------
+
+
+
                             px, py = ex * w / 1000, ey * h / 1000
+
                             
+
                             if err_type == "wrong_component":
+
                                 draw.rectangle([px-35, py-35, px+35, py+35], outline="blue", width=8)
+
                             elif err_type == "wrong_orientation":
+
                                 draw.ellipse([px-30, py-30, px+30, py+30], outline="yellow", width=8)
+
                             else:
+
                                 draw.ellipse([px-25, py-25, px+25, py+25], outline="red", width=8)
+
                                 
+
+                
+
                     st.session_state.img4 = diag_img
+
                     
+
+
+
                 except Exception as e:
+
                     st.error(f"AI Analysis failed: {e}")
+
                     st.session_state.step = 2
 
-        # ---------------------------------------------------------
-        # DISPLAY SECTION: Annotated Image + New Visual Report Card
-        # ---------------------------------------------------------
+
+
         if st.session_state.img4:
-            st.image(st.session_state.img4, caption=UI[l]["ai_diag"])
-        
-        if st.session_state.analysis_result:
-            # 1. Show standard text feedback
-            feedback_text = st.session_state.analysis_result.get("feedback", "No feedback provided.")
-            st.info(feedback_text)
-            
-            # 2. Generate and display the new Visual Summary Image
-            st.markdown("### " + ("📊 Visual Performance Summary" if l == "en" else "📊 視覺化成果總結"))
-            success_list = st.session_state.analysis_result.get("success_summary", [])
-            error_list = st.session_state.analysis_result.get("error_summary", [])
-            
-            report_card_img = create_visual_report(success_list, error_list, l)
-            st.image(report_card_img, use_container_width=True)
 
-            # 3. Action Buttons
+            st.image(st.session_state.img4, caption=UI[l]["ai_diag"])
+
+        
+
+        if st.session_state.analysis_result:
+
+            feedback_text = st.session_state.analysis_result.get("feedback", "No feedback provided.")
+
+            st.info(feedback_text)
+
+
+
             col_a, col_b, col_c = st.columns(3)
+
             with col_a:
+
                 if st.button(UI[l]["save"], type="primary", use_container_width=True):
-                    # Passing report_card_img into save_to_drive as image '5'
+
                     save_to_drive(user_id, selected_task, feedback_text, 
+
                                  {"1": st.session_state.img1, "2": st.session_state.img2, 
-                                  "3": st.session_state.img3, "4": st.session_state.img4,
-                                  "summary_card": report_card_img})
+
+                                  "3": st.session_state.img3, "4": st.session_state.img4})
+
             with col_b:
+
                 if st.button(UI[l]["back"], use_container_width=True):
+
                     st.session_state.analysis_result = None
+
                     st.session_state.step = 2
+
                     st.rerun()
+
             with col_c:
+
                 if st.button(UI[l]["new"], use_container_width=True):
+
                     reset_flow()
+
                     st.rerun()
                     
 else:
