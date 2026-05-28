@@ -477,31 +477,31 @@ if active_input:
                     )
                 )
                 records = []
-                    for item in resp.parsed:
-                        # Safely get the center, defaulting to [500, 500] if missing or malformed
-                        center = item.get('center', [500, 500])
-                        if isinstance(center, list) and len(center) == 2:
-                            cy, cx = center
-                        else:
-                            cy, cx = 500, 500
-                            
-                        # Safely unpack the legs
-                        legs = item.get('legs', [])
-                        if isinstance(legs, list):
-                            for i, leg in enumerate(legs):
-                                # ONLY unpack if there are exactly 2 coordinates
-                                if isinstance(leg, list) and len(leg) >= 2:
-                                    ly, lx = leg[0], leg[1]
-                                    records.append({
-                                        "Component": f"{item.get('name')} (Pin {i+1})", 
-                                        "CX": cx, 
-                                        "CY": cy, 
-                                        "LX": lx, 
-                                        "LY": ly
-                                    })
-                                else:
-                                    # Silently skip malformed pins to prevent app crashes
-                                    continue
+                for item in resp.parsed:
+                    # Safely get the center, defaulting to [500, 500] if missing or malformed
+                    center = item.get('center', [500, 500])
+                    if isinstance(center, list) and len(center) == 2:
+                        cy, cx = center
+                    else:
+                        cy, cx = 500, 500
+                        
+                    # Safely unpack the legs
+                    legs = item.get('legs', [])
+                    if isinstance(legs, list):
+                        for i, leg in enumerate(legs):
+                            # ONLY unpack if there are exactly 2 coordinates
+                            if isinstance(leg, list) and len(leg) >= 2:
+                                ly, lx = leg[0], leg[1]
+                                records.append({
+                                    "Component": f"{item.get('name')} (Pin {i+1})", 
+                                    "CX": cx, 
+                                    "CY": cy, 
+                                    "LX": lx, 
+                                    "LY": ly
+                                })
+                            else:
+                                # Silently skip malformed pins to prevent app crashes
+                                continue
                                     
                 st.session_state.components_df = pd.DataFrame(records)
                 base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows)
