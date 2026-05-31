@@ -13,7 +13,7 @@ from PIL import Image as PILImage, ImageDraw, ImageOps
 # --- NEW SDK IMPORTS ---
 from google import genai
 from google.genai import types
-from google.oauth2 import service_account
+from google.oauth2 import service_accounta
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -170,89 +170,60 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-def detect_breadboard_grid_from_holes(pil_img):
+def detect_horizontal_rows(pil_img):
     """
-    Detects individual breadboard holes and clusters them to find 
-    the exact physical rows and columns, ignoring shadows and edges.
-    Returns: (row_y_coords, col_x_coords) scaled to 0-1000.
+    Detects breadboard rows AFTER resizing. 
+    The higher resolution helps the algorithm find holes more accurately.
     """
-    # 1. Convert PIL to OpenCV format
     img_cv = np.array(pil_img)
     if len(img_cv.shape) == 3:
         gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
     else:
         gray = img_cv
 
-    h, w = gray.shape
-
-    # 2. Preprocessing: Enhance contrast and Threshold
-    # Breadboard holes are typically the darkest spots
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-    enhanced = clahe.apply(gray)
-    
-    # Adaptive threshold to handle uneven lighting
+    blurred = cv2.GaussianBlur(gray, (7, 7), 0)
     thresh = cv2.adaptiveThreshold(
-        enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-        cv2.THRESH_BINARY_INV, 21, 10
+        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+        cv2.THRESH_BINARY_INV, 31, 10
     )
 
-    # 3. Find Contours (The Holes)
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    hole_centers = []
-    
-    # Estimate reasonable hole sizes based on image resolution
-    # A breadboard has roughly 30-60 rows depending on size
-    expected_hole_w = w * 0.015
-    expected_hole_h = h * 0.01
-    
-    for cnt in contours:
-        x, y, cw, ch = cv2.boundingRect(cnt)
-        aspect_ratio = float(cw) / max(ch, 1)
-        area = cv2.contourArea(cnt)
+    height, width = thresh.shape
+    row_sums = np.sum(thresh, axis=1)
+
+    window_size = max(int(height * 0.005), 5)
+    kernel = np.ones(window_size) / window_size
+    smoothed_sums = np.convolve(row_sums, kernel, mode='same')
+
+    min_peak_distance = max(int(height * 0.012), 10)
+    threshold_val = np.max(smoothed_sums) * 0.08 
+
+    peaks = []
+    for i in range(min_peak_distance, height - min_peak_distance):
+        if smoothed_sums[i] > threshold_val:
+            local_window = smoothed_sums[i - min_peak_distance : i + min_peak_distance + 1]
+            if smoothed_sums[i] == np.max(local_window):
+                if not peaks or (i - peaks[-1]) >= min_peak_distance:
+                    peaks.append(i)
+
+    # MATH FILL-IN ALGORITHM
+    if len(peaks) > 5:
+        distances = [peaks[i] - peaks[i-1] for i in range(1, len(peaks))]
+        median_dist = np.median(distances)
         
-        # Filter: Is it roughly square/circular and the right size?
-        if 0.5 < aspect_ratio < 2.0 and (expected_hole_w * 0.3) < cw < (expected_hole_w * 3):
-            # Calculate center of the hole
-            cx = x + cw // 2
-            cy = y + ch // 2
-            hole_centers.append((cx, cy))
+        filled_peaks = []
+        for i in range(len(peaks)-1):
+            filled_peaks.append(peaks[i])
+            gap = peaks[i+1] - peaks[i]
+            if 1.5 * median_dist < gap < 5 * median_dist:
+                num_missing = int(round(gap / median_dist)) - 1
+                step = gap / (num_missing + 1)
+                for j in range(1, num_missing + 1):
+                    filled_peaks.append(int(peaks[i] + j * step))
+        filled_peaks.append(peaks[-1])
+        peaks = filled_peaks
 
-    if not hole_centers:
-        return [], []
-
-    # 4. Clustering: Group coordinates into Rows (Y) and Columns (X)
-    # Convert to numpy array for easier slicing
-    holes = np.array(hole_centers)
-    
-    def cluster_coordinates(coords, tolerance):
-        """Groups close coordinates and returns their average."""
-        sorted_coords = np.sort(coords)
-        clusters = []
-        current_cluster = [sorted_coords[0]]
-        
-        for val in sorted_coords[1:]:
-            if val - current_cluster[-1] <= tolerance:
-                current_cluster.append(val)
-            else:
-                clusters.append(int(np.mean(current_cluster)))
-                current_cluster = [val]
-        clusters.append(int(np.mean(current_cluster)))
-        return clusters
-
-    # Tolerance for clustering (e.g., holes within 1% of height are in the same row)
-    y_tolerance = h * 0.008 
-    x_tolerance = w * 0.015
-
-    row_y_pixels = cluster_coordinates(holes[:, 1], y_tolerance)
-    col_x_pixels = cluster_coordinates(holes[:, 0], x_tolerance)
-
-    # 5. Normalize back to the 0-1000 scale
-    normalized_rows = [int((y / h) * 1000) for y in row_y_pixels]
-    normalized_cols = [int((x / w) * 1000) for x in col_x_pixels]
-
-    return normalized_rows, normalized_cols
-
+    # Normalize back to 0-1000 scale based on the NEW height
+    return [int((y / height) * 1000) for y in peaks]
     
 def process_uploaded_image(file_input):
     """
@@ -281,68 +252,68 @@ def process_uploaded_image(file_input):
         st.error(f"Image Load Failed: {e}")
         return None
 
-def draw_coordinate_grid(image, snap_rows=None, snap_cols=None):
+def draw_coordinate_grid(image, snap_rows=None, corners=None):
     """
-    Draws realistic internal breadboard connections (A-E, F-J, Power Rails) 
-    anchored perfectly to the exact coordinates detected from physical holes.
+    Draws realistic internal breadboard connections using perspective interpolation based on AI-detected corners.
     """
     draw = ImageDraw.Draw(image)
     w, h = image.size
     pale_blue = (173, 216, 230)
-    boundary_color = (0, 0, 255) # Color for the middle gap trench
+    boundary_color = (0, 0, 255) # Outermost bounding box color
 
-    # 1. Determine horizontal bounds based on ACTUAL physical holes
-    if snap_cols and len(snap_cols) >= 2:
-        # Minimum X is the far-left column of holes, Maximum X is the far-right.
-        # This completely ignores shadows and plastic edges.
-        x_min_prop = min(snap_cols) / 1000.0
-        x_max_prop = max(snap_cols) / 1000.0
-    else:
-        # Fallback if column detection fails
-        x_min_prop = 0.05
-        x_max_prop = 0.95
+    # If AI hasn't detected corners yet, skip perspective drawing to avoid errors
+    if not corners or not all(k in corners for k in ["top_left", "top_right", "bottom_right", "bottom_left"]):
+        return image
 
-    # Convert proportions to exact pixel coordinates
-    x_min_px = x_min_prop * w
-    x_max_px = x_max_prop * w
-    board_w_px = x_max_px - x_min_px # The true width of the hole matrix
+    # Helper: Convert AI 0-1000 [y, x] scale back to pixel coordinates [x, y]
+    def get_px(pt):
+        if not pt or len(pt) < 2: return (0, 0)
+        return (pt[1] * w / 1000, pt[0] * h / 1000)
+
+    tl = get_px(corners.get("top_left"))
+    tr = get_px(corners.get("top_right"))
+    br = get_px(corners.get("bottom_right"))
+    bl = get_px(corners.get("bottom_left"))
+
+    # 1. DRAW OUTER BOUNDARY (Bounding Box)
+    draw.line([tl, tr, br, bl, tl], fill=boundary_color, width=5)
+
+    # Helper function for perspective interpolation (Linear Interpolation)
+    def lerp_pt(p1, p2, t):
+        return (p1[0] + (p2[0] - p1[0]) * t, p1[1] + (p2[1] - p1[1]) * t)
 
     # 2. DRAW MIDDLE GAP (Vertical trench running through the center)
-    # Exactly halfway between the leftmost and rightmost detected holes
-    mid_x = x_min_px + (board_w_px * 0.5)
-    draw.line([(mid_x, 0), (mid_x, h)], fill=boundary_color, width=4)
+    # Interpolate midpoints on the top edge (between TL and TR) 
+    # and the bottom edge (between BL and BR)
+    mid_top = lerp_pt(tl, tr, 0.5)
+    mid_bottom = lerp_pt(bl, br, 0.5)
+    draw.line([mid_top, mid_bottom], fill=boundary_color, width=4)
 
-    # 3. DRAW POWER RAILS (Vertical lines)
-    # We position these proportionally relative to the true hole boundaries
-    rail_x_positions = [
-        x_min_px,                           # Left outer rail (-)
-        x_min_px + (board_w_px * 0.07),     # Left inner rail (+)
-        x_max_px - (board_w_px * 0.07),     # Right inner rail (+)
-        x_max_px                            # Right outer rail (-)
-    ]
+    # 3. DRAW POWER RAILS (Vertical-ish rails on left and right)
+    rail_offsets = [0.05, 0.10, 0.90, 0.95]
+    for t in rail_offsets:
+        top_p = lerp_pt(tl, tr, t)
+        bot_p = lerp_pt(bl, br, t)
+        draw.line([top_p, bot_p], fill=pale_blue, width=3)
     
-    for rx in rail_x_positions:
-        draw.line([(rx, 0), (rx, h)], fill=pale_blue, width=3)
-
     # 4. DRAW SPLIT HORIZONTAL ROWS (Columns A-E and F-J)
     if snap_rows:
-        # Calculate the exact start and end X-coordinates for the left block (A-E)
-        ae_start = x_min_px + (board_w_px * 0.18)
-        ae_end   = x_min_px + (board_w_px * 0.45)
-        
-        # Calculate the exact start and end X-coordinates for the right block (F-J)
-        fj_start = x_min_px + (board_w_px * 0.55)
-        fj_end   = x_min_px + (board_w_px * 0.82)
-        
         for ry in snap_rows:
-            y_px = ry * h / 1000.0
+            t_vertical = ry / 1000.0
+            # Interpolate down the left and right sides to find this row's start/end
+            row_l = lerp_pt(tl, bl, t_vertical)
+            row_r = lerp_pt(tr, br, t_vertical)
             
-            # Draw Left block (A-E)
-            draw.line([(ae_start, y_px), (ae_end, y_px)], fill=pale_blue, width=3)
+            # Left block of pins (A-E)
+            p_ae_start = lerp_pt(row_l, row_r, 0.18)
+            p_ae_end = lerp_pt(row_l, row_r, 0.45)
+            draw.line([p_ae_start, p_ae_end], fill=pale_blue, width=3)
             
-            # Draw Right block (F-J)
-            draw.line([(fj_start, y_px), (fj_end, y_px)], fill=pale_blue, width=3)
-
+            # Right block of pins (F-J)
+            p_fj_start = lerp_pt(row_l, row_r, 0.55)
+            p_fj_end = lerp_pt(row_l, row_r, 0.82)
+            draw.line([p_fj_start, p_fj_end], fill=pale_blue, width=3)
+            
     return image
     
 def draw_pins_on_image(image, df_components):
@@ -449,7 +420,6 @@ if "step" not in st.session_state: st.session_state.step = 1
 if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
 if "analysis_result" not in st.session_state: st.session_state.analysis_result = None
 if "hough_rows" not in st.session_state: st.session_state.hough_rows = []
-if "hough_cols" not in st.session_state: st.session_state.hough_cols = []
 if "breadboard_corners" not in st.session_state: st.session_state.breadboard_corners = None
 for i in range(1, 5): 
     if f"img{i}" not in st.session_state: st.session_state[f"img{i}"] = None
@@ -510,9 +480,9 @@ if active_input:
     
     raw_student = st.session_state.img1
 
-    # 2. Detect Rows AND Columns via Direct Hole Detection
+    # 2. Detect rows based on the ALREADY scaled image
     if not st.session_state.hough_rows:
-        st.session_state.hough_rows, st.session_state.hough_cols = detect_breadboard_grid_from_holes(raw_student)
+        st.session_state.hough_rows = detect_horizontal_rows(raw_student)
 
     # STEP 1: DETECTION
     if st.session_state.step == 1:
@@ -595,7 +565,7 @@ if active_input:
                                 continue
                                     
                 st.session_state.components_df = pd.DataFrame(records)
-                base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.hough_cols)
+                base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
                 st.session_state.img2 = draw_pins_on_image(base_grid_img, st.session_state.components_df)
                 st.session_state.step = 2
                 st.rerun()
@@ -622,7 +592,7 @@ if active_input:
             edited_df = pd.DataFrame(updated_data)
 
         with img_col:
-            base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.hough_cols)
+            base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
             st.session_state.img3 = draw_pins_on_image(base_grid_img, edited_df)
             st.image(st.session_state.img3, caption=UI[l]["verify"])
 
