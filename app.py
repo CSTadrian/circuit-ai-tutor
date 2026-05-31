@@ -13,7 +13,7 @@ from PIL import Image as PILImage, ImageDraw, ImageOps
 # --- NEW SDK IMPORTS ---
 from google import genai
 from google.genai import types
-from google.oauth2 import service_accounta
+from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
