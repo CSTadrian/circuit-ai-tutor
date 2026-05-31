@@ -20,8 +20,6 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
 # --- 1. CONFIGURATION & TASK SETUP ---
-# --- NEW: TASK CONFIGURATION ---
-# Define your tasks and their corresponding filenames in the 'data' folder
 TASKS = {
     "Task 1: Basic LED Circuit": "task1_led.png",
     "Task 2: LED in Series": "task2_series_led.png",
@@ -254,14 +252,28 @@ def process_uploaded_image(file_input):
         st.error(f"Image Load Failed: {e}")
         return None
 
-def draw_coordinate_grid(image, snap_rows=None):
+def draw_coordinate_grid(image, snap_rows=None, corners=None):
     """
-    Draws realistic internal breadboard connections (Vertical Power Rails + Split Center Rows)
+    Draws realistic internal breadboard connections using perspective interpolation based on AI-detected corners.
     """
     draw = ImageDraw.Draw(image)
     w, h = image.size
     pale_blue = (173, 216, 230)
     boundary_color = (0, 0, 255) # Outermost bounding box color
+
+    # If AI hasn't detected corners yet, skip perspective drawing to avoid errors
+    if not corners or not all(k in corners for k in ["top_left", "top_right", "bottom_right", "bottom_left"]):
+        return image
+
+    # Helper: Convert AI 0-1000 [y, x] scale back to pixel coordinates [x, y]
+    def get_px(pt):
+        if not pt or len(pt) < 2: return (0, 0)
+        return (pt[1] * w / 1000, pt[0] * h / 1000)
+
+    tl = get_px(corners.get("top_left"))
+    tr = get_px(corners.get("top_right"))
+    br = get_px(corners.get("bottom_right"))
+    bl = get_px(corners.get("bottom_left"))
 
     # 1. DRAW OUTER BOUNDARY (Bounding Box)
     draw.line([tl, tr, br, bl, tl], fill=boundary_color, width=5)
@@ -274,7 +286,7 @@ def draw_coordinate_grid(image, snap_rows=None):
     mid_l = lerp_pt(tl, bl, 0.5)
     mid_r = lerp_pt(tr, br, 0.5)
     draw.line([mid_l, mid_r], fill=boundary_color, width=4)
-    
+
     # 3. DRAW POWER RAILS (Vertical-ish rails on left and right)
     rail_offsets = [0.05, 0.10, 0.90, 0.95]
     for t in rail_offsets:
@@ -302,7 +314,6 @@ def draw_coordinate_grid(image, snap_rows=None):
             
     return image
     
-    
 def draw_pins_on_image(image, df_components):
     img_copy = image.copy()
     draw = ImageDraw.Draw(img_copy)
@@ -317,25 +328,20 @@ def draw_pins_on_image(image, df_components):
 # --- NEW: VISUAL SUMMARY GENERATOR ---
 def create_visual_report(successes, errors, lang):
     """Generates a summary image card of the student's semantic performance."""
-    # Create a blank white canvas
     img = PILImage.new('RGB', (800, 400), color=(255, 255, 255))
     draw = ImageDraw.Draw(img)
     
-    # Fonts (Using default load, but you can load a TTF if needed)
-    # Title
     title = "Visual Performance Summary" if lang == "en" else "視覺化成果總結"
     draw.text((20, 20), title, fill=(0, 0, 0))
     
-    # Draw Success Box (Left Side)
     draw.rectangle([20, 60, 390, 380], outline=(0, 150, 0), width=3, fill=(240, 255, 240))
     draw.text((40, 75), "Matched Semantics ✅" if lang=="en" else "語義匹配 (正確) ✅", fill=(0, 128, 0))
     
     y_off = 110
-    for item in successes[:8]: # Limit to 8 items to prevent overflow
+    for item in successes[:8]: 
         draw.text((40, y_off), f"• {item}", fill=(30, 30, 30))
         y_off += 25
 
-    # Draw Error Box (Right Side)
     draw.rectangle([410, 60, 780, 380], outline=(200, 0, 0), width=3, fill=(255, 240, 240))
     draw.text((430, 75), "Missing/Wrong ❌" if lang=="en" else "遺漏/錯誤 ❌", fill=(200, 0, 0))
     
@@ -473,7 +479,7 @@ if active_input:
     if st.session_state.step == 1:
         col1, col2 = st.columns(2)
         col1.image(raw_schematic, caption=UI[l]["schematic"])
-        col2.image(draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows), caption=UI[l]["your_circuit"])
+        col2.image(draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners), caption=UI[l]["your_circuit"])
 
         if st.button(UI[l]["step1_btn"], type="primary"):
             with st.spinner(UI[l]["analyzing"]):
@@ -517,14 +523,14 @@ if active_input:
                         }
                     )
                 )
-
+                
                 result = resp.parsed
                 if isinstance(result, list) and len(result) > 0:
                     result = result[0]
                 
                 # Extract and store corners
                 st.session_state.breadboard_corners = result.get("breadboard_corners", {})
-                
+
                 # Process components
                 records = []
                 for item in result.get("components", []):
@@ -550,7 +556,7 @@ if active_input:
                                 continue
                                     
                 st.session_state.components_df = pd.DataFrame(records)
-                base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows)
+                base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
                 st.session_state.img2 = draw_pins_on_image(base_grid_img, st.session_state.components_df)
                 st.session_state.step = 2
                 st.rerun()
@@ -577,7 +583,7 @@ if active_input:
             edited_df = pd.DataFrame(updated_data)
 
         with img_col:
-            base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows)
+            base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
             st.session_state.img3 = draw_pins_on_image(base_grid_img, edited_df)
             st.image(st.session_state.img3, caption=UI[l]["verify"])
 
@@ -586,7 +592,7 @@ if active_input:
             st.session_state.step = 3
             st.rerun()
 
-    # STEP 3: ANALYSIS (Now correctly aligned with the 'elif' above)
+    # STEP 3: ANALYSIS
     elif st.session_state.step == 3:
         st.subheader(UI[l]["step3_title"])
         
