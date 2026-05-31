@@ -261,29 +261,47 @@ def draw_coordinate_grid(image, snap_rows=None):
     draw = ImageDraw.Draw(image)
     w, h = image.size
     pale_blue = (173, 216, 230)
+    boundary_color = (0, 0, 255) # Outermost bounding box color
+
+    # 1. DRAW OUTER BOUNDARY (Bounding Box)
+    draw.line([tl, tr, br, bl, tl], fill=boundary_color, width=5)
+
+    # Helper function for perspective interpolation (Linear Interpolation)
+    def lerp_pt(p1, p2, t):
+        return (p1[0] + (p2[0] - p1[0]) * t, p1[1] + (p2[1] - p1[1]) * t)
+
+    # 2. DRAW MIDDLE GAP (Horizontal-ish gap running down the center)
+    mid_l = lerp_pt(tl, bl, 0.5)
+    mid_r = lerp_pt(tr, br, 0.5)
+    draw.line([mid_l, mid_r], fill=boundary_color, width=4)
     
-    # 1. Draw Vertical Power Rails (LHS & RHS)
-    # Using typical percentages for edge rails: 5%, 10% (Left), and 90%, 95% (Right)
-    rail_x_offsets = [0.05, 0.10, 0.90, 0.95]
-    for x_offset in rail_x_offsets:
-        x_px = int(w * x_offset)
-        draw.line([(x_px, 0), (x_px, h)], fill=pale_blue, width=3)
+    # 3. DRAW POWER RAILS (Vertical-ish rails on left and right)
+    rail_offsets = [0.05, 0.10, 0.90, 0.95]
+    for t in rail_offsets:
+        top_p = lerp_pt(tl, tr, t)
+        bot_p = lerp_pt(bl, br, t)
+        draw.line([top_p, bot_p], fill=pale_blue, width=3)
     
-    # 2. Draw Split Horizontal Rows (Columns A-E and F-J)
+    # 4. DRAW SPLIT HORIZONTAL ROWS (Columns A-E and F-J)
     if snap_rows:
         for ry in snap_rows:
-            y_px = ry * h / 1000
-            # Left block of pins (A-E)
-            draw.line([(w * 0.18, y_px), (w * 0.45, y_px)], fill=pale_blue, width=3)
-            # Right block of pins (F-J)
-            draw.line([(w * 0.55, y_px), (w * 0.82, y_px)], fill=pale_blue, width=3)
+            t_vertical = ry / 1000.0
+            # Interpolate down the left and right sides to find this row's start/end
+            row_l = lerp_pt(tl, bl, t_vertical)
+            row_r = lerp_pt(tr, br, t_vertical)
             
-    # Draw red reference markers on edges
-    for i in range(0, 1001, 100):
-        x_px, y_px = i * w / 1000, i * h / 1000
-        draw.line([(x_px, 0), (x_px, 30)], fill=(255, 0, 0), width=4)
-        draw.line([(0, y_px), (30, y_px)], fill=(255, 0, 0), width=4)
+            # Left block of pins (A-E)
+            p_ae_start = lerp_pt(row_l, row_r, 0.18)
+            p_ae_end = lerp_pt(row_l, row_r, 0.45)
+            draw.line([p_ae_start, p_ae_end], fill=pale_blue, width=3)
+            
+            # Right block of pins (F-J)
+            p_fj_start = lerp_pt(row_l, row_r, 0.55)
+            p_fj_end = lerp_pt(row_l, row_r, 0.82)
+            draw.line([p_fj_start, p_fj_end], fill=pale_blue, width=3)
+            
     return image
+    
     
 def draw_pins_on_image(image, df_components):
     img_copy = image.copy()
@@ -387,6 +405,7 @@ if "step" not in st.session_state: st.session_state.step = 1
 if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
 if "analysis_result" not in st.session_state: st.session_state.analysis_result = None
 if "hough_rows" not in st.session_state: st.session_state.hough_rows = []
+if "breadboard_corners" not in st.session_state: st.session_state.breadboard_corners = None
 for i in range(1, 5): 
     if f"img{i}" not in st.session_state: st.session_state[f"img{i}"] = None
 if "lang" not in st.session_state: st.session_state.lang = "en"
@@ -397,6 +416,7 @@ def reset_flow():
         elif "step" in key: st.session_state[key] = 1
         else: st.session_state[key] = None
     st.session_state.hough_rows = []
+    st.session_state.breadboard_corners = None
 
 # --- 6. MAIN UI ---
 
@@ -458,38 +478,65 @@ if active_input:
         if st.button(UI[l]["step1_btn"], type="primary"):
             with st.spinner(UI[l]["analyzing"]):
                 prompt = """
-                    Identify components on the breadboard. Specifically:
+                    1. Identify the BREADBOARD boundaries: Provide the [y, x] coordinates for the four outer corners (top_left, top_right, bottom_right, bottom_left).
+                    2. Identify components on the breadboard. Specifically:
                     - POWER SUPPLY: You MUST identify the power input module. It has exactly 2 pins: the red wire/pin (+ve/Vcc) and the black wire/pin (-ve/GND).
                     - SLIDE-SWITCH: You MUST identify exactly 3 pins (legs) positioned continuously in a single straight row. 
                     - 4-pin Push Button, LDR, LED
                     - resistor (check color bands: '5-band 300ohm', '1000 ohm', or '10k ohm')
-                    Return JSON: 'name', 'center': [y,x], 'legs': [[y,x],...]
+                    Return JSON mapping 'breadboard_corners' and 'components'.
                     """
                 resp = client.models.generate_content(
                     model=MODEL_ID, contents=[raw_student, prompt],
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
-                        response_schema={"type":"ARRAY", "items":{"type":"OBJECT", "properties":{
-                            "name":{"type":"STRING"},
-                            "center":{"type":"ARRAY", "items":{"type":"INTEGER"}},
-                            "legs":{"type":"ARRAY", "items":{"type":"ARRAY", "items":{"type":"INTEGER"}}}
+                        response_schema={
+                            "type": "OBJECT",
+                            "properties": {
+                                "breadboard_corners": {
+                                    "type": "OBJECT",
+                                    "properties": {
+                                        "top_left": {"type": "ARRAY", "items": {"type": "INTEGER"}},
+                                        "top_right": {"type": "ARRAY", "items": {"type": "INTEGER"}},
+                                        "bottom_right": {"type": "ARRAY", "items": {"type": "INTEGER"}},
+                                        "bottom_left": {"type": "ARRAY", "items": {"type": "INTEGER"}},
+                                    }
+                                },
+                                "components": {
+                                    "type": "ARRAY", 
+                                    "items": {
+                                        "type": "OBJECT", 
+                                        "properties": {
+                                            "name": {"type": "STRING"},
+                                            "center": {"type": "ARRAY", "items": {"type": "INTEGER"}},
+                                            "legs": {"type": "ARRAY", "items": {"type": "ARRAY", "items": {"type": "INTEGER"}}}
+                                        }
+                                    }
+                                }
+                            }
                         }}}
                     )
                 )
+
+                result = resp.parsed
+                if isinstance(result, list) and len(result) > 0:
+                    result = result[0]
+                
+                # Extract and store corners
+                st.session_state.breadboard_corners = result.get("breadboard_corners", {})
+                
+                # Process components
                 records = []
-                for item in resp.parsed:
-                    # Safely get the center, defaulting to [500, 500] if missing or malformed
+                for item in result.get("components", []):
                     center = item.get('center', [500, 500])
                     if isinstance(center, list) and len(center) == 2:
                         cy, cx = center
                     else:
                         cy, cx = 500, 500
                         
-                    # Safely unpack the legs
                     legs = item.get('legs', [])
                     if isinstance(legs, list):
                         for i, leg in enumerate(legs):
-                            # ONLY unpack if there are exactly 2 coordinates
                             if isinstance(leg, list) and len(leg) >= 2:
                                 ly, lx = leg[0], leg[1]
                                 records.append({
@@ -500,7 +547,6 @@ if active_input:
                                     "LY": ly
                                 })
                             else:
-                                # Silently skip malformed pins to prevent app crashes
                                 continue
                                     
                 st.session_state.components_df = pd.DataFrame(records)
