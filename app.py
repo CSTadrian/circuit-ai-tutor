@@ -616,21 +616,28 @@ if active_input:
                     2. POWER RAILS (Edges): The two leftmost and two rightmost columns are Power Rails. 
                     3. PALE BLUE OVERLAYS: Connected to Power Supply.
                 
-                    Electrical Analysis Rules (CRITICAL UPDATES): 
+                    Electrical Analysis Rules: 
                     1. POWER SUPPLY: Must form a closed loop.
                     2. SERIES REVERSIBILITY: An LED in series with a resistor is considered correct regardless of order (LED -> Resistor IS THE SAME AS Resistor -> LED).
                     3. RESISTOR VALUES IGNORED: Do NOT check exact resistance values or color bands. Only verify that a generic resistor component is present and connected properly.
                 
+                    Pedagogical Scaffolding Rules (CRITICAL):
+                    1. IF THERE ARE ERRORS: DO NOT give direct answers or tell the student which exact rows to change. Instead, use SOCRATIC SCAFFOLDING. Ask a guiding question related to the underlying theory of their specific mistake (e.g., if the circuit is open, ask how electricity needs a continuous path to return home). 
+                    2. IF 100% CORRECT: Praise them enthusiastically, and then provide a "What-If" CHALLENGE to encourage deeper exploration. Tailor the challenge to the components used (e.g., "What happens if you swap the resistor for a smaller one?", "Can you add a button?", "If you have a capacitor, how can you make the LED fade out slowly?").
+
                     Bilingual Output Requirement:
-                    For the 'feedback' string, you MUST provide the English explanation first, followed by a newline, and then a formal Cantonese (Traditional Chinese) translation. The tone must be highly encouraging for primary/secondary school students (P4-S3) and use emojis.
+                    For the 'feedback' string, provide the English text first, followed by a newline, and then a formal Cantonese (Traditional Chinese) translation. Use emojis and an engaging tone suitable for P4-S3 students.
                     
-                    Example Format for Feedback:
-                    "Great job! The LED and resistor are perfectly connected in series! 💡\n\n做得好！粒 LED 同電阻完美串聯埋一齊！💡"
+                    Example Format (Error - Socratic):
+                    "It looks like your LED isn't lighting up! 🧐 Follow the path of electricity from the positive red wire. Does it have a continuous bridge to reach the negative wire? Where does the path break?\n\n睇落你粒 LED 唔著喎！🧐 試吓跟住電流由紅線 (+) 出發嘅路徑。佢有冇一條完整嘅路徑可以返去黑線 (-)？條路喺邊度斷咗呀？"
+                    
+                    Example Format (Correct - Challenge):
+                    "Perfect circuit! 🎉 Since it's working beautifully, here is a challenge: What do you think will happen to the LED brightness if you replace the current resistor with a much stronger one? Try it out! ⚡\n\n完美嘅電路！🎉 既然已經成功咗，考吓你：如果你換一粒電阻值更大嘅電阻，你估吓 LED 嘅亮度會有咩變化？試吓啦！⚡"
 
                     Component Data (Available Pins):
                     {summary}
                 
-                    Compare to Target Schematic. Return JSON with 'feedback', 'detected_errors', 'success_summary' (array of strings), and 'error_summary' (array of strings).
+                    Compare to Target Schematic. Return JSON with 'feedback' (containing the Socratic/Challenge text), 'detected_errors', 'success_summary' (array of strings), and 'error_summary' (array of strings).
                     """
                 
                 try:
