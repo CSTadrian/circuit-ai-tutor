@@ -282,10 +282,12 @@ def draw_coordinate_grid(image, snap_rows=None, corners=None):
     def lerp_pt(p1, p2, t):
         return (p1[0] + (p2[0] - p1[0]) * t, p1[1] + (p2[1] - p1[1]) * t)
 
-    # 2. DRAW MIDDLE GAP (Horizontal-ish gap running down the center)
-    mid_l = lerp_pt(tl, bl, 0.5)
-    mid_r = lerp_pt(tr, br, 0.5)
-    draw.line([mid_l, mid_r], fill=boundary_color, width=4)
+    # 2. DRAW MIDDLE GAP (Vertical trench running through the center)
+    # Interpolate midpoints on the top edge (between TL and TR) 
+    # and the bottom edge (between BL and BR)
+    mid_top = lerp_pt(tl, tr, 0.5)
+    mid_bottom = lerp_pt(bl, br, 0.5)
+    draw.line([mid_top, mid_bottom], fill=boundary_color, width=4)
 
     # 3. DRAW POWER RAILS (Vertical-ish rails on left and right)
     rail_offsets = [0.05, 0.10, 0.90, 0.95]
