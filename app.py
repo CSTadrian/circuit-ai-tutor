@@ -252,61 +252,7 @@ def detect_breadboard_grid_from_holes(pil_img):
     normalized_cols = [int((x / w) * 1000) for x in col_x_pixels]
 
     return normalized_rows, normalized_cols
-    
-# def detect_horizontal_rows(pil_img):
-#     """
-#     Detects breadboard rows AFTER resizing. 
-#     The higher resolution helps the algorithm find holes more accurately.
-#     """
-#     img_cv = np.array(pil_img)
-#     if len(img_cv.shape) == 3:
-#         gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
-#     else:
-#         gray = img_cv
 
-#     blurred = cv2.GaussianBlur(gray, (7, 7), 0)
-#     thresh = cv2.adaptiveThreshold(
-#         blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-#         cv2.THRESH_BINARY_INV, 31, 10
-#     )
-
-#     height, width = thresh.shape
-#     row_sums = np.sum(thresh, axis=1)
-
-#     window_size = max(int(height * 0.005), 5)
-#     kernel = np.ones(window_size) / window_size
-#     smoothed_sums = np.convolve(row_sums, kernel, mode='same')
-
-#     min_peak_distance = max(int(height * 0.012), 10)
-#     threshold_val = np.max(smoothed_sums) * 0.08 
-
-#     peaks = []
-#     for i in range(min_peak_distance, height - min_peak_distance):
-#         if smoothed_sums[i] > threshold_val:
-#             local_window = smoothed_sums[i - min_peak_distance : i + min_peak_distance + 1]
-#             if smoothed_sums[i] == np.max(local_window):
-#                 if not peaks or (i - peaks[-1]) >= min_peak_distance:
-#                     peaks.append(i)
-
-#     # MATH FILL-IN ALGORITHM
-#     if len(peaks) > 5:
-#         distances = [peaks[i] - peaks[i-1] for i in range(1, len(peaks))]
-#         median_dist = np.median(distances)
-        
-#         filled_peaks = []
-#         for i in range(len(peaks)-1):
-#             filled_peaks.append(peaks[i])
-#             gap = peaks[i+1] - peaks[i]
-#             if 1.5 * median_dist < gap < 5 * median_dist:
-#                 num_missing = int(round(gap / median_dist)) - 1
-#                 step = gap / (num_missing + 1)
-#                 for j in range(1, num_missing + 1):
-#                     filled_peaks.append(int(peaks[i] + j * step))
-#         filled_peaks.append(peaks[-1])
-#         peaks = filled_peaks
-
-#     # Normalize back to 0-1000 scale based on the NEW height
-#     return [int((y / height) * 1000) for y in peaks]
     
 def process_uploaded_image(file_input):
     """
@@ -649,7 +595,7 @@ if active_input:
                                 continue
                                     
                 st.session_state.components_df = pd.DataFrame(records)
-                base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
+                base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.hough_cols)
                 st.session_state.img2 = draw_pins_on_image(base_grid_img, st.session_state.components_df)
                 st.session_state.step = 2
                 st.rerun()
@@ -676,7 +622,7 @@ if active_input:
             edited_df = pd.DataFrame(updated_data)
 
         with img_col:
-            base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
+            base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.hough_cols)
             st.session_state.img3 = draw_pins_on_image(base_grid_img, edited_df)
             st.image(st.session_state.img3, caption=UI[l]["verify"])
 
