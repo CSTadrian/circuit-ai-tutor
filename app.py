@@ -514,7 +514,7 @@ if active_input:
                                     }
                                 }
                             }
-                        }}}
+                        }
                     )
                 )
 
