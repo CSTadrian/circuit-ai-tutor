@@ -327,30 +327,37 @@ def draw_pins_on_image(image, df_components):
         draw.ellipse([end[0]-6, end[1]-6, end[0]+6, end[1]+6], fill=(255, 255, 0), outline=(0,0,0))
     return img_copy
 
-# --- NEW: VISUAL SUMMARY GENERATOR ---
+
+# --- NEW: VISUAL SUMMARY GENERATOR (Vertical Up/Down Layout) ---
 def create_visual_report(successes, errors, lang):
-    """Generates a summary image card of the student's semantic performance."""
-    img = PILImage.new('RGB', (800, 400), color=(255, 255, 255))
+    """Generates a vertical summary image card of the student's performance."""
+    # Create a blank white canvas (Taller to handle vertical lists)
+    img = PILImage.new('RGB', (800, 600), color=(255, 255, 255))
     draw = ImageDraw.Draw(img)
     
-    title = "Visual Performance Summary" if lang == "en" else "視覺化成果總結"
-    draw.text((20, 20), title, fill=(0, 0, 0))
+    # Title
+    title = "Visual Performance Summary 📊" if lang == "en" else "視覺化成果總結 📊"
+    draw.text((30, 20), title, fill=(0, 0, 0))
     
-    draw.rectangle([20, 60, 390, 380], outline=(0, 150, 0), width=3, fill=(240, 255, 240))
-    draw.text((40, 75), "Matched Semantics ✅" if lang=="en" else "語義匹配 (正確) ✅", fill=(0, 128, 0))
+    # --- TOP BOX: Successes (Good) ---
+    draw.rectangle([30, 60, 770, 280], outline=(0, 150, 0), width=3, fill=(240, 255, 240))
+    draw.text((50, 75), "✅ What you did well! / 做得好嘅地方！", fill=(0, 128, 0))
     
     y_off = 110
-    for item in successes[:8]: 
-        draw.text((40, y_off), f"• {item}", fill=(30, 30, 30))
-        y_off += 25
+    # Limit to 5 items to prevent vertical overflow in the top box
+    for item in successes[:5]: 
+        draw.text((60, y_off), f"🌟 {item}", fill=(30, 30, 30))
+        y_off += 30
 
-    draw.rectangle([410, 60, 780, 380], outline=(200, 0, 0), width=3, fill=(255, 240, 240))
-    draw.text((430, 75), "Missing/Wrong ❌" if lang=="en" else "遺漏/錯誤 ❌", fill=(200, 0, 0))
+    # --- BOTTOM BOX: Errors (Needs Improvement) ---
+    draw.rectangle([30, 310, 770, 560], outline=(200, 100, 0), width=3, fill=(255, 250, 240))
+    draw.text((50, 325), "🛠️ Things to check / 需要檢查嘅地方", fill=(200, 100, 0))
     
-    y_off = 110
-    for item in errors[:8]:
-        draw.text((430, y_off), f"• {item}", fill=(30, 30, 30))
-        y_off += 25
+    y_off = 360
+    # Limit to 5 items to prevent vertical overflow in the bottom box
+    for item in errors[:5]:
+        draw.text((60, y_off), f"🔍 {item}", fill=(30, 30, 30))
+        y_off += 30
         
     return img
     
@@ -609,14 +616,21 @@ if active_input:
                     2. POWER RAILS (Edges): The two leftmost and two rightmost columns are Power Rails. 
                     3. PALE BLUE OVERLAYS: Connected to Power Supply.
                 
-                    Electrical Analysis Rules: 
+                    Electrical Analysis Rules (CRITICAL UPDATES): 
                     1. POWER SUPPLY: Must form a closed loop.
-                    2. SERIES & PATHS: Evaluate the semantic flow from +ve to GND.
+                    2. SERIES REVERSIBILITY: An LED in series with a resistor is considered correct regardless of order (LED -> Resistor IS THE SAME AS Resistor -> LED).
+                    3. RESISTOR VALUES IGNORED: Do NOT check exact resistance values or color bands. Only verify that a generic resistor component is present and connected properly.
                 
+                    Bilingual Output Requirement:
+                    For the 'feedback' string, you MUST provide the English explanation first, followed by a newline, and then a formal Cantonese (Traditional Chinese) translation. The tone must be highly encouraging for primary/secondary school students (P4-S3) and use emojis.
+                    
+                    Example Format for Feedback:
+                    "Great job! The LED and resistor are perfectly connected in series! 💡\n\n做得好！粒 LED 同電阻完美串聯埋一齊！💡"
+
                     Component Data (Available Pins):
                     {summary}
                 
-                    Compare to Target Schematic. Return JSON with 'feedback', 'detected_errors', 'success_summary', and 'error_summary'.
+                    Compare to Target Schematic. Return JSON with 'feedback', 'detected_errors', 'success_summary' (array of strings), and 'error_summary' (array of strings).
                     """
                 
                 try:
