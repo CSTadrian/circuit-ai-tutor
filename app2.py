@@ -1,319 +1,163 @@
 # -*- coding: utf-8 -*-
-
 import streamlit as st
-
 import pandas as pd
-
 import json
-
 import os
-
 import io
-
 import pytz
-
 import cv2
-
 import numpy as np
-
 from datetime import datetime
-
 from PIL import Image as PILImage, ImageDraw, ImageOps
 
-
-
 # --- NEW SDK IMPORTS ---
-
 from google import genai
-
 from google.genai import types
-
 from google.oauth2 import service_account
-
 from google.oauth2.credentials import Credentials
-
 from google.auth.transport.requests import Request
-
 from googleapiclient.discovery import build
-
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
-
-
 # --- 1. CONFIGURATION & TASK SETUP ---
-
 TASKS = {
-
     "Task 1: Basic LED Circuit": "task1_led.png",
-
     "Task 2: LED in Series": "task2_series_led.png",
-
     "Task 3: Parallel LED Setup": "task3_parallel_led.png",
-
     "Task 4: Switch Control": "task4_switch.png",
-
     "Task 5: Button Control": "task5_button.png",
-
     "Task 6: Capacitor": "task6_capacitor.png",
-
     "Exam 1": "exam1.png",
-
     "Exam 2": "exam2.png",
-
     "Exam 3": "exam3.png"
-
 }
 
-
-
 DATA_FOLDER = "data"
-
 MODEL_ID = "gemini-3.1-pro-preview"
 
-
-
 # Google Drive Config
-
 PARENT_FOLDER_ID = "1_cn9lfvMLaozDTx8pvU6LP62J9AVFrvz"
-
 CSV_FILENAME = "circuit_audit_logs.csv"
 
-
-
 # --- NEW: LANGUAGE DICTIONARY ---
-
 UI = {
-
     "en": {
-
         "title": "🔌 AI Circuit Tutor",
-
         "setup": "Setup",
-
         "user_id": "Select User ID",
-
         "task": "Select Task",
-
         "target": "Target Schematic",
-
         "input_mode": "Input Method",
-
         "mode_upload": "Upload Image",
-
         "mode_camera": "Use Camera",
-
         "upload": "Upload Student Photo",
-
         "reset": "Reset Process",
-
         "schematic": "Schematic",
-
         "your_circuit": "Your Circuit (Pale Blue = Internal Connections)",
-
         "step1_btn": "🔍 Step 1: Detect Components",
-
         "analyzing": "AI analyzing breadboard...",
-
         "step2_title": "⚙️ Step 2: Fine-Tune Component Pins (Auto-Snapping)",
-
         "step2_confirm": "✅ Confirm & Analyze Circuit",
-
         "snapped": "*(Y auto-snapped to nearest row: {y})*",
-
         "verify": "Verify Orange Legs & Yellow Pins (Snapped to Blue Rows)",
-
         "step3_title": "🧠 Step 3: AI Diagnosis",
-
         "checking": "Checking electrical logic...",
-
         "ai_diag": "AI Diagnosis: Red circles indicate potential wiring issues",
-
         "save": "💾 Save to Drive",
-
         "back": "🔙 Back",
-
         "new": "🎉 New Task",
-
         "upload_prompt": "Please select an input method to upload or capture a photo.",
-
         "prompt_addition": "", 
-
         "guide_title": "📖 Quick Guide",
-
         "camera": "Take a Photo of your Circuit",
-
         "guide_text": """
-
         **How to Start:**
-
         1. Select Task & Upload Photo
-
         2. Detect Components (Step 1)
-
         3. Adjust Pin Rows (Step 2)
-
         4. AI Diagnosis (Step 3)
 
-        
-
         **Visual Legend:**
-
         * 🔴 **Red Circle:** Open circuit (e.g., wires not connecting, misaligned rows).
-
         * 🟦 **Blue Box:** Wrong component used.
-
         * 🟡 **Yellow Circle:** Wrong connection/orientation (e.g., switch placed horizontally).
-
         """,
-
     },
 
     "hk": {
-
         "title": "🔌 AI 電路導師",
-
         "setup": "設定",
-
         "user_id": "選擇學生 ID",
-
         "task": "選擇任務",
-
         "target": "目標電路圖",
-
         "input_mode": "輸入方式",
-
         "mode_upload": "上傳圖片",
-
         "mode_camera": "使用相機",
-
         "upload": "上傳學生電路照片",
-
         "reset": "重置流程",
-
         "schematic": "電路圖",
-
         "your_circuit": "你的電路（淺藍色線 = 麵包板內部接線）",
-
         "step1_btn": "🔍 第一步：偵測零件",
-
         "analyzing": "AI 正在分析麵包板...",
-
         "step2_title": "⚙️ 第二步：微調零件引腳（自動對齊）",
-
         "step2_confirm": "✅ 確認並分析電路",
-
         "snapped": "*(Y 軸已自動對齊至最近的行：{y})*",
-
         "verify": "請核對橙色引腳與黃色接點（已對齊至淺藍色行）",
-
         "step3_title": "🧠 第三步：AI 診斷",
-
         "checking": "正在檢查電路邏輯...",
-
         "ai_diag": "AI 診斷：紅圈表示潛在的接線問題",
-
         "save": "💾 儲存至 Drive",
-
         "back": "🔙 返回",
-
         "new": "🎉 新任務",
-
         "upload_prompt": "請選擇上傳照片或拍攝新照片以開始。",
-
         "guide_title": "📖 快速指南",
-
         "camera": "拍攝電路照片",
-
         "guide_text": """
-
         **使用步驟：**
-
         1. 選擇任務並上傳照片
-
         2. 偵測零件（第一步）
-
         3. 微調引腳位置（第二步）
-
         4. AI 進行診斷（第三步）
-
         
-
         **圖示說明：**
-
         * 🔴 **紅圈：** 斷路（例如：接線未連接 / 錯誤插在相鄰的行數）。
-
         * 🟦 **藍框：** 使用了錯誤的零件。
-
         * 🟡 **黃圈：** 接法或方向錯誤（例如：開關打橫插）。
-
         """,
-
         "prompt_addition": "Please provide the 'feedback' text entirely in written formal Cantonese (Traditional Chinese). Ensure the tone is encouraging for a primary/secondary school student."
-
     }
-
 }
 
-
-
 # --- 2. AUTHENTICATION & INITIALIZATION ---
-
 @st.cache_resource
-
 def get_drive_creds():
-
     oauth_info = st.secrets["google_oauth"]
-
     creds = Credentials(
-
         token=None,
-
         refresh_token=oauth_info["refresh_token"],
-
         client_id=oauth_info["client_id"],
-
         client_secret=oauth_info["client_secret"],
-
         token_uri="https://oauth2.googleapis.com/token",
-
         scopes=['https://www.googleapis.com/auth/drive.file']
-
     )
-
     return creds
 
-
-
 def get_drive_service():
-
     creds = get_drive_creds()
-
     if not creds.valid:
-
         creds.refresh(Request())
-
     return build('drive', 'v3', credentials=creds, static_discovery=False)
 
-
-
 if "gcp_service_account" in st.secrets:
-
     creds_info = st.secrets["gcp_service_account"]
-
     credentials = service_account.Credentials.from_service_account_info(
-
         creds_info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
-
     )
-
     client = genai.Client(vertexai=True, project=creds_info["project_id"], location="global", credentials=credentials)
-
 else:
-
     st.error("GCP Service Account secrets not found!")
-
     st.stop()
-
+    
 
 --- 3. UI CUSTOMIZATION (Hiding Menus) ---
 st.set_page_config(page_title="AI Circuit Tutor", layout="wide")
