@@ -238,10 +238,10 @@ def process_uploaded_image(file_input):
         img = ImageOps.exif_transpose(img)
         img = img.convert("RGB")
         
-        # w, h = img.size
-        # new_size = (w * 2, h * 4)
+        w, h = img.size
+        new_size = (w * 3, h * 6)
         
-        # img = img.resize(new_size, PILImage.Resampling.LANCZOS)
+        img = img.resize(new_size, PILImage.Resampling.LANCZOS)
         
         # MAX_DIM = 4000 
         # if max(img.size) > MAX_DIM:
