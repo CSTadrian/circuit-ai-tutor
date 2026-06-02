@@ -243,9 +243,9 @@ def process_uploaded_image(file_input):
         
         img = img.resize(new_size, PILImage.Resampling.LANCZOS)
         
-        # MAX_DIM = 4000 
-        # if max(img.size) > MAX_DIM:
-        #     img.thumbnail((MAX_DIM, MAX_DIM), PILImage.Resampling.LANCZOS)
+        MAX_DIM = 4000 
+        if max(img.size) > MAX_DIM:
+            img.thumbnail((MAX_DIM, MAX_DIM), PILImage.Resampling.LANCZOS)
             
         return img
     except Exception as e:
