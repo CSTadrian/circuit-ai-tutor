@@ -172,10 +172,14 @@ st.markdown("""
 
 def detect_horizontal_rows(pil_img):
     """
-    Detects breadboard rows AFTER resizing. 
-    The higher resolution helps the algorithm find holes more accurately.
+    Detects breadboard rows. Uses 8-bit depth safety check.
     """
+    if pil_img is None: return []
+    
     img_cv = np.array(pil_img)
+    if img_cv.dtype != np.uint8:
+        img_cv = img_cv.astype(np.uint8)
+
     if len(img_cv.shape) == 3:
         gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
     else:
@@ -222,30 +226,25 @@ def detect_horizontal_rows(pil_img):
         filled_peaks.append(peaks[-1])
         peaks = filled_peaks
 
-    # Normalize back to 0-1000 scale based on the NEW height
     return [int((y / height) * 1000) for y in peaks]
     
 def process_uploaded_image(file_input):
     """
-    Robust image loader to fix Android/iOS rotation and buffering issues.
+    Robust image loader with Memory Safety Cap.
     """
     try:
         if isinstance(file_input, str):
             img = PILImage.open(file_input)
         else:
-            img = PILImage.open(io.BytesIO(file_input.read() if hasattr(file_input, 'read') else file_input))
+            data = file_input.read() if hasattr(file_input, 'read') else file_input
+            img = PILImage.open(io.BytesIO(data))
             
         img = ImageOps.exif_transpose(img)
         img = img.convert("RGB")
         
-        w, h = img.size
-        new_size = (w * 2, h * 4)
-        
-        img = img.resize(new_size, PILImage.Resampling.LANCZOS)
-        
-        MAX_DIM = 4000 
-        if max(img.size) > MAX_DIM:
-            img.thumbnail((MAX_DIM, MAX_DIM), PILImage.Resampling.LANCZOS)
+        MAX_SAFE_DIM = 4500 
+        if max(img.size) > MAX_SAFE_DIM:
+            img.thumbnail((MAX_SAFE_DIM, MAX_SAFE_DIM), PILImage.Resampling.LANCZOS)
             
         return img
     except Exception as e:
@@ -253,19 +252,14 @@ def process_uploaded_image(file_input):
         return None
 
 def draw_coordinate_grid(image, snap_rows=None, corners=None):
-    """
-    Draws realistic internal breadboard connections using perspective interpolation based on AI-detected corners.
-    """
     draw = ImageDraw.Draw(image)
     w, h = image.size
     pale_blue = (173, 216, 230)
-    boundary_color = (0, 0, 255) # Outermost bounding box color
+    boundary_color = (0, 0, 255) 
 
-    # If AI hasn't detected corners yet, skip perspective drawing to avoid errors
     if not corners or not all(k in corners for k in ["top_left", "top_right", "bottom_right", "bottom_left"]):
         return image
 
-    # Helper: Convert AI 0-1000 [y, x] scale back to pixel coordinates [x, y]
     def get_px(pt):
         if not pt or len(pt) < 2: return (0, 0)
         return (pt[1] * w / 1000, pt[0] * h / 1000)
@@ -275,41 +269,31 @@ def draw_coordinate_grid(image, snap_rows=None, corners=None):
     br = get_px(corners.get("bottom_right"))
     bl = get_px(corners.get("bottom_left"))
 
-    # 1. DRAW OUTER BOUNDARY (Bounding Box)
     draw.line([tl, tr, br, bl, tl], fill=boundary_color, width=5)
 
-    # Helper function for perspective interpolation (Linear Interpolation)
     def lerp_pt(p1, p2, t):
         return (p1[0] + (p2[0] - p1[0]) * t, p1[1] + (p2[1] - p1[1]) * t)
 
-    # 2. DRAW MIDDLE GAP (Vertical trench running through the center)
-    # Interpolate midpoints on the top edge (between TL and TR) 
-    # and the bottom edge (between BL and BR)
     mid_top = lerp_pt(tl, tr, 0.5)
     mid_bottom = lerp_pt(bl, br, 0.5)
     draw.line([mid_top, mid_bottom], fill=boundary_color, width=4)
 
-    # 3. DRAW POWER RAILS (Vertical-ish rails on left and right)
     rail_offsets = [0.05, 0.10, 0.90, 0.95]
     for t in rail_offsets:
         top_p = lerp_pt(tl, tr, t)
         bot_p = lerp_pt(bl, br, t)
         draw.line([top_p, bot_p], fill=pale_blue, width=3)
     
-    # 4. DRAW SPLIT HORIZONTAL ROWS (Columns A-E and F-J)
     if snap_rows:
         for ry in snap_rows:
             t_vertical = ry / 1000.0
-            # Interpolate down the left and right sides to find this row's start/end
             row_l = lerp_pt(tl, bl, t_vertical)
             row_r = lerp_pt(tr, br, t_vertical)
             
-            # Left block of pins (A-E)
             p_ae_start = lerp_pt(row_l, row_r, 0.18)
             p_ae_end = lerp_pt(row_l, row_r, 0.45)
             draw.line([p_ae_start, p_ae_end], fill=pale_blue, width=3)
             
-            # Right block of pins (F-J)
             p_fj_start = lerp_pt(row_l, row_r, 0.55)
             p_fj_end = lerp_pt(row_l, row_r, 0.82)
             draw.line([p_fj_start, p_fj_end], fill=pale_blue, width=3)
@@ -327,34 +311,25 @@ def draw_pins_on_image(image, df_components):
         draw.ellipse([end[0]-6, end[1]-6, end[0]+6, end[1]+6], fill=(255, 255, 0), outline=(0,0,0))
     return img_copy
 
-
-# --- NEW: VISUAL SUMMARY GENERATOR (Vertical Up/Down Layout) ---
 def create_visual_report(successes, errors, lang):
-    """Generates a vertical summary image card of the student's performance."""
-    # Create a blank white canvas (Taller to handle vertical lists)
     img = PILImage.new('RGB', (800, 600), color=(255, 255, 255))
     draw = ImageDraw.Draw(img)
     
-    # Title
     title = "Visual Performance Summary 📊" if lang == "en" else "視覺化成果總結 📊"
     draw.text((30, 20), title, fill=(0, 0, 0))
     
-    # --- TOP BOX: Successes (Good) ---
     draw.rectangle([30, 60, 770, 280], outline=(0, 150, 0), width=3, fill=(240, 255, 240))
     draw.text((50, 75), "✅ What you did well! / 做得好嘅地方！", fill=(0, 128, 0))
     
     y_off = 110
-    # Limit to 5 items to prevent vertical overflow in the top box
     for item in successes[:5]: 
         draw.text((60, y_off), f"🌟 {item}", fill=(30, 30, 30))
         y_off += 30
 
-    # --- BOTTOM BOX: Errors (Needs Improvement) ---
     draw.rectangle([30, 310, 770, 560], outline=(200, 100, 0), width=3, fill=(255, 250, 240))
     draw.text((50, 325), "🛠️ Things to check / 需要檢查嘅地方", fill=(200, 100, 0))
     
     y_off = 360
-    # Limit to 5 items to prevent vertical overflow in the bottom box
     for item in errors[:5]:
         draw.text((60, y_off), f"🔍 {item}", fill=(30, 30, 30))
         y_off += 30
@@ -410,7 +385,8 @@ def save_to_drive(user_id, task_name, ai_feedback, images_dict):
             media = MediaIoBaseUpload(io.BytesIO(updated_csv_bytes), mimetype='text/csv')
             service.files().update(fileId=file_id, media_body=media).execute()
             
-        st.success("Successfully logged to Drive!")
+        # Optional: You can remove this st.success if you want it completely silent
+        st.toast("✅ Automatically saved to Google Drive!")
         
     except Exception as e:
         st.error(f"Drive Save Error: {e}")
@@ -421,6 +397,7 @@ if "components_df" not in st.session_state: st.session_state.components_df = pd.
 if "analysis_result" not in st.session_state: st.session_state.analysis_result = None
 if "hough_rows" not in st.session_state: st.session_state.hough_rows = []
 if "breadboard_corners" not in st.session_state: st.session_state.breadboard_corners = None
+if "last_input_id" not in st.session_state: st.session_state.last_input_id = None
 for i in range(1, 5): 
     if f"img{i}" not in st.session_state: st.session_state[f"img{i}"] = None
 if "lang" not in st.session_state: st.session_state.lang = "en"
@@ -465,6 +442,7 @@ with st.sidebar:
     
     if st.button(UI[l]["reset"]): 
         reset_flow()
+        st.session_state.last_input_id = None
         st.rerun()
 
     st.divider()
@@ -474,196 +452,69 @@ with st.sidebar:
 # --- 7. APPLICATION LOGIC ---
 
 if active_input:
-    if st.session_state.img1 is None:
-        # 1. Resize/Scale first
+    # --- AUTO RESET ON NEW IMAGE ---
+    current_input_id = getattr(active_input, "file_id", str(hash(active_input.getvalue())))
+    
+    if st.session_state.get("last_input_id") != current_input_id:
+        reset_flow()
+        st.session_state.last_input_id = current_input_id
+        st.session_state.img1 = process_uploaded_image(io.BytesIO(active_input.getvalue()))
+    elif st.session_state.img1 is None:
         st.session_state.img1 = process_uploaded_image(io.BytesIO(active_input.getvalue()))
     
     raw_student = st.session_state.img1
 
-    # 2. Detect rows based on the ALREADY scaled image
-    if not st.session_state.hough_rows:
-        st.session_state.hough_rows = detect_horizontal_rows(raw_student)
+    # Detect rows based on the safe scaled image
+    if raw_student is not None:
+        if not st.session_state.hough_rows:
+            st.session_state.hough_rows = detect_horizontal_rows(raw_student)
 
-    # STEP 1: DETECTION
-    if st.session_state.step == 1:
-        col1, col2 = st.columns(2)
-        col1.image(raw_schematic, caption=UI[l]["schematic"])
-        col2.image(draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners), caption=UI[l]["your_circuit"])
+        # STEP 1: DETECTION
+        if st.session_state.step == 1:
+            col1, col2 = st.columns(2)
+            col1.image(raw_schematic, caption=UI[l]["schematic"])
+            col2.image(draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners), caption=UI[l]["your_circuit"])
 
-        if st.button(UI[l]["step1_btn"], type="primary"):
-            with st.spinner(UI[l]["analyzing"]):
-                prompt = """
-                    1. Identify the BREADBOARD boundaries: Provide the [y, x] coordinates for the four outer corners (top_left, top_right, bottom_right, bottom_left).
-                    2. Identify components on the breadboard. Specifically:
-                    - POWER SUPPLY: You MUST identify the power input module. It has exactly 2 pins: the red wire/pin (+ve/Vcc) and the black wire/pin (-ve/GND).
-                    - SLIDE-SWITCH: You MUST identify exactly 3 pins (legs) positioned continuously in a single straight row. 
-                    - 4-pin Push Button, LDR, LED
-                    - resistor (check color bands: '5-band 300ohm', '1000 ohm', or '10k ohm')
-                    Return JSON mapping 'breadboard_corners' and 'components'.
-                    """
-                resp = client.models.generate_content(
-                    model=MODEL_ID, contents=[raw_student, prompt],
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema={
-                            "type": "OBJECT",
-                            "properties": {
-                                "breadboard_corners": {
-                                    "type": "OBJECT",
-                                    "properties": {
-                                        "top_left": {"type": "ARRAY", "items": {"type": "INTEGER"}},
-                                        "top_right": {"type": "ARRAY", "items": {"type": "INTEGER"}},
-                                        "bottom_right": {"type": "ARRAY", "items": {"type": "INTEGER"}},
-                                        "bottom_left": {"type": "ARRAY", "items": {"type": "INTEGER"}},
-                                    }
-                                },
-                                "components": {
-                                    "type": "ARRAY", 
-                                    "items": {
-                                        "type": "OBJECT", 
-                                        "properties": {
-                                            "name": {"type": "STRING"},
-                                            "center": {"type": "ARRAY", "items": {"type": "INTEGER"}},
-                                            "legs": {"type": "ARRAY", "items": {"type": "ARRAY", "items": {"type": "INTEGER"}}}
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    )
-                )
-                
-                result = resp.parsed
-                if isinstance(result, list) and len(result) > 0:
-                    result = result[0]
-                
-                # Extract and store corners
-                st.session_state.breadboard_corners = result.get("breadboard_corners", {})
-
-                # Process components
-                records = []
-                for item in result.get("components", []):
-                    center = item.get('center', [500, 500])
-                    if isinstance(center, list) and len(center) == 2:
-                        cy, cx = center
-                    else:
-                        cy, cx = 500, 500
-                        
-                    legs = item.get('legs', [])
-                    if isinstance(legs, list):
-                        for i, leg in enumerate(legs):
-                            if isinstance(leg, list) and len(leg) >= 2:
-                                ly, lx = leg[0], leg[1]
-                                records.append({
-                                    "Component": f"{item.get('name')} (Pin {i+1})", 
-                                    "CX": cx, 
-                                    "CY": cy, 
-                                    "LX": lx, 
-                                    "LY": ly
-                                })
-                            else:
-                                continue
-                                    
-                st.session_state.components_df = pd.DataFrame(records)
-                base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
-                st.session_state.img2 = draw_pins_on_image(base_grid_img, st.session_state.components_df)
-                st.session_state.step = 2
-                st.rerun()
-
-    # STEP 2: TUNING
-    elif st.session_state.step == 2:
-        st.subheader(UI[l]["step2_title"])
-        edit_col, img_col = st.columns([1, 2])
-        updated_data = []
-        with edit_col:
-            for i, row in st.session_state.components_df.iterrows():
-                with st.expander(f"📍 {row['Component']}"):
-                    lx = st.slider(f"X_{i}", 0, 1000, int(row["LX"]), key=f"x{i}")
-                    raw_ly = st.slider(f"Y_{i}", 0, 1000, int(row["LY"]), key=f"y{i}")
-                    
-                    snapped_ly = raw_ly
-                    if st.session_state.hough_rows:
-                        snapped_ly = min(st.session_state.hough_rows, key=lambda ry: abs(ry - raw_ly))
-                    
-                    if raw_ly != snapped_ly:
-                        st.caption(UI[l]["snapped"].format(y=snapped_ly))
-                        
-                    updated_data.append({"Component": row["Component"], "CX": row["CX"], "CY": row["CY"], "LX": lx, "LY": snapped_ly})
-            edited_df = pd.DataFrame(updated_data)
-
-        with img_col:
-            base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
-            st.session_state.img3 = draw_pins_on_image(base_grid_img, edited_df)
-            st.image(st.session_state.img3, caption=UI[l]["verify"])
-
-        if st.button(UI[l]["step2_confirm"], type="primary"):
-            st.session_state.components_df = edited_df
-            st.session_state.step = 3
-            st.rerun()
-
-    # STEP 3: ANALYSIS
-    elif st.session_state.step == 3:
-        st.subheader(UI[l]["step3_title"])
-        
-        if st.session_state.analysis_result is None or st.session_state.img4 is None:
-            with st.spinner(UI[l]["checking"]):
-                summary = st.session_state.components_df.to_string(index=False)
-                
-                prompt = f"""
-                    Task: {selected_task}. 
-                    Structural Connectivity Rules:
-                    1. TERMINAL STRIPS (Center): Pins in the same ROW (horizontal) are electrically connected.
-                    2. POWER RAILS (Edges): The two leftmost and two rightmost columns are Power Rails. 
-                    3. PALE BLUE OVERLAYS: Connected to Power Supply.
-                
-                    Electrical Analysis Rules: 
-                    1. POWER SUPPLY: Must form a closed loop.
-                    2. SERIES REVERSIBILITY: An LED in series with a resistor is considered correct regardless of order (LED -> Resistor IS THE SAME AS Resistor -> LED).
-                    3. RESISTOR VALUES IGNORED: Do NOT check exact resistance values or color bands. Only verify that a generic resistor component is present and connected properly.
-                
-                    Pedagogical Scaffolding Rules (CRITICAL):
-                    1. IF THERE ARE ERRORS: DO NOT give direct answers or tell the student which exact rows to change. Instead, use SOCRATIC SCAFFOLDING. Ask a guiding question related to the underlying theory of their specific mistake (e.g., if the circuit is open, ask how electricity needs a continuous path to return home). 
-                    2. IF 100% CORRECT: Praise them enthusiastically, and then provide a "What-If" CHALLENGE to encourage deeper exploration. Tailor the challenge to the components used (e.g., "What happens if you swap the resistor for a smaller one?", "Can you add a button?", "If you have a capacitor, how can you make the LED fade out slowly?").
-
-                    Bilingual Output Requirement:
-                    For the 'feedback' string, provide the English text first, followed by a newline, and then a formal Cantonese (Traditional Chinese) translation. Use emojis and an engaging tone suitable for P4-S3 students.
-                    
-                    Example Format (Error - Socratic):
-                    "It looks like your LED isn't lighting up! 🧐 Follow the path of electricity from the positive red wire. Does it have a continuous bridge to reach the negative wire? Where does the path break?\n\n睇落你粒 LED 唔著喎！🧐 試吓跟住電流由紅線 (+) 出發嘅路徑。佢有冇一條完整嘅路徑可以返去黑線 (-)？條路喺邊度斷咗呀？"
-                    
-                    Example Format (Correct - Challenge):
-                    "Perfect circuit! 🎉 Since it's working beautifully, here is a challenge: What do you think will happen to the LED brightness if you replace the current resistor with a much stronger one? Try it out! ⚡\n\n完美嘅電路！🎉 既然已經成功咗，考吓你：如果你換一粒電阻值更大嘅電阻，你估吓 LED 嘅亮度會有咩變化？試吓啦！⚡"
-
-                    Component Data (Available Pins):
-                    {summary}
-                
-                    Compare to Target Schematic. Return JSON with 'feedback' (containing the Socratic/Challenge text), 'detected_errors', 'success_summary' (array of strings), and 'error_summary' (array of strings).
-                    """
-                
-                try:
+            if st.button(UI[l]["step1_btn"], type="primary"):
+                with st.spinner(UI[l]["analyzing"]):
+                    prompt = """
+                        1. Identify the BREADBOARD boundaries: Provide the [y, x] coordinates for the four outer corners (top_left, top_right, bottom_right, bottom_left).
+                        2. Identify components on the breadboard. Specifically:
+                        - POWER SUPPLY: You MUST identify the power input module. It has exactly 2 pins: the red wire/pin (+ve/Vcc) and the black wire/pin (-ve/GND).
+                        - SLIDE-SWITCH: You MUST identify exactly 3 pins (legs) positioned continuously in a single straight row. 
+                        - 4-pin Push Button, LDR, LED
+                        - resistor (check color bands: '5-band 300ohm', '1000 ohm', or '10k ohm')
+                        Return JSON mapping 'breadboard_corners' and 'components'.
+                        """
                     resp = client.models.generate_content(
-                        model=MODEL_ID, 
-                        contents=[raw_schematic, st.session_state.img3, prompt],
+                        model=MODEL_ID, contents=[raw_student, prompt],
                         config=types.GenerateContentConfig(
+                            temperature=0.0,
                             response_mime_type="application/json",
                             response_schema={
                                 "type": "OBJECT",
                                 "properties": {
-                                    "feedback": {"type": "STRING"},
-                                    "success_summary": {"type": "ARRAY", "items": {"type": "STRING"}},
-                                    "error_summary": {"type": "ARRAY", "items": {"type": "STRING"}},
-                                    "detected_errors": {
+                                    "breadboard_corners": {
+                                        "type": "OBJECT",
+                                        "properties": {
+                                            "top_left": {"type": "ARRAY", "items": {"type": "INTEGER"}},
+                                            "top_right": {"type": "ARRAY", "items": {"type": "INTEGER"}},
+                                            "bottom_right": {"type": "ARRAY", "items": {"type": "INTEGER"}},
+                                            "bottom_left": {"type": "ARRAY", "items": {"type": "INTEGER"}},
+                                        }
+                                    },
+                                    "components": {
                                         "type": "ARRAY", 
                                         "items": {
-                                            "type": "OBJECT",
+                                            "type": "OBJECT", 
                                             "properties": {
-                                                "error_type": {"type": "STRING"},
-                                                "location": {"type": "ARRAY", "items": {"type": "INTEGER"}}
+                                                "name": {"type": "STRING"},
+                                                "center": {"type": "ARRAY", "items": {"type": "INTEGER"}},
+                                                "legs": {"type": "ARRAY", "items": {"type": "ARRAY", "items": {"type": "INTEGER"}}}
                                             }
                                         }
                                     }
-                                },
-                                "required": ["feedback", "detected_errors", "success_summary", "error_summary"]
+                                }
                             }
                         )
                     )
@@ -672,54 +523,212 @@ if active_input:
                     if isinstance(result, list) and len(result) > 0:
                         result = result[0]
                     
-                    st.session_state.analysis_result = result
-                    
-                    # Drawing logic
-                    diag_img = st.session_state.img3.copy()
-                    draw = ImageDraw.Draw(diag_img)
-                    w, h = diag_img.size
-                    
-                    errors = st.session_state.analysis_result.get("detected_errors", [])
-                    for err in errors:
-                        loc = err.get("location", [])
-                        if len(loc) == 2:
-                            ey, ex = loc
-                            px, py = ex * w / 1000, ey * h / 1000
-                            draw.ellipse([px-25, py-25, px+25, py+25], outline="red", width=8)
-                                
-                    st.session_state.img4 = diag_img
-                    
-                except Exception as e:
-                    st.error(f"AI Analysis failed: {e}")
-                    st.session_state.step = 2
+                    st.session_state.breadboard_corners = result.get("breadboard_corners", {})
 
-        # Display Logic
-        if st.session_state.img4:
-            st.image(st.session_state.img4, caption=UI[l]["ai_diag"])
-        
-        if st.session_state.analysis_result:
-            feedback_text = st.session_state.analysis_result.get("feedback", "")
-            st.info(feedback_text)
-            
-            success_list = st.session_state.analysis_result.get("success_summary", [])
-            error_list = st.session_state.analysis_result.get("error_summary", [])
-            
-            report_card_img = create_visual_report(success_list, error_list, l)
-            st.image(report_card_img, use_container_width=True)
-
-            col_a, col_b, col_c = st.columns(3)
-            with col_a:
-                if st.button(UI[l]["save"], type="primary"):
-                    save_to_drive(user_id, selected_task, feedback_text, 
-                                 {"1": st.session_state.img1, "4": st.session_state.img4, "summary": report_card_img})
-            with col_b:
-                if st.button(UI[l]["back"]):
+                    records = []
+                    for item in result.get("components", []):
+                        center = item.get('center', [500, 500])
+                        if isinstance(center, list) and len(center) == 2:
+                            cy, cx = center
+                        else:
+                            cy, cx = 500, 500
+                            
+                        legs = item.get('legs', [])
+                        if isinstance(legs, list):
+                            for i, leg in enumerate(legs):
+                                if isinstance(leg, list) and len(leg) >= 2:
+                                    ly, lx = leg[0], leg[1]
+                                    records.append({
+                                        "Component": f"{item.get('name')} (Pin {i+1})", 
+                                        "CX": cx, 
+                                        "CY": cy, 
+                                        "LX": lx, 
+                                        "LY": ly
+                                    })
+                                else:
+                                    continue
+                                        
+                    st.session_state.components_df = pd.DataFrame(records)
+                    base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
+                    st.session_state.img2 = draw_pins_on_image(base_grid_img, st.session_state.components_df)
                     st.session_state.step = 2
                     st.rerun()
-            with col_c:
-                if st.button(UI[l]["new"]):
-                    reset_flow()
-                    st.rerun()
-                    
+
+        # STEP 2: TUNING
+        elif st.session_state.step == 2:
+            st.subheader(UI[l]["step2_title"])
+            edit_col, img_col = st.columns([1, 2])
+            updated_data = []
+            with edit_col:
+                for i, row in st.session_state.components_df.iterrows():
+                    with st.expander(f"📍 {row['Component']}"):
+                        lx = st.slider(f"X_{i}", 0, 1000, int(row["LX"]), key=f"x{i}")
+                        raw_ly = st.slider(f"Y_{i}", 0, 1000, int(row["LY"]), key=f"y{i}")
+                        
+                        snapped_ly = raw_ly
+                        if st.session_state.hough_rows:
+                            snapped_ly = min(st.session_state.hough_rows, key=lambda ry: abs(ry - raw_ly))
+                        
+                        if raw_ly != snapped_ly:
+                            st.caption(UI[l]["snapped"].format(y=snapped_ly))
+                            
+                        updated_data.append({"Component": row["Component"], "CX": row["CX"], "CY": row["CY"], "LX": lx, "LY": snapped_ly})
+                edited_df = pd.DataFrame(updated_data)
+
+            with img_col:
+                base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
+                st.session_state.img3 = draw_pins_on_image(base_grid_img, edited_df)
+                st.image(st.session_state.img3, caption=UI[l]["verify"])
+
+            if st.button(UI[l]["step2_confirm"], type="primary"):
+                st.session_state.components_df = edited_df
+                # Clear analysis state so the button appears in Step 3
+                st.session_state.analysis_result = None
+                st.session_state.img4 = None
+                st.session_state.step = 3
+                st.rerun()
+
+        # STEP 3: ANALYSIS
+        elif st.session_state.step == 3:
+            st.subheader(UI[l]["step3_title"])
+            
+            # Show the Button if analysis hasn't run yet
+            if st.session_state.analysis_result is None or st.session_state.img4 is None:
+                st.info("Everything looks perfectly aligned! Click below to begin the Socratic Assessment.")
+                
+                # We use a fallback translation if 'ai_analysis_btn' isn't in your dict yet
+                btn_text = UI[l].get("ai_analysis_btn", "🤖 Run AI Analysis" if l == "en" else "🤖 開始 AI 分析")
+                
+                if st.button(btn_text, type="primary"):
+                    with st.spinner(UI[l]["checking"]):
+                        summary = st.session_state.components_df.to_string(index=False)
+                        
+                        prompt = f"""
+                            Task: {selected_task}. 
+                            Structural Connectivity Rules:
+                            1. TERMINAL STRIPS (Center): Pins in the same ROW (horizontal) are electrically connected.
+                            2. POWER RAILS (Edges): The two leftmost and two rightmost columns are Power Rails. 
+                            3. PALE BLUE OVERLAYS: Connected to Power Supply.
+                        
+                            Electrical Analysis Rules: 
+                            1. POWER SUPPLY: Must form a closed loop.
+                            2. SERIES REVERSIBILITY: An LED in series with a resistor is considered correct regardless of order (LED -> Resistor IS THE SAME AS Resistor -> LED).
+                            3. RESISTOR VALUES IGNORED: Do NOT check exact resistance values or color bands. Only verify that a generic resistor component is present and connected properly.
+                        
+                            Pedagogical Scaffolding Rules (CRITICAL):
+                            1. IF THERE ARE ERRORS: DO NOT give direct answers or tell the student which exact rows to change. Instead, use SOCRATIC SCAFFOLDING. Ask a guiding question related to the underlying theory of their specific mistake (e.g., if the circuit is open, ask how electricity needs a continuous path to return home). 
+                            2. IF 100% CORRECT: Praise them enthusiastically, and then provide a "What-If" CHALLENGE to encourage deeper exploration. Tailor the challenge to the components used (e.g., "What happens if you swap the resistor for a smaller one?", "Can you add a button?", "If you have a capacitor, how can you make the LED fade out slowly?").
+
+                            Bilingual Output Requirement:
+                            For the 'feedback' string, provide the English text first, followed by a newline, and then a formal Cantonese (Traditional Chinese) translation. Use emojis and an engaging tone suitable for P4-S3 students.
+                            
+                            Example Format (Error - Socratic):
+                            "It looks like your LED isn't lighting up! 🧐 Follow the path of electricity from the positive red wire. Does it have a continuous bridge to reach the negative wire? Where does the path break?\n\n睇落你粒 LED 唔著喎！🧐 試吓跟住電流由紅線 (+) 出發嘅路徑。佢有冇一條完整嘅路徑可以返去黑線 (-)？條路喺邊度斷咗呀？"
+                            
+                            Example Format (Correct - Challenge):
+                            "Perfect circuit! 🎉 Since it's working beautifully, here is a challenge: What do you think will happen to the LED brightness if you replace the current resistor with a much stronger one? Try it out! ⚡\n\n完美嘅電路！🎉 既然已經成功咗，考吓你：如果你換一粒電阻值更大嘅電阻，你估吓 LED 嘅亮度會有咩變化？試吓啦！⚡"
+
+                            Component Data (Available Pins):
+                            {summary}
+                        
+                            Compare to Target Schematic. Return JSON with 'feedback' (containing the Socratic/Challenge text), 'detected_errors', 'success_summary' (array of strings), and 'error_summary' (array of strings).
+                            """
+                        
+                        try:
+                            resp = client.models.generate_content(
+                                model=MODEL_ID, 
+                                contents=[raw_schematic, st.session_state.img3, prompt],
+                                config=types.GenerateContentConfig(
+                                    temperature=0.0,
+                                    response_mime_type="application/json",
+                                    response_schema={
+                                        "type": "OBJECT",
+                                        "properties": {
+                                            "feedback": {"type": "STRING"},
+                                            "success_summary": {"type": "ARRAY", "items": {"type": "STRING"}},
+                                            "error_summary": {"type": "ARRAY", "items": {"type": "STRING"}},
+                                            "detected_errors": {
+                                                "type": "ARRAY", 
+                                                "items": {
+                                                    "type": "OBJECT",
+                                                    "properties": {
+                                                        "error_type": {"type": "STRING"},
+                                                        "location": {"type": "ARRAY", "items": {"type": "INTEGER"}}
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "required": ["feedback", "detected_errors", "success_summary", "error_summary"]
+                                    }
+                                )
+                            )
+                            
+                            result = resp.parsed
+                            if isinstance(result, list) and len(result) > 0:
+                                result = result[0]
+                            
+                            st.session_state.analysis_result = result
+                            
+                            # Drawing logic
+                            diag_img = st.session_state.img3.copy()
+                            draw = ImageDraw.Draw(diag_img)
+                            w, h = diag_img.size
+                            
+                            errors = st.session_state.analysis_result.get("detected_errors", [])
+                            for err in errors:
+                                loc = err.get("location", [])
+                                if len(loc) == 2:
+                                    ey, ex = loc
+                                    px, py = ex * w / 1000, ey * h / 1000
+                                    draw.ellipse([px-25, py-25, px+25, py+25], outline="red", width=8)
+                                        
+                            st.session_state.img4 = diag_img
+                            
+                            # --- AUTO-SAVE SEQUENCE ---
+                            feedback_text = st.session_state.analysis_result.get("feedback", "")
+                            success_list = st.session_state.analysis_result.get("success_summary", [])
+                            error_list = st.session_state.analysis_result.get("error_summary", [])
+                            report_card_img = create_visual_report(success_list, error_list, l)
+                            
+                            save_to_drive(user_id, selected_task, feedback_text, 
+                                         {"1": st.session_state.img1, "4": st.session_state.img4, "summary": report_card_img})
+                            
+                            # Rerun to display the UI results
+                            st.rerun()
+                            
+                        except Exception as e:
+                            st.error(f"AI Analysis failed: {e}")
+                            st.session_state.step = 2
+                            st.rerun()
+
+            # Display Logic (Once Analysis is Done)
+            else:
+                st.image(st.session_state.img4, caption=UI[l]["ai_diag"])
+                
+                feedback_text = st.session_state.analysis_result.get("feedback", "")
+                st.info(feedback_text)
+                
+                success_list = st.session_state.analysis_result.get("success_summary", [])
+                error_list = st.session_state.analysis_result.get("error_summary", [])
+                
+                report_card_img = create_visual_report(success_list, error_list, l)
+                st.image(report_card_img, width="stretch")
+
+                # The "Save" button was removed as per request.
+                col_b, col_c = st.columns(2)
+                with col_b:
+                    if st.button(UI[l]["back"]):
+                        st.session_state.step = 2
+                        st.session_state.analysis_result = None # Clear this to show the button again
+                        st.session_state.img4 = None
+                        st.rerun()
+                with col_c:
+                    if st.button(UI[l]["new"]):
+                        reset_flow()
+                        st.session_state.last_input_id = None
+                        st.rerun()
+                        
+    else:
+        st.error("Please try uploading the image again. It failed to process.")
 else:
     st.info(UI[l]["upload_prompt"])
