@@ -172,87 +172,152 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-def detect_horizontal_rows(pil_img):
-    """
-    Detects breadboard rows AFTER resizing. 
-    The higher resolution helps the algorithm find holes more accurately.
-    """
-    img_cv = np.array(pil_img)
-    if len(img_cv.shape) == 3:
-        gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
-    else:
-        gray = img_cv
+# def detect_horizontal_rows(pil_img):
+#     """
+#     Detects breadboard rows AFTER resizing. 
+#     The higher resolution helps the algorithm find holes more accurately.
+#     """
+#     img_cv = np.array(pil_img)
+#     if len(img_cv.shape) == 3:
+#         gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
+#     else:
+#         gray = img_cv
 
-    blurred = cv2.GaussianBlur(gray, (7, 7), 0)
-    thresh = cv2.adaptiveThreshold(
-        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-        cv2.THRESH_BINARY_INV, 31, 10
-    )
+#     blurred = cv2.GaussianBlur(gray, (7, 7), 0)
+#     thresh = cv2.adaptiveThreshold(
+#         blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+#         cv2.THRESH_BINARY_INV, 31, 10
+#     )
 
-    height, width = thresh.shape
-    row_sums = np.sum(thresh, axis=1)
+#     height, width = thresh.shape
+#     row_sums = np.sum(thresh, axis=1)
 
-    window_size = max(int(height * 0.005), 5)
-    kernel = np.ones(window_size) / window_size
-    smoothed_sums = np.convolve(row_sums, kernel, mode='same')
+#     window_size = max(int(height * 0.005), 5)
+#     kernel = np.ones(window_size) / window_size
+#     smoothed_sums = np.convolve(row_sums, kernel, mode='same')
 
-    min_peak_distance = max(int(height * 0.012), 10)
-    threshold_val = np.max(smoothed_sums) * 0.08 
+#     min_peak_distance = max(int(height * 0.012), 10)
+#     threshold_val = np.max(smoothed_sums) * 0.08 
 
-    peaks = []
-    for i in range(min_peak_distance, height - min_peak_distance):
-        if smoothed_sums[i] > threshold_val:
-            local_window = smoothed_sums[i - min_peak_distance : i + min_peak_distance + 1]
-            if smoothed_sums[i] == np.max(local_window):
-                if not peaks or (i - peaks[-1]) >= min_peak_distance:
-                    peaks.append(i)
+#     peaks = []
+#     for i in range(min_peak_distance, height - min_peak_distance):
+#         if smoothed_sums[i] > threshold_val:
+#             local_window = smoothed_sums[i - min_peak_distance : i + min_peak_distance + 1]
+#             if smoothed_sums[i] == np.max(local_window):
+#                 if not peaks or (i - peaks[-1]) >= min_peak_distance:
+#                     peaks.append(i)
 
-    # MATH FILL-IN ALGORITHM
-    if len(peaks) > 5:
-        distances = [peaks[i] - peaks[i-1] for i in range(1, len(peaks))]
-        median_dist = np.median(distances)
+#     # MATH FILL-IN ALGORITHM
+#     if len(peaks) > 5:
+#         distances = [peaks[i] - peaks[i-1] for i in range(1, len(peaks))]
+#         median_dist = np.median(distances)
         
-        filled_peaks = []
-        for i in range(len(peaks)-1):
-            filled_peaks.append(peaks[i])
-            gap = peaks[i+1] - peaks[i]
-            if 1.5 * median_dist < gap < 5 * median_dist:
-                num_missing = int(round(gap / median_dist)) - 1
-                step = gap / (num_missing + 1)
-                for j in range(1, num_missing + 1):
-                    filled_peaks.append(int(peaks[i] + j * step))
-        filled_peaks.append(peaks[-1])
-        peaks = filled_peaks
+#         filled_peaks = []
+#         for i in range(len(peaks)-1):
+#             filled_peaks.append(peaks[i])
+#             gap = peaks[i+1] - peaks[i]
+#             if 1.5 * median_dist < gap < 5 * median_dist:
+#                 num_missing = int(round(gap / median_dist)) - 1
+#                 step = gap / (num_missing + 1)
+#                 for j in range(1, num_missing + 1):
+#                     filled_peaks.append(int(peaks[i] + j * step))
+#         filled_peaks.append(peaks[-1])
+#         peaks = filled_peaks
 
-    # Normalize back to 0-1000 scale based on the NEW height
-    return [int((y / height) * 1000) for y in peaks]
+#     # Normalize back to 0-1000 scale based on the NEW height
+#     return [int((y / height) * 1000) for y in peaks]
+
+def detect_horizontal_rows(pil_img):
+    """
+    Detects breadboard rows. Standardizes input to ensure OpenCV can read it.
+    """
+    if pil_img is None:
+        return []
+        
+    # Convert PIL to Open-CV format safely
+    img_cv = np.array(pil_img)
+    
+    # Ensure it is 8-bit depth (Fixes the "object" error in GaussianBlur)
+    if img_cv.dtype != np.uint8:
+        img_cv = img_cv.astype(np.uint8)
+
+    if len(img_cv.shape) == 3:
+        gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
+    else:
+        gray = img_cv
+
+    blurred = cv2.GaussianBlur(gray, (7, 7), 0)
+    thresh = cv2.adaptiveThreshold(
+        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+        cv2.THRESH_BINARY_INV, 31, 10
+    )
+
+    height, width = thresh.shape
+    row_sums = np.sum(thresh, axis=1)
+
+    window_size = max(int(height * 0.005), 5)
+    kernel = np.ones(window_size) / window_size
+    smoothed_sums = np.convolve(row_sums, kernel, mode='same')
+
+    min_peak_distance = max(int(height * 0.012), 10)
+    threshold_val = np.max(smoothed_sums) * 0.08 
+
+    peaks = []
+    for i in range(min_peak_distance, height - min_peak_distance):
+        if smoothed_sums[i] > threshold_val:
+            local_window = smoothed_sums[i - min_peak_distance : i + min_peak_distance + 1]
+            if smoothed_sums[i] == np.max(local_window):
+                if not peaks or (i - peaks[-1]) >= min_peak_distance:
+                    peaks.append(i)
+
+    # MATH FILL-IN ALGORITHM
+    if len(peaks) > 5:
+        distances = [peaks[i] - peaks[i-1] for i in range(1, len(peaks))]
+        median_dist = np.median(distances)
+        
+        filled_peaks = []
+        for i in range(len(peaks)-1):
+            filled_peaks.append(peaks[i])
+            gap = peaks[i+1] - peaks[i]
+            if 1.5 * median_dist < gap < 5 * median_dist:
+                num_missing = int(round(gap / median_dist)) - 1
+                step = gap / (num_missing + 1)
+                for j in range(1, num_missing + 1):
+                    filled_peaks.append(int(peaks[i] + j * step))
+        filled_peaks.append(peaks[-1])
+        peaks = filled_peaks
+
+    return [int((y / height) * 1000) for y in peaks]
+    
     
 def process_uploaded_image(file_input):
-    """
-    Robust image loader to fix Android/iOS rotation and buffering issues.
-    """
-    try:
-        if isinstance(file_input, str):
-            img = PILImage.open(file_input)
-        else:
-            img = PILImage.open(io.BytesIO(file_input.read() if hasattr(file_input, 'read') else file_input))
-            
-        img = ImageOps.exif_transpose(img)
-        img = img.convert("RGB")
-        
-        w, h = img.size
-        new_size = (w * 2, h * 4)
-        
-        img = img.resize(new_size, PILImage.Resampling.LANCZOS)
-        
-        MAX_DIM = 4000 
-        if max(img.size) > MAX_DIM:
-            img.thumbnail((MAX_DIM, MAX_DIM), PILImage.Resampling.LANCZOS)
-            
-        return img
-    except Exception as e:
-        st.error(f"Image Load Failed: {e}")
-        return None
+    """
+    Robust image loader to fix Android/iOS rotation and buffering issues.
+    """
+    try:
+        if isinstance(file_input, str):
+            img = PILImage.open(file_input)
+        else:
+            # Create a copy of the buffer to avoid closed-file errors
+            data = file_input.read() if hasattr(file_input, 'read') else file_input
+            img = PILImage.open(io.BytesIO(data))
+            
+        img = ImageOps.exif_transpose(img)
+        img = img.convert("RGB")
+        
+        # REMOVED: w * 2, h * 4 resizing. It was stretching the image 
+        # and using 8x the memory, causing the server to crash.
+        
+        # Use a high-resolution safety cap instead
+        MAX_SAFE_DIM = 4500 
+        if max(img.size) > MAX_SAFE_DIM:
+            img.thumbnail((MAX_SAFE_DIM, MAX_SAFE_DIM), PILImage.Resampling.LANCZOS)
+            
+        return img
+    except Exception as e:
+        st.error(f"Image Load Failed: {e}")
+        return None
+    
 
 def draw_coordinate_grid(image, snap_rows=None, corners=None):
     """
@@ -708,7 +773,7 @@ if active_input:
             error_list = st.session_state.analysis_result.get("error_summary", [])
             
             report_card_img = create_visual_report(success_list, error_list, l)
-            st.image(report_card_img, use_container_width=True)
+            st.image(report_card_img, width="stretch")
 
             col_a, col_b, col_c = st.columns(3)
             with col_a:
