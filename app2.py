@@ -494,15 +494,18 @@ if active_input:
                 with st.spinner(UI[l]["analyzing"]):
                     prompt = """
                         1. Identify the BREADBOARD boundaries: Provide the [y, x] coordinates for the four outer corners (top_left, top_right, bottom_right, bottom_left).
-                        2. Identify components on the breadboard. Specifically:
-                        - POWER SUPPLY: You MUST identify the power input module. It has exactly 2 pins: the red wire/pin (+ve/Vcc) and the black wire/pin (-ve/GND).
+                        2. Identify components and jumper wires on the breadboard. Follow these strict unique component/pin naming constraints:
+                        - JUMPER WIRES: Uniquely identify and label every single wire sequentially (e.g., 'Wire 1', 'Wire 2', 'Wire 3') so users can instantly tell them apart. Do not group them generically.
+                        - OTHER COMPONENTS: Label them uniquely (e.g., 'Resistor 1', 'LED 1', 'Button 1').
+                        - PINS/LEGS SCHEMA: Order each component's pin locations sequentially within its 'legs' coordinate array so they transparently map to 'Pin 1', 'Pin 2', 'Pin 3' respectively.
+                        - POWER SUPPLY: Must identify the power input module. It has exactly 2 pins: the red wire/pin (+ve/Vcc) and the black wire/pin (-ve/GND).
                         - SLIDE-SWITCH: You MUST identify exactly 3 pins (legs) positioned continuously in a single straight row. 
                         - 4-pin Push Button, LDR, LED
-                        - RESISTOR: Identify 5-band resistors and strictly categorize their values using these color signatures:
+                        - RESISTOR: Identify 5-band resistors and strictly categorize their detected values using these explicit color signatures:
                           * '10k ohm' resistor: characterized by containing a red band/line.
                           * '300 ohm' resistor: characterized by containing an orange band/line.
                           * '150 ohm' resistor: characterized by containing a green band/line.
-                          * '1k ohm' resistor: characterized by containing exclusively black and brown bands/lines.
+                          * '1k ohm' resistor: characterized by containing mostly black and brown bands/lines.
                         Return JSON mapping 'breadboard_corners' and 'components'.
                         """
                     resp = client.models.generate_content(
@@ -587,8 +590,8 @@ if active_input:
             with edit_col:
                 for i, row in st.session_state.components_df.iterrows():
                     with st.expander(f"📍 {row['Component']}"):
-                        lx = st.slider(f"X_{i}", 0, 1000, int(row["LX"]), key=f"x{i}")
-                        raw_ly = st.slider(f"Y_{i}", 0, 1000, int(row["LY"]), key=f"y{i}")
+                        lx = st.slider(f"Adjust X position", 0, 1000, int(row["LX"]), key=f"x{i}")
+                        raw_ly = st.slider(f"Adjust Y position", 0, 1000, int(row["LY"]), key=f"y{i}")
                         
                         snapped_ly = raw_ly
                         if st.session_state.hough_rows:
@@ -598,7 +601,7 @@ if active_input:
                             st.caption(UI[l]["snapped"].format(y=snapped_ly))
                             
                         updated_data.append({"Component": row["Component"], "CX": row["CX"], "CY": row["CY"], "LX": lx, "LY": snapped_ly})
-                edited_df = pd.DataFrame(updated_data)
+            edited_df = pd.DataFrame(updated_data)
 
             with img_col:
                 base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
@@ -642,23 +645,28 @@ if active_input:
                             2. POWER RAILS (Edges): The two leftmost and two rightmost columns are Power Rails. 
                             3. PALE BLUE OVERLAYS: Connected to Power Supply.
                         
-                            Electrical Analysis Rules: 
+                            Electrical Analysis & Strict Resistor Rules: 
                             1. POWER SUPPLY: Must form a closed loop.
                             2. SERIES REVERSIBILITY: An LED in series with a resistor is considered correct regardless of order (LED -> Resistor IS THE SAME AS Resistor -> LED).
-                            3. RESISTOR STRUCTURAL VALIDATION: The workshop only evaluates 5-band resistors configured with precise tracking parameters: 10k ohm (red signature band), 1k ohm (exclusively black/brown bands), 150 ohm (green signature band), or 300 ohm (orange signature band). Confirm presence and electrical continuity pathways across row nodes.
+                            3. RESISTOR STRUCTURAL VALIDATION: You must identify whether the resistor is correct or not by checking its visual 5-band color signatures:
+                               - If target value is '150 ohm': Must contain exactly ONE green band.
+                               - If target value is '10k ohm': Must contain exactly ONE red band.
+                               - If target value is '300 ohm': Must contain exactly ONE orange band.
+                               - If target value is '1k ohm': Must consist mostly of black and brown bands.
+                               CRITICAL: If a resistor is located in the right row nodes but its physical color bands fail to match these signature rules, flag it immediately as incorrect ('Incorrect Resistor Value Selected') under 'error_summary' and 'detected_errors'.
                         
                             Pedagogical Scaffolding Rules (CRITICAL):
-                            1. IF THERE ARE ERRORS: DO NOT give direct answers or tell the student which exact rows to change. Instead, use SOCRATIC SCAFFOLDING. Ask a guiding question related to the underlying theory of their specific mistake (e.g., if the circuit is open, ask how electricity needs a continuous path to return home). 
+                            1. IF THERE ARE ERRORS: DO NOT give direct answers or tell the student which exact rows to change. Instead, use SOCRATIC SCAFFOLDING. Ask a guiding question related to the underlying theory of their specific mistake (e.g., if the circuit is open, ask how electricity needs a continuous path to return home; if the wrong resistor is used, guide them to inspect the color bands). 
                             2. IF 100% CORRECT: Praise them enthusiastically, and then provide a "What-If" CHALLENGE to encourage deeper exploration. Tailor the challenge to the components used (e.g., "What happens if you swap the resistor for a smaller one?", "Can you add a button?", "If you have a capacitor, how can you make the LED fade out slowly?").
 
                             Bilingual Output Requirement:
                             For the 'feedback' string, provide the English text first, followed by a newline, and then a formal Cantonese (Traditional Chinese) translation. Use emojis and an engaging tone suitable for P4-S3 students.
                             
                             Example Format (Error - Socratic):
-                            "It looks like your LED isn't lighting up! 🧐 Follow the path of electricity from the positive red wire. Does it have a continuous bridge to reach the negative wire? Where does the path break?\n\n睇落你粒 LED 唔著喎！🧐 試吓跟住電流由紅線 (+) 出發嘅路徑。佢有冇一條完整嘅路徑可以返去黑線 (-)？條路喺邊度斷咗呀？"
+                            "It looks like your LED isn't lighting up! 🧐 Follow the path of electricity from the positive red wire. Does it have a continuous bridge to reach the negative wire? Where does the path break?\\n\\n睇落你粒 LED 唔著喎！🧐 試吓跟住電流由紅線 (+) 出發嘅路徑。佢有冇一條完整嘅路徑可以返去黑線 (-)？條路喺邊度斷咗呀？"
                             
                             Example Format (Correct - Challenge):
-                            "Perfect circuit! 🎉 Since it's working beautifully, here is a challenge: What do you think will happen to the LED brightness if you replace the current resistor with a much stronger one? Try it out! ⚡\n\n完美嘅電路！🎉 既然已經成功咗，考吓你：如果你換一粒電阻值更大嘅電阻，你估吓 LED 嘅亮度會有咩變化？試吓啦！⚡"
+                            "Perfect circuit! 🎉 Since it's working beautifully, here is a challenge: What do you think will happen to the LED brightness if you replace the current resistor with a much stronger one? Try it out! ⚡\\n\\n完美嘅電路！🎉 既然已經成功咗，考吓你：如果你換一粒電阻值更大嘅電阻，你估吓 LED 嘅亮度會有咩變化？試吓啦！⚡"
 
                             Component Data (Available Pins):
                             {summary}
@@ -723,7 +731,7 @@ if active_input:
                             report_card_img = create_visual_report(success_list, error_list, l)
                             
                             save_to_drive(user_id, selected_task, feedback_text, 
-                                         {"1": st.session_state.img1, "4": st.session_state.img4, "summary": report_card_img})
+                                          {"1": st.session_state.img1, "4": st.session_state.img4, "summary": report_card_img})
                             
                             # Rerun to display the UI results
                             st.rerun()
