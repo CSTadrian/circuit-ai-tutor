@@ -580,11 +580,8 @@ if active_input:
         elif st.session_state.step == 2:
             st.subheader(UI[l]["step2_title"])
             
-            # Dynamically balance layout configuration space for camera view scaling expansion
-            if is_camera_mode:
-                edit_col, img_col = st.columns([1, 3])
-            else:
-                edit_col, img_col = st.columns([1, 2])
+            # Balance configuration layout columns
+            edit_col, img_col = st.columns([1, 2])
                 
             updated_data = []
             with edit_col:
@@ -607,33 +604,39 @@ if active_input:
                 base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
                 st.session_state.img3 = draw_pins_on_image(base_grid_img, edited_df)
                 
-                if is_camera_mode:
-                    # Enlarge the tuning validation window 3x for precision adjustments
-                    tune_w, tune_h = st.session_state.img3.size
-                    large_img3 = st.session_state.img3.resize((tune_w * 3, tune_h * 3), PILImage.Resampling.LANCZOS)
-                    st.image(large_img3, caption=UI[l]["verify"])
-                else:
-                    st.image(st.session_state.img3, caption=UI[l]["verify"])
+                # Double width and height (2x) as requested for tuning precision visibility
+                tune_w, tune_h = st.session_state.img3.size
+                large_img3 = st.session_state.img3.resize((tune_w * 2, tune_h * 2), PILImage.Resampling.LANCZOS)
+                st.image(large_img3, caption=UI[l]["verify"])
 
             if st.button(UI[l]["step2_confirm"], type="primary"):
                 st.session_state.components_df = edited_df
-                # Clear analysis state so the button appears in Step 3
                 st.session_state.analysis_result = None
                 st.session_state.img4 = None
                 st.session_state.step = 3
                 st.rerun()
 
-        # STEP 3: ANALYSIS
+        # STEP 3: PRE-ANALYSIS ALIGNMENT TRANSPARENCY DISPLAY
         elif st.session_state.step == 3:
-            st.subheader(UI[l]["step3_title"])
+            st.subheader("Step 3: Intent vs. Detection Review / 檢查對齊與落點")
             
-            # Show the Button if analysis hasn't run yet
-            if st.session_state.analysis_result is None or st.session_state.img4 is None:
-                st.info("Everything looks perfectly aligned! Click below to begin the Socratic Assessment.")
-                
-                # We use a fallback translation if 'ai_analysis_btn' isn't in your dict yet
-                btn_text = UI[l].get("ai_analysis_btn", "🤖 Run AI Analysis" if l == "en" else "🤖 開始 AI 分析")
-                
+            # Transparency Guidance Callout Box
+            if l == "en":
+                st.warning("🔍 **Double check your connections before marking!** Review the large mapping below to look for any misalignments between what you intended to connect vs. an AI vision mapping mistake.")
+            else:
+                st.warning("🔍 **開始評分前請仔細檢查！** 請對照下方放大圖，睇吓你原本想連接嘅位置，同系統『睇』到嘅黃色落點有冇任何偏離或移位。")
+            
+            # Display image prominently at 2x width and 2x height
+            w3, h3 = st.session_state.img3.size
+            large_img3_review = st.session_state.img3.resize((w3 * 2, h3 * 2), PILImage.Resampling.LANCZOS)
+            st.image(large_img3_review, caption="Large Alignment Check View (Before AI Logic Assessment)")
+            
+            st.info("Everything looks perfectly aligned! Click below to begin the Socratic Assessment." if l == "en" else "如果落點對齊完全無誤，請點擊下方按鈕開始蘇格拉底式評估。")
+
+            btn_text = UI[l].get("ai_analysis_btn", "🤖 Run AI Analysis" if l == "en" else "🤖 開始 AI 分析")
+            
+            col_btn_run, col_btn_back = st.columns([1, 4])
+            with col_btn_run:
                 if st.button(btn_text, type="primary"):
                     with st.spinner(UI[l]["checking"]):
                         summary = st.session_state.components_df.to_string(index=False)
@@ -709,7 +712,7 @@ if active_input:
                             
                             st.session_state.analysis_result = result
                             
-                            # Drawing logic
+                            # Drawing marker error layers
                             diag_img = st.session_state.img3.copy()
                             draw = ImageDraw.Draw(diag_img)
                             w, h = diag_img.size
@@ -733,16 +736,23 @@ if active_input:
                             save_to_drive(user_id, selected_task, feedback_text, 
                                           {"1": st.session_state.img1, "4": st.session_state.img4, "summary": report_card_img})
                             
-                            # Rerun to display the UI results
+                            st.session_state.step = 4
                             st.rerun()
                             
                         except Exception as e:
                             st.error(f"AI Analysis failed: {e}")
                             st.session_state.step = 2
                             st.rerun()
+            with col_btn_back:
+                if st.button(UI[l]["back"]):
+                    st.session_state.step = 2
+                    st.rerun()
 
-            # Display Logic (Once Analysis is Done)
-            else:
+        # STEP 4: AI AUTOMATED CIRCUIT ANALYSIS RESULTS
+        elif st.session_state.step == 4:
+            st.subheader(UI[l]["step3_title"])
+            
+            if st.session_state.img4 is not None:
                 st.image(st.session_state.img4, caption=UI[l]["ai_diag"])
                 
                 feedback_text = st.session_state.analysis_result.get("feedback", "")
@@ -754,21 +764,19 @@ if active_input:
                 report_card_img = create_visual_report(success_list, error_list, l)
                 st.image(report_card_img, width="stretch")
 
-                # Flow Actions Footer Columns
-                col_b, col_c = st.columns(2)
-                with col_b:
-                    if st.button(UI[l]["back"]):
-                        st.session_state.step = 2
-                        st.session_state.analysis_result = None # Clear this to show the button again
-                        st.session_state.img4 = None
-                        st.rerun()
-                with col_c:
-                    if st.button(UI[l]["new"]):
-                        reset_flow()
-                        st.session_state.last_input_id = None
-                        st.rerun()
+            # Flow Actions Footer Columns
+            col_b, col_c = st.columns(2)
+            with col_b:
+                if st.button(UI[l]["back"]):
+                    st.session_state.step = 3
+                    st.session_state.analysis_result = None 
+                    st.session_state.img4 = None
+                    st.rerun()
+            with col_c:
+                if st.button(UI[l]["new"]):
+                    reset_flow()
+                    st.session_state.last_input_id = None
+                    st.rerun()
                         
-    else:
-        st.error("Please try uploading the image again. It failed to process.")
 else:
-    st.info(UI[l]["upload_prompt"])
+    st.error("Please upload an image or turn on the camera system to begin / 請上傳圖片或開啟相機鏡頭以開始")
