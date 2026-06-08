@@ -385,7 +385,6 @@ def save_to_drive(user_id, task_name, ai_feedback, images_dict):
             media = MediaIoBaseUpload(io.BytesIO(updated_csv_bytes), mimetype='text/csv')
             service.files().update(fileId=file_id, media_body=media).execute()
             
-        # Optional: You can remove this st.success if you want it completely silent
         st.toast("✅ Automatically saved to Google Drive!")
         
     except Exception as e:
@@ -469,11 +468,27 @@ if active_input:
         if not st.session_state.hough_rows:
             st.session_state.hough_rows = detect_horizontal_rows(raw_student)
 
+        # Flag for determining layout structure magnification
+        is_camera_mode = (input_mode == UI[l]["mode_camera"])
+
         # STEP 1: DETECTION
         if st.session_state.step == 1:
-            col1, col2 = st.columns(2)
-            col1.image(raw_schematic, caption=UI[l]["schematic"])
-            col2.image(draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners), caption=UI[l]["your_circuit"])
+            grid_visualization = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
+            
+            if is_camera_mode:
+                # Direct massive display layout (Enlarged 3x in width and height)
+                orig_w, orig_h = grid_visualization.size
+                large_grid_img = grid_visualization.resize((orig_w * 3, orig_h * 3), PILImage.Resampling.LANCZOS)
+                
+                st.subheader(UI[l]["your_circuit"])
+                st.image(large_grid_img, caption=UI[l]["your_circuit"])
+                with st.expander(UI[l]["schematic"], expanded=False):
+                    st.image(raw_schematic, caption=UI[l]["schematic"])
+            else:
+                # Standard side-by-side split layout for uploaded files
+                col1, col2 = st.columns(2)
+                col1.image(raw_schematic, caption=UI[l]["schematic"])
+                col2.image(grid_visualization, caption=UI[l]["your_circuit"])
 
             if st.button(UI[l]["step1_btn"], type="primary"):
                 with st.spinner(UI[l]["analyzing"]):
@@ -483,7 +498,11 @@ if active_input:
                         - POWER SUPPLY: You MUST identify the power input module. It has exactly 2 pins: the red wire/pin (+ve/Vcc) and the black wire/pin (-ve/GND).
                         - SLIDE-SWITCH: You MUST identify exactly 3 pins (legs) positioned continuously in a single straight row. 
                         - 4-pin Push Button, LDR, LED
-                        - resistor (check color bands: '5-band 300ohm', '1000 ohm', or '10k ohm')
+                        - RESISTOR: Identify 5-band resistors and strictly categorize their values using these color signatures:
+                          * '10k ohm' resistor: characterized by containing a red band/line.
+                          * '300 ohm' resistor: characterized by containing an orange band/line.
+                          * '150 ohm' resistor: characterized by containing a green band/line.
+                          * '1k ohm' resistor: characterized by containing exclusively black and brown bands/lines.
                         Return JSON mapping 'breadboard_corners' and 'components'.
                         """
                     resp = client.models.generate_content(
@@ -557,7 +576,13 @@ if active_input:
         # STEP 2: TUNING
         elif st.session_state.step == 2:
             st.subheader(UI[l]["step2_title"])
-            edit_col, img_col = st.columns([1, 2])
+            
+            # Dynamically balance layout configuration space for camera view scaling expansion
+            if is_camera_mode:
+                edit_col, img_col = st.columns([1, 3])
+            else:
+                edit_col, img_col = st.columns([1, 2])
+                
             updated_data = []
             with edit_col:
                 for i, row in st.session_state.components_df.iterrows():
@@ -578,7 +603,14 @@ if active_input:
             with img_col:
                 base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
                 st.session_state.img3 = draw_pins_on_image(base_grid_img, edited_df)
-                st.image(st.session_state.img3, caption=UI[l]["verify"])
+                
+                if is_camera_mode:
+                    # Enlarge the tuning validation window 3x for precision adjustments
+                    tune_w, tune_h = st.session_state.img3.size
+                    large_img3 = st.session_state.img3.resize((tune_w * 3, tune_h * 3), PILImage.Resampling.LANCZOS)
+                    st.image(large_img3, caption=UI[l]["verify"])
+                else:
+                    st.image(st.session_state.img3, caption=UI[l]["verify"])
 
             if st.button(UI[l]["step2_confirm"], type="primary"):
                 st.session_state.components_df = edited_df
@@ -613,7 +645,7 @@ if active_input:
                             Electrical Analysis Rules: 
                             1. POWER SUPPLY: Must form a closed loop.
                             2. SERIES REVERSIBILITY: An LED in series with a resistor is considered correct regardless of order (LED -> Resistor IS THE SAME AS Resistor -> LED).
-                            3. RESISTOR VALUES IGNORED: Do NOT check exact resistance values or color bands. Only verify that a generic resistor component is present and connected properly.
+                            3. RESISTOR STRUCTURAL VALIDATION: The workshop only evaluates 5-band resistors configured with precise tracking parameters: 10k ohm (red signature band), 1k ohm (exclusively black/brown bands), 150 ohm (green signature band), or 300 ohm (orange signature band). Confirm presence and electrical continuity pathways across row nodes.
                         
                             Pedagogical Scaffolding Rules (CRITICAL):
                             1. IF THERE ARE ERRORS: DO NOT give direct answers or tell the student which exact rows to change. Instead, use SOCRATIC SCAFFOLDING. Ask a guiding question related to the underlying theory of their specific mistake (e.g., if the circuit is open, ask how electricity needs a continuous path to return home). 
@@ -714,7 +746,7 @@ if active_input:
                 report_card_img = create_visual_report(success_list, error_list, l)
                 st.image(report_card_img, width="stretch")
 
-                # The "Save" button was removed as per request.
+                # Flow Actions Footer Columns
                 col_b, col_c = st.columns(2)
                 with col_b:
                     if st.button(UI[l]["back"]):
