@@ -397,6 +397,9 @@ if "analysis_result" not in st.session_state: st.session_state.analysis_result =
 if "hough_rows" not in st.session_state: st.session_state.hough_rows = []
 if "breadboard_corners" not in st.session_state: st.session_state.breadboard_corners = None
 if "last_input_id" not in st.session_state: st.session_state.last_input_id = None
+if "socratic_q_idx" not in st.session_state: st.session_state.socratic_q_idx = 0
+if "socratic_chat" not in st.session_state: st.session_state.socratic_chat = []
+
 for i in range(1, 5): 
     if f"img{i}" not in st.session_state: st.session_state[f"img{i}"] = None
 if "lang" not in st.session_state: st.session_state.lang = "en"
@@ -408,6 +411,19 @@ def reset_flow():
         else: st.session_state[key] = None
     st.session_state.hough_rows = []
     st.session_state.breadboard_corners = None
+    st.session_state.socratic_q_idx = 0
+    st.session_state.socratic_chat = []
+
+def get_socratic_challenges(task_name):
+    """
+    Returns 3 progressive, hands-on challenges based on the task.
+    They force students to physically experiment, rather than answer theory questions.
+    """
+    return [
+        "Level 1 🟢: Let's play a trick on your circuit! What happens if you swap the resistor for a different value (or flip an LED around)? Make the change, take a photo, and tell me what you observe!\n\n第一關 🟢: 試吓對電路做個小測試！如果你換另一粒電阻（或者將 LED 掉轉插），會發生咩事？動手改吓，影張相，然後話我知你觀察到咩！",
+        "Level 2 🟡: Awesome! Now let's try controlling the flow. Can you add a push button (or a switch) so you can turn the light on and off yourself? Take a photo of your new setup and explain how it works!\n\n第二關 🟡: 叻仔/叻女！而家試吓控制電流。你加唔加到一個按鈕（或開關），等你控制燈嘅開關？影張新相，解釋吓佢點運作！",
+        "Level 3 🔴: Final Boss! Can you add a second LED to make them share the power (in series or parallel)? Take a picture and describe what happens to their brightness compared to just one LED, and why!\n\n第三關 🔴: 終極挑戰！試吓加多一粒 LED，令佢哋分享電力（串聯或並聯）。影張相，描述吓佢哋嘅光度同得一粒 LED 嗰陣有咩分別，點解會咁？"
+    ]
 
 # --- 6. MAIN UI ---
 
@@ -607,7 +623,7 @@ if active_input:
                 # Double width and height (2x) as requested for tuning precision visibility
                 tune_w, tune_h = st.session_state.img3.size
                 large_img3 = st.session_state.img3.resize((tune_w * 2, tune_h * 2), PILImage.Resampling.LANCZOS)
-                st.image(large_img3, caption=UI[l]["verify"])
+                st.image(large_img3, caption=UI[l]["verify"], use_container_width=True)
 
             if st.button(UI[l]["step2_confirm"], type="primary"):
                 st.session_state.components_df = edited_df
@@ -626,10 +642,10 @@ if active_input:
             else:
                 st.warning("🔍 **開始評分前請仔細檢查！** 請對照下方放大圖，睇吓你原本想連接嘅位置，同系統『睇』到嘅黃色落點有冇任何偏離或移位。")
             
-            # Display image prominently at 2x width and 2x height
+            # Display image prominently at 2x width and 2x height, isolated across the FULL WIDTH layout
             w3, h3 = st.session_state.img3.size
             large_img3_review = st.session_state.img3.resize((w3 * 2, h3 * 2), PILImage.Resampling.LANCZOS)
-            st.image(large_img3_review, caption="Large Alignment Check View (Before AI Logic Assessment)")
+            st.image(large_img3_review, caption="Large Alignment Check View (Before AI Logic Assessment)", use_container_width=True)
             
             st.info("Everything looks perfectly aligned! Click below to begin the Socratic Assessment." if l == "en" else "如果落點對齊完全無誤，請點擊下方按鈕開始蘇格拉底式評估。")
 
@@ -648,15 +664,15 @@ if active_input:
                             2. POWER RAILS (Edges): The two leftmost and two rightmost columns are Power Rails. 
                             3. PALE BLUE OVERLAYS: Connected to Power Supply.
                         
-                            Electrical Analysis & Strict Resistor Rules: 
+                            Electrical Analysis & Strict Semantic Resistor Rules: 
                             1. POWER SUPPLY: Must form a closed loop.
                             2. SERIES REVERSIBILITY: An LED in series with a resistor is considered correct regardless of order (LED -> Resistor IS THE SAME AS Resistor -> LED).
-                            3. RESISTOR STRUCTURAL VALIDATION: You must identify whether the resistor is correct or not by checking its visual 5-band color signatures:
-                               - If target value is '150 ohm': Must contain exactly ONE green band.
-                               - If target value is '10k ohm': Must contain exactly ONE red band.
-                               - If target value is '300 ohm': Must contain exactly ONE orange band.
-                               - If target value is '1k ohm': Must consist mostly of black and brown bands.
-                               CRITICAL: If a resistor is located in the right row nodes but its physical color bands fail to match these signature rules, flag it immediately as incorrect ('Incorrect Resistor Value Selected') under 'error_summary' and 'detected_errors'.
+                            3. RESISTOR STRUCTURAL & SEMANTIC VALIDATION: You must identify whether the correct resistor is used by checking its visual 5-band color signatures against the target requirement:
+                               - Target requires '150 ohm': Physical resistor must visually contain exactly ONE green band.
+                               - Target requires '10k ohm': Physical resistor must visually contain exactly ONE red band.
+                               - Target requires '300 ohm': Physical resistor must visually contain exactly ONE orange band.
+                               - Target requires '1k ohm': Physical resistor must visually consist mostly of black and brown bands.
+                               CRITICAL SEMANTIC OUTPUT: Explicitly state whether the resistor is correct or not in your evaluation. If the physical color bands fail to match the required target rule, add 'Incorrect Resistor Used' to 'error_summary' and 'detected_errors'. If it matches, add 'Correct Resistor Used' to 'success_summary'.
                         
                             Pedagogical Scaffolding Rules (CRITICAL):
                             1. IF THERE ARE ERRORS: DO NOT give direct answers or tell the student which exact rows to change. Instead, use SOCRATIC SCAFFOLDING. Ask a guiding question related to the underlying theory of their specific mistake (e.g., if the circuit is open, ask how electricity needs a continuous path to return home; if the wrong resistor is used, guide them to inspect the color bands). 
@@ -667,9 +683,6 @@ if active_input:
                             
                             Example Format (Error - Socratic):
                             "It looks like your LED isn't lighting up! 🧐 Follow the path of electricity from the positive red wire. Does it have a continuous bridge to reach the negative wire? Where does the path break?\\n\\n睇落你粒 LED 唔著喎！🧐 試吓跟住電流由紅線 (+) 出發嘅路徑。佢有冇一條完整嘅路徑可以返去黑線 (-)？條路喺邊度斷咗呀？"
-                            
-                            Example Format (Correct - Challenge):
-                            "Perfect circuit! 🎉 Since it's working beautifully, here is a challenge: What do you think will happen to the LED brightness if you replace the current resistor with a much stronger one? Try it out! ⚡\\n\\n完美嘅電路！🎉 既然已經成功咗，考吓你：如果你換一粒電阻值更大嘅電阻，你估吓 LED 嘅亮度會有咩變化？試吓啦！⚡"
 
                             Component Data (Available Pins):
                             {summary}
@@ -753,7 +766,7 @@ if active_input:
             st.subheader(UI[l]["step3_title"])
             
             if st.session_state.img4 is not None:
-                st.image(st.session_state.img4, caption=UI[l]["ai_diag"])
+                st.image(st.session_state.img4, caption=UI[l]["ai_diag"], use_container_width=True)
                 
                 feedback_text = st.session_state.analysis_result.get("feedback", "")
                 st.info(feedback_text)
@@ -764,6 +777,14 @@ if active_input:
                 report_card_img = create_visual_report(success_list, error_list, l)
                 st.image(report_card_img, width="stretch")
 
+            # Check if base circuit is 100% correct (No errors in summary)
+            if not error_list:
+                st.success("🎉 Perfect base circuit! Ready to level up? / 完美嘅基礎電路！準備好升級挑戰未？")
+                if st.button("🚀 Enter Socratic Challenge Mode! / 進入蘇格拉底挑戰模式", type="primary"):
+                    st.session_state.step = 5
+                    st.rerun()
+                    
+            st.divider()
             # Flow Actions Footer Columns
             col_b, col_c = st.columns(2)
             with col_b:
@@ -771,6 +792,87 @@ if active_input:
                     st.session_state.step = 3
                     st.session_state.analysis_result = None 
                     st.session_state.img4 = None
+                    st.rerun()
+            with col_c:
+                if st.button(UI[l]["new"]):
+                    reset_flow()
+                    st.session_state.last_input_id = None
+                    st.rerun()
+
+        # STEP 5: SOCRATIC CHALLENGE MODE (HANDS-ON EXPLORATION)
+        elif st.session_state.step == 5:
+            st.subheader("🚀 Socratic Challenge Mode / 蘇格拉底挑戰模式")
+            
+            challenges = get_socratic_challenges(selected_task)
+            
+            # Display Socratic Chat History
+            for msg in st.session_state.socratic_chat:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
+                    
+            if st.session_state.socratic_q_idx < len(challenges):
+                current_q = challenges[st.session_state.socratic_q_idx]
+                
+                # Show the challenge prompt inside an info box
+                st.info(f"**Current Challenge ({st.session_state.socratic_q_idx + 1}/{len(challenges)}):**\n\n{current_q}")
+                
+                st.markdown("### Verify Your Experiment 🔬")
+                student_text = st.text_area("What did you change and what happened? / 你改咗咩？觀察到咩？")
+                
+                upload_mode = st.radio("Upload your modified circuit:", ["Camera 📸", "File 📁"], horizontal=True, label_visibility="collapsed")
+                if upload_mode.startswith("Camera"):
+                    proof_img = st.camera_input("Take a photo of the new circuit")
+                else:
+                    proof_img = st.file_uploader("Upload a photo", type=["jpg", "png", "jpeg"])
+                    
+                if st.button("Verify My Experiment! 🔍", type="primary"):
+                    if not student_text or not proof_img:
+                        st.warning("Please provide both your explanation and an image! / 請同時提供文字解釋及相片！")
+                    else:
+                        with st.spinner("AI is verifying your hands-on experiment..."):
+                            img_pil = process_uploaded_image(io.BytesIO(proof_img.getvalue()))
+                            
+                            # Multimodal Verification Prompt
+                            prompt = f"""
+                            Task Context: {selected_task}
+                            Current Socratic Challenge: {current_q}
+                            Student's Explanation: "{student_text}"
+                            
+                            Task: Look at the provided image of the student's NEW breadboard setup. Evaluate if the physical circuit image AND their text explanation prove they successfully completed the challenge.
+                            If correct, respond EXACTLY with "[VERIFICATION: PASSED]" followed by encouraging feedback.
+                            If incorrect, respond EXACTLY with "[VERIFICATION: FAILED]" followed by a helpful Socratic hint pointing to their image (do not give the direct answer).
+                            Tone: Fun, encouraging, suited for P4-S3 students. Provide bilingual text (English, then Traditional Chinese).
+                            """
+                            try:
+                                resp = client.models.generate_content(
+                                    model=MODEL_ID, 
+                                    contents=[img_pil, prompt],
+                                    config=types.GenerateContentConfig(temperature=0.4)
+                                )
+                                feedback = resp.text
+                                
+                                # Clean the output for user display
+                                display_feedback = feedback.replace("[VERIFICATION: PASSED]", "").replace("[VERIFICATION: FAILED]", "").strip()
+                                
+                                st.session_state.socratic_chat.append({"role": "user", "content": f"📝 **My Observation:** {student_text}\n*(Circuit Image Uploaded)*"})
+                                st.session_state.socratic_chat.append({"role": "assistant", "content": display_feedback})
+                                
+                                if "[VERIFICATION: PASSED]" in feedback:
+                                    st.session_state.socratic_q_idx += 1
+                                    
+                                st.rerun()
+                                
+                            except Exception as e:
+                                st.error(f"AI Verification Error: {e}")
+                                
+            else:
+                st.success("🏆 You are a Circuit Master! All challenges completed! / 🏆 你已經成為電路大師！完成晒所有挑戰！")
+                
+            st.divider()
+            col_b, col_c = st.columns(2)
+            with col_b:
+                if st.button("Back to Circuit Check" if l == "en" else "返回電路檢查"):
+                    st.session_state.step = 4
                     st.rerun()
             with col_c:
                 if st.button(UI[l]["new"]):
