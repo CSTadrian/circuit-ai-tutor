@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 from datetime import datetime
 from PIL import Image as PILImage, ImageDraw, ImageOps
+import qrcode
 
 # --- NEW SDK IMPORTS ---
 from google import genai
@@ -389,7 +390,14 @@ def save_to_drive(user_id, task_name, ai_feedback, images_dict):
         
     except Exception as e:
         st.error(f"Drive Save Error: {e}")
-        
+
+def generate_qr_code(url):
+    """Generates a QR code image from a URL."""
+    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+    qr.add_data(url)
+    qr.make(fit=True)
+    return qr.make_image(fill_color="black", back_color="white")
+    
 # --- 5. SESSION STATE ---
 if "step" not in st.session_state: st.session_state.step = 1
 if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
@@ -451,12 +459,25 @@ with st.sidebar:
     
     st.divider()
     
-    # Input Method Toggle (Defaults to Upload)
-    input_mode = st.radio(UI[l]["input_mode"], [UI[l]["mode_upload"], UI[l]["mode_camera"]], horizontal=True)
-    if input_mode == UI[l]["mode_upload"]:
-        active_input = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp","heic"])
+    # 1. Provide the QR Code for easy access
+    app_url = "https://YOUR-APP-NAME.streamlit.app" # <--- PUT YOUR APP LINK HERE
+    
+    with st.expander("📱 Open on iPad/Phone"):
+        st.info("Scan this to open the app on your iPad:")
+        qr_img = generate_qr_code(app_url)
+        st.image(qr_img, width=150)
+        st.write(f"[Click here if on mobile]({app_url})")
+
+    st.divider()
+
+    # 2. Input Method Toggle
+    # We keep the logic simple: if they are on iPad, they can use camera_input directly
+    input_mode = st.radio("Upload Method", ["Camera", "File Upload"], horizontal=True)
+    
+    if input_mode == "Camera":
+        active_input = st.camera_input("Take photo")
     else:
-        active_input = st.camera_input(UI[l]["camera"])
+        active_input = st.file_uploader("Upload photo", type=["jpg", "png", "jpeg"])
     
     if st.button(UI[l]["reset"]): 
         reset_flow()
