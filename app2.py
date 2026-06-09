@@ -21,7 +21,7 @@ from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
 # --- 1. CONFIGURATION & TASK SETUP ---
 TASKS = {
-    "Task 1: Basic LED Circuit": "task1_led_10k.png",
+    "Task 1: Basic LED Circuit": "task1_led.png",
     "Task 2: LED in Series": "task2_series_led.png",
     "Task 3: Parallel LED Setup": "task3_parallel_led.png",
     "Task 4: Switch Control": "task4_switch.png",
