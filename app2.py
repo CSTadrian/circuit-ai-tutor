@@ -470,12 +470,26 @@ with st.sidebar:
 
     st.divider()
 
-    # Input Method Toggle (Defaults to Upload)
-    input_mode = st.radio(UI[l]["input_mode"], [UI[l]["mode_upload"], UI[l]["mode_camera"]], horizontal=True)
-    if input_mode == UI[l]["mode_upload"]:
-        active_input = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp","heic"])
+    # 1. Provide the QR Code for easy access
+    app_url = "https://circuit-ai-tutor-260321-testing.streamlit.app/
+    
+    with st.expander("📱 Open on iPad/Phone"):
+        st.info("Scan this to open the app on your iPad:")
+        qr_img = generate_qr_code(app_url)
+        st.image(qr_img, width=150)
+        st.write(f"[Click here if on mobile]({app_url})")
+
+    st.divider()
+
+    # 2. Input Method Toggle
+    # We keep the logic simple: if they are on iPad, they can use camera_input directly
+    input_mode = st.radio("Upload Method", ["Camera", "File Upload"], horizontal=True)
+    
+    if input_mode == "Camera":
+        active_input = st.camera_input("Take photo")
     else:
-        active_input = st.camera_input(UI[l]["camera"])
+        active_input = st.file_uploader("Upload photo", type=["jpg", "png", "jpeg"])
+        
         
     
     if st.button(UI[l]["reset"]): 
