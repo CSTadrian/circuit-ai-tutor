@@ -336,7 +336,7 @@ def create_visual_report(successes, errors, lang):
         y_off += 30
         
     return img
-    
+
 def save_to_drive(user_id, task_name, ai_feedback, images_dict):
     service = get_drive_service()
     hk_tz = pytz.timezone('Asia/Hong_Kong')
@@ -436,7 +436,6 @@ def get_socratic_challenges(task_name):
     Returns 3 specific, progressive challenges tailored for absolute beginners.
     Each level builds explicitly on the previous one to reinforce hands-on learning.
     """
-    # This sequence specifically tests Polarity -> Resistance -> Position (Series Reversibility)
     return [
         "Level 1 🟢 (The Polarity Trick): Let's test the LED! Pull the LED out of your board, flip it around so the long and short legs are swapped, and plug it back in. Take a photo. Does it still light up? Tell me what you see!\n\n第一關 🟢 (極性小把戲): 測試吓粒 LED！將 LED 抆出嚟，掉轉長短腳再插返入去。影張相，佢仲會唔會發光？話我知你見到咩！",
         
@@ -468,45 +467,32 @@ with st.sidebar:
     
     st.divider()
     
-    # 1. Provide the QR Code for easy access
-    app_url = "https://YOUR-APP-NAME.streamlit.app" # <--- PUT YOUR APP LINK HERE
-    
-    with st.expander("📱 Open on iPad/Phone"):
-        st.info("Scan this to open the app on your iPad:")
-        qr_img = generate_qr_code(app_url)
-        st.image(qr_img, width=150)
-        st.write(f"[Click here if on mobile]({app_url})")
-
-    st.divider()
-
-    # 1. Provide the QR Code for easy access
+    # 📱 THE IPAD / MOBILE BRIDGE (Cleaned up)
     app_url = "https://circuit-ai-tutor-260321-testing.streamlit.app/"
     
-    with st.expander("📱 Open on iPad/Phone"):
-        st.info("Scan this to open the app on your iPad:")
+    with st.expander("📱 Open on iPad/Phone" if l == "en" else "📱 用平板或手機開啟"):
+        st.info("Scan this to open the app directly on your iPad! / 掃描此二維碼直接在平板/手機開啟：")
         qr_img = generate_qr_code(app_url)
         st.image(qr_img, width=150)
-        st.write(f"[Click here if on mobile]({app_url})")
+        st.write(f"🔗 [Direct Link]({app_url})")
 
     st.divider()
 
-    # 2. Input Method Toggle
-    # We keep the logic simple: if they are on iPad, they can use camera_input directly
-    input_mode = st.radio("Upload Method", ["Camera", "File Upload"], horizontal=True)
+    # 📸 UPLOAD METHOD TOGGLE
+    input_mode = st.radio("Upload Method" if l == "en" else "上傳方式", ["Camera 📸", "File Upload 📁"], horizontal=True)
     
-    if input_mode == "Camera":
-        active_input = st.camera_input("Take photo")
+    if input_mode == "Camera 📸":
+        active_input = st.camera_input("Take photo of circuit" if l == "en" else "拍攝電路照片")
     else:
-        active_input = st.file_uploader("Upload photo", type=["jpg", "png", "jpeg"])
+        active_input = st.file_uploader("Upload photo" if l == "en" else "上傳照片", type=["jpg", "png", "jpeg"])
         
-        
+    st.divider()
     
     if st.button(UI[l]["reset"]): 
         reset_flow()
         st.session_state.last_input_id = None
         st.rerun()
 
-    st.divider()
     st.markdown(f"### {UI[l]['guide_title']}")
     st.markdown(UI[l]['guide_text'])
 
@@ -531,7 +517,7 @@ if active_input:
             st.session_state.hough_rows = detect_horizontal_rows(raw_student)
 
         # Flag for determining layout structure magnification
-        is_camera_mode = (input_mode == UI[l]["mode_camera"])
+        is_camera_mode = (input_mode == "Camera 📸")
 
         # STEP 1: DETECTION
         if st.session_state.step == 1:
@@ -864,11 +850,13 @@ if active_input:
                 st.markdown("### Verify Your Experiment 🔬")
                 student_text = st.text_area("What did you change and what happened? / 你改咗咩？觀察到咩？")
                 
-                upload_mode = st.radio("Upload your modified circuit:", ["Camera 📸", "File 📁"], horizontal=True, label_visibility="collapsed")
-                if upload_mode.startswith("Camera"):
-                    proof_img = st.camera_input("Take a photo of the new circuit")
+                # Dedicated iPad/Mobile Upload for the Socratic Challenge
+                socratic_upload_mode = st.radio("Upload your modified circuit:", ["Camera 📸", "File 📁"], horizontal=True, label_visibility="collapsed", key=f"s_upload_{st.session_state.socratic_q_idx}")
+                
+                if socratic_upload_mode.startswith("Camera"):
+                    proof_img = st.camera_input("Take a photo of the new circuit", key=f"s_cam_{st.session_state.socratic_q_idx}")
                 else:
-                    proof_img = st.file_uploader("Upload a photo", type=["jpg", "png", "jpeg"])
+                    proof_img = st.file_uploader("Upload a photo", type=["jpg", "png", "jpeg"], key=f"s_file_{st.session_state.socratic_q_idx}")
                     
                 if st.button("Verify My Experiment! 🔍", type="primary"):
                     if not student_text or not proof_img:
