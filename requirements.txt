@@ -10,3 +10,4 @@ pytz
 opencv-python-headless
 numpy
 streamlit-cropper
+qrcode[pil]
