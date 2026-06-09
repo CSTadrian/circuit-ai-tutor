@@ -416,13 +416,16 @@ def reset_flow():
 
 def get_socratic_challenges(task_name):
     """
-    Returns 3 progressive, hands-on challenges based on the task.
-    They force students to physically experiment, rather than answer theory questions.
+    Returns 3 specific, progressive challenges tailored for absolute beginners.
+    Each level builds explicitly on the previous one to reinforce hands-on learning.
     """
+    # This sequence specifically tests Polarity -> Resistance -> Position (Series Reversibility)
     return [
-        "Level 1 🟢: Let's play a trick on your circuit! What happens if you swap the resistor for a different value (or flip an LED around)? Make the change, take a photo, and tell me what you observe!\n\n第一關 🟢: 試吓對電路做個小測試！如果你換另一粒電阻（或者將 LED 掉轉插），會發生咩事？動手改吓，影張相，然後話我知你觀察到咩！",
-        "Level 2 🟡: Awesome! Now let's try controlling the flow. Can you add a push button (or a switch) so you can turn the light on and off yourself? Take a photo of your new setup and explain how it works!\n\n第二關 🟡: 叻仔/叻女！而家試吓控制電流。你加唔加到一個按鈕（或開關），等你控制燈嘅開關？影張新相，解釋吓佢點運作！",
-        "Level 3 🔴: Final Boss! Can you add a second LED to make them share the power (in series or parallel)? Take a picture and describe what happens to their brightness compared to just one LED, and why!\n\n第三關 🔴: 終極挑戰！試吓加多一粒 LED，令佢哋分享電力（串聯或並聯）。影張相，描述吓佢哋嘅光度同得一粒 LED 嗰陣有咩分別，點解會咁？"
+        "Level 1 🟢 (The Polarity Trick): Let's test the LED! Pull the LED out of your board, flip it around so the long and short legs are swapped, and plug it back in. Take a photo. Does it still light up? Tell me what you see!\n\n第一關 🟢 (極性小把戲): 測試吓粒 LED！將 LED 抆出嚟，掉轉長短腳再插返入去。影張相，佢仲會唔會發光？話我知你見到咩！",
+        
+        "Level 2 🟡 (The Resistance Test): Great job discovering that LEDs only work in one direction! Now let's test the resistor. Take out your current resistor and swap it for the 10k ohm one (the one with the RED band). Take a photo. How does the brightness compare to what you had in Level 1?\n\n第二關 🟡 (電阻大測試): 叻仔/叻女，你發現咗 LED 只可以單向通電！而家測試電阻。將而家粒電阻換成 10k ohm (有紅色彩環嗰粒)。影張相，同第一關比，燈嘅亮度有咩變化？",
+        
+        "Level 3 🔴 (The Position Puzzle): We now know higher resistance makes it dimmer. But does the resistor's *location* matter? Move the resistor so it connects to the OTHER leg of the LED (if it was on the positive side, move it to the negative side). Take a photo. Does the 'traffic cop' still control the brightness from the other side?\n\n第三關 🔴 (位置大挑戰): 我哋知電阻越大燈越暗。但電阻嘅「位置」重唔重要？將電阻移去 LED 嘅另一隻腳 (原本喺正極就移去負極)。影張相，「交通警」企喺另一邊仲可唔可以控制光度？"
     ]
 
 # --- 6. MAIN UI ---
@@ -683,7 +686,7 @@ if active_input:
                             
                             Example Format (Error - Socratic):
                             "It looks like your LED isn't lighting up! 🧐 Follow the path of electricity from the positive red wire. Does it have a continuous bridge to reach the negative wire? Where does the path break?\\n\\n睇落你粒 LED 唔著喎！🧐 試吓跟住電流由紅線 (+) 出發嘅路徑。佢有冇一條完整嘅路徑可以返去黑線 (-)？條路喺邊度斷咗呀？"
-
+                            
                             Component Data (Available Pins):
                             {summary}
                         
@@ -777,7 +780,7 @@ if active_input:
                 report_card_img = create_visual_report(success_list, error_list, l)
                 st.image(report_card_img, width="stretch")
 
-            # Check if base circuit is 100% correct (No errors in summary)
+            # If Base Circuit is 100% correct, unlock Personalized Socratic Scaffold!
             if not error_list:
                 st.success("🎉 Perfect base circuit! Ready to level up? / 完美嘅基礎電路！準備好升級挑戰未？")
                 if st.button("🚀 Enter Socratic Challenge Mode! / 進入蘇格拉底挑戰模式", type="primary"):
@@ -799,13 +802,13 @@ if active_input:
                     st.session_state.last_input_id = None
                     st.rerun()
 
-        # STEP 5: SOCRATIC CHALLENGE MODE (HANDS-ON EXPLORATION)
+        # STEP 5: PERSONALIZED SOCRATIC CHALLENGE MODE
         elif st.session_state.step == 5:
             st.subheader("🚀 Socratic Challenge Mode / 蘇格拉底挑戰模式")
             
             challenges = get_socratic_challenges(selected_task)
             
-            # Display Socratic Chat History
+            # Display past experiments to enforce the "progressive/spiral" feeling
             for msg in st.session_state.socratic_chat:
                 with st.chat_message(msg["role"]):
                     st.markdown(msg["content"])
@@ -813,7 +816,6 @@ if active_input:
             if st.session_state.socratic_q_idx < len(challenges):
                 current_q = challenges[st.session_state.socratic_q_idx]
                 
-                # Show the challenge prompt inside an info box
                 st.info(f"**Current Challenge ({st.session_state.socratic_q_idx + 1}/{len(challenges)}):**\n\n{current_q}")
                 
                 st.markdown("### Verify Your Experiment 🔬")
@@ -832,14 +834,19 @@ if active_input:
                         with st.spinner("AI is verifying your hands-on experiment..."):
                             img_pil = process_uploaded_image(io.BytesIO(proof_img.getvalue()))
                             
-                            # Multimodal Verification Prompt
+                            # Construct chat history string to pass context so AI can personalize the feedback
+                            history_context = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in st.session_state.socratic_chat])
+                            
                             prompt = f"""
                             Task Context: {selected_task}
+                            Previous Conversation History (Use this to personalize your response and reference past levels):
+                            {history_context}
+                            
                             Current Socratic Challenge: {current_q}
                             Student's Explanation: "{student_text}"
                             
-                            Task: Look at the provided image of the student's NEW breadboard setup. Evaluate if the physical circuit image AND their text explanation prove they successfully completed the challenge.
-                            If correct, respond EXACTLY with "[VERIFICATION: PASSED]" followed by encouraging feedback.
+                            Task: Evaluate if the physical circuit image AND their text explanation prove they successfully completed the CURRENT challenge.
+                            If correct, respond EXACTLY with "[VERIFICATION: PASSED]" followed by encouraging feedback that references their success in both this level and past levels.
                             If incorrect, respond EXACTLY with "[VERIFICATION: FAILED]" followed by a helpful Socratic hint pointing to their image (do not give the direct answer).
                             Tone: Fun, encouraging, suited for P4-S3 students. Provide bilingual text (English, then Traditional Chinese).
                             """
@@ -851,7 +858,6 @@ if active_input:
                                 )
                                 feedback = resp.text
                                 
-                                # Clean the output for user display
                                 display_feedback = feedback.replace("[VERIFICATION: PASSED]", "").replace("[VERIFICATION: FAILED]", "").strip()
                                 
                                 st.session_state.socratic_chat.append({"role": "user", "content": f"📝 **My Observation:** {student_text}\n*(Circuit Image Uploaded)*"})
