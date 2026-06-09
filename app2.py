@@ -471,7 +471,7 @@ with st.sidebar:
     st.divider()
 
     # 1. Provide the QR Code for easy access
-    app_url = "https://circuit-ai-tutor-260321-testing.streamlit.app/
+    app_url = "https://circuit-ai-tutor-260321-testing.streamlit.app/"
     
     with st.expander("📱 Open on iPad/Phone"):
         st.info("Scan this to open the app on your iPad:")
