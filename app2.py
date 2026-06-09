@@ -392,11 +392,20 @@ def save_to_drive(user_id, task_name, ai_feedback, images_dict):
         st.error(f"Drive Save Error: {e}")
 
 def generate_qr_code(url):
-    """Generates a QR code image from a URL."""
+    """Generates a QR code image from a URL and converts it to a Streamlit-safe PNG format."""
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
     qr.add_data(url)
     qr.make(fit=True)
-    return qr.make_image(fill_color="black", back_color="white")
+    
+    # Generate the custom QR code object
+    qr_img = qr.make_image(fill_color="black", back_color="white")
+    
+    # Convert the QR code to a standard PNG image in memory
+    buf = io.BytesIO()
+    qr_img.save(buf, format="PNG")
+    buf.seek(0)
+    
+    return buf
     
 # --- 5. SESSION STATE ---
 if "step" not in st.session_state: st.session_state.step = 1
