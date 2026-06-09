@@ -470,14 +470,13 @@ with st.sidebar:
 
     st.divider()
 
-    # 2. Input Method Toggle
-    # We keep the logic simple: if they are on iPad, they can use camera_input directly
-    input_mode = st.radio("Upload Method", ["Camera", "File Upload"], horizontal=True)
-    
-    if input_mode == "Camera":
-        active_input = st.camera_input("Take photo")
+    # Input Method Toggle (Defaults to Upload)
+    input_mode = st.radio(UI[l]["input_mode"], [UI[l]["mode_upload"], UI[l]["mode_camera"]], horizontal=True)
+    if input_mode == UI[l]["mode_upload"]:
+        active_input = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "webp","heic"])
     else:
-        active_input = st.file_uploader("Upload photo", type=["jpg", "png", "jpeg"])
+        active_input = st.camera_input(UI[l]["camera"])
+        
     
     if st.button(UI[l]["reset"]): 
         reset_flow()
