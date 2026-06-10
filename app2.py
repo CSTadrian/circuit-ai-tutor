@@ -9,7 +9,6 @@ import cv2
 import numpy as np
 from datetime import datetime
 from PIL import Image as PILImage, ImageDraw, ImageOps
-import qrcode
 
 # --- NEW SDK IMPORTS ---
 from google import genai
@@ -390,21 +389,6 @@ def save_to_drive(user_id, task_name, ai_feedback, images_dict):
     except Exception as e:
         st.error(f"Drive Save Error: {e}")
 
-def generate_qr_code(url):
-    """Generates a QR code image from a URL and converts it to a Streamlit-safe PNG format."""
-    qr = qrcode.QRCode(version=1, box_size=10, border=5)
-    qr.add_data(url)
-    qr.make(fit=True)
-    
-    # Generate the custom QR code object
-    qr_img = qr.make_image(fill_color="black", back_color="white")
-    
-    # Convert the QR code to a standard PNG image in memory
-    buf = io.BytesIO()
-    qr_img.save(buf, format="PNG")
-    buf.seek(0)
-    
-    return buf
     
 # --- 5. SESSION STATE ---
 if "step" not in st.session_state: st.session_state.step = 1
@@ -464,16 +448,6 @@ with st.sidebar:
         st.error(f"Missing {TASKS[selected_task]}")
         st.stop()
     
-    st.divider()
-    
-    # 📱 THE IPAD / MOBILE BRIDGE (Cleaned up)
-    app_url = "https://circuit-ai-tutor-260321-testing.streamlit.app/"
-    
-    with st.expander("📱 Open on iPad/Phone" if l == "en" else "📱 用平板或手機開啟"):
-        st.info("Scan this to open the app directly on your iPad! / 掃描此二維碼直接在平板/手機開啟：")
-        qr_img = generate_qr_code(app_url)
-        st.image(qr_img, width=150)
-        st.write(f"🔗 [Direct Link]({app_url})")
 
     st.divider()
 
