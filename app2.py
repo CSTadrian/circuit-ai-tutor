@@ -157,7 +157,6 @@ if "gcp_service_account" in st.secrets:
 else:
     st.error("GCP Service Account secrets not found!")
     st.stop()
-
 # --- 3. UI CUSTOMIZATION (Hiding Menus) ---
 st.set_page_config(page_title="AI Circuit Tutor", layout="wide")
 st.markdown("""
