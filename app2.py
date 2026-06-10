@@ -452,12 +452,12 @@ with st.sidebar:
     st.divider()
 
     # 📸 UPLOAD METHOD TOGGLE
-    input_mode = st.radio("Upload Method" if l == "en" else "上傳方式", ["Camera 📸", "File Upload 📁"], horizontal=True)
+    input_mode = st.radio("Upload Method" if l == "en" else "上傳方式", ["Camera 📸", "File Upload 📁"], index=1, horizontal=True)
     
     if input_mode == "Camera 📸":
         active_input = st.camera_input("Take photo of circuit" if l == "en" else "拍攝電路照片")
     else:
-        active_input = st.file_uploader("Upload photo" if l == "en" else "上傳照片", type=["jpg", "png", "jpeg"])
+        active_input = st.file_uploader("Upload photo" if l == "en" else "上傳照片", type=["jpg", "png", "jpeg","heic"])
         
     st.divider()
     
