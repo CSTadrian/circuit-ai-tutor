@@ -415,14 +415,20 @@ def reset_flow():
     st.session_state.socratic_q_idx = 0
     st.session_state.socratic_chat = []
 
-
-def get_socratic_challenges(task_name):
+def get_socratic_challenges(task_name, user_id):
     """
     Returns 3 specific, progressive challenges tailored for absolute beginners.
-    For Task 1, options are randomized to dynamically test different concepts.
+    For Task 1, questions are assigned deterministically based on whether the User ID is Odd or Even.
     """
+    # Convert User ID string (e.g., "03") to an integer to evaluate parity
+    try:
+        uid_int = int(user_id)
+    except (ValueError, TypeError):
+        uid_int = 0  # Safe fallback if ID parsing fails
     
-    # Default fallback challenges for other tasks
+    is_odd = (uid_int % 2 != 0)
+    
+    # Default fallback challenges for tasks other than Task 1
     if "Task 1" not in task_name:
         return [
             "Level 1 🟢 (The Polarity Trick): Let's test the LED! Flip it around... \n\n第一關 🟢 (極性小把戲): 測試吓粒 LED！...",
@@ -430,49 +436,56 @@ def get_socratic_challenges(task_name):
             "Level 3 🔴 (The Series Swap): Swap the places of the LED and Resistor... \n\n第三關 🔴 (串聯對調): 將 LED 同電阻對調位置..."
         ]
         
-    # --- TASK 1 REGION (RANDOMIZED SOCRATIC CHALLENGES) ---
+    # --- TASK 1 REGION (DETERMINISTIC COHORT ASSIGNMENT) ---
     challenges = []
 
-    # 1. Level 1: Randomize between Polarity Swap OR Component Order Swap
-    level1_options = [
-        # Option A: Polarity
-        "Level 1 🟢 (The Polarity Trick): Let's test the LED! Pull the LED out of your board, flip it around so the long and short legs are swapped, and plug it back in. Take a photo. Does it still light up? Tell me what you see!\n\n"
-        "第一關 🟢 (極性小把戲): 測試吓粒 LED！將 LED 抆出嚟，掉轉長短腳再插返入去。影張相，佢仲會唔會發光？話我知你見到咩！",
-        
-        # Option B: Series Order
-        "Level 1 🟢 (The Series Swap): Let's test the electrical order! Keep the same wires, but just swap the positions of the LED and the Resistor. (For example, if the path was Power -> Resistor -> LED, change it to Power -> LED -> Resistor). Make sure LED legs connect correctly! Take a photo. Does swapping the order change the brightness?\n\n"
-        "第一關 🟢 (串聯對調): 測試吓接線嘅「次序」！用返同樣嘅線，將 LED 同電阻對調位置插返好 (例如：原本係「電源 -> 電阻 -> LED」，改為「電源 -> LED -> 電阻」)。記得 LED 兩隻腳要插啱位呀！影張相，對調咗位置之後燈嘅亮度有冇變化？"
-    ]
-    challenges.append(random.choice(level1_options))
+    # --- LEVEL 1: Polarity vs. Component Order Swap ---
+    if is_odd:
+        # Odd Cohort: Polarity (Option A)
+        level1_text = (
+            "Level 1 🟢 (The Polarity Trick): Let's test the LED! Pull the LED out of your board, flip it around so the long and short legs are swapped, and plug it back in. Take a photo. Does it still light up? Tell me what you see!\n\n"
+            "第一關 🟢 (極性小把戲): 測試吓粒 LED！將 LED 抆出嚟，掉轉長短腳再插返入去。影張相，佢仲會唔會發光？話我知你見到咩！"
+        )
+    else:
+        # Even Cohort: Series Order (Option B)
+        level1_text = (
+            "Level 1 🟢 (The Series Swap): Let's test the electrical order! Keep the same wires, but just swap the positions of the LED and the Resistor. (For example, if the path was Power -> Resistor -> LED, change it to Power -> LED -> Resistor). Make sure LED legs connect correctly! Take a photo. Does swapping the order change the brightness?\n\n"
+            "第一關 🟢 (串聯對調): 測試吓接線嘅「次序」！用返同樣嘅線，將 LED 同電阻對調位置插返好 (例如：原本係「電源 -> 電阻 -> LED」，改為「電源 -> LED -> 電阻」)。記得 LED 兩隻腳要插啱位呀！影張相，對調咗位置之後燈嘅亮度有冇變化？"
+        )
+    challenges.append(level1_text)
 
-    # 2. Level 2: Randomize target resistor swap value (150, 300, or 10k)
-    resistor_choices = [
-        {"val": "150", "color_en": "GREEN", "color_hk": "綠"},
-        {"val": "300", "color_en": "ORANGE", "color_hk": "橙"},
-        {"val": "10k", "color_en": "RED", "color_hk": "紅"}
-    ]
-    chosen_resistor = random.choice(resistor_choices)
-    
-    level2_text = (
-        f"Level 2 🟡 (The Resistance Test): Great job with your first experiment! Now let's change the resistance. Take out your current resistor and swap it for the {chosen_resistor['val']} ohm one (the one with the {chosen_resistor['color_en']} band). Take a photo. How does the brightness compare to your original circuit?\n\n"
-        f"第二關 🟡 (電阻大測試): 上一關做得好！依家我哋改變吓電阻值。將你依家粒電阻換成 {chosen_resistor['val']} ohm (有{chosen_resistor['color_hk']}色彩環嗰粒)。影張相，同原本個電路比，燈嘅亮度有咩變化？"
-    )
+    # --- LEVEL 2: 300 Ohm vs. 10k Ohm Swap ---
+    if is_odd:
+        # Odd Cohort: 300 ohm (Orange band)
+        level2_text = (
+            "Level 2 🟡 (The Resistance Test): Great job with your first experiment! Now let's change the resistance. Take out your current resistor and swap it for the 300 ohm one (the one with the ORANGE band). Take a photo. How does the brightness compare to your original circuit?\n\n"
+            "第二關 🟡 (電阻大測試): 上一關做得好！依家我哋改變吓電阻值。將你依家粒電阻換成 300 ohm (有橙色彩環嗰粒)。影張相，同原本個電路比，燈嘅亮度有咩變化？"
+        )
+    else:
+        # Even Cohort: 10k ohm (Red band)
+        level2_text = (
+            "Level 2 🟡 (The Resistance Test): Great job with your first experiment! Now let's change the resistance. Take out your current resistor and swap it for the 10k ohm one (the one with the RED band). Take a photo. How does the brightness compare to your original circuit?\n\n"
+            "第二關 🟡 (電阻大測試): 上一關做得好！依家我哋改變吓電阻值。將你依家粒電阻換成 10k ohm (有紅色彩環嗰粒)。影張相，同原本個電路比，燈嘅亮度有咩變化？"
+        )
     challenges.append(level2_text)
 
-    # 3. Level 3: Circuit Topology Comparison (Base vs Series Addition vs Parallel Addition)
-    level3_text = (
-        "Level 3 🔴 (The Topology Puzzle): Let's explore circuit layouts! Look at your original circuit. Now, try two experiments:\n"
-        "1. **Series Experiment**: Add ONE MORE resistor of the exact same value in series (end-to-end) with your current resistor.\n"
-        "2. **Parallel Experiment**: Instead of series, try adding that second resistor in parallel (side-by-side) across your first resistor.\n"
-        "Take photos of both setups! Compare the brightness: Original circuit vs. Two Resistors in Series vs. Two Resistors in Parallel. What do you notice?\n\n"
-        "第三關 🔴 (電路結構大挑戰): 我哋一齊探索電路結構！睇吓你原本個電路。依家嘗試做兩個實驗：\n"
-        "1. **串聯實驗**：加多一粒相同數值嘅電阻，同依家粒電阻「串聯」（頭尾相接）。\n"
-        "2. **並聯實驗**：唔用串聯，改為將第二粒電阻同第一粒「並聯」（並排相接）。\n"
-        "兩次實驗都影張相。對比返三種情況：原本個電路 vs 串聯兩粒 vs 並聯兩粒，你觀察到燈嘅光度有咩分別？"
-    )
+    # --- LEVEL 3: Add Series vs. Add Parallel ---
+    if is_odd:
+        # Odd Cohort: Compare with an added Series Resistor
+        level3_text = (
+            "Level 3 🔴 (The Series Layout Challenge): Let's explore circuit layouts! Look at your current circuit. Now, add ONE MORE resistor of the exact same value in series (end-to-end) with your resistor. Take a photo. Compare the brightness: original circuit vs. two resistors in series. What do you notice?\n\n"
+            "第三關 🔴 (串聯結構大挑戰): 我哋一齊探索電路結構！睇吓你依家個電路。依家加多一粒相同數值嘅電阻，同原本粒電阻「串聯」（頭尾相接）。影張相。對比返兩種情況：原本個電路 vs 串聯兩粒，你觀察到燈嘅光度有咩分別？"
+        )
+    else:
+        # Even Cohort: Compare with an added Parallel Resistor
+        level3_text = (
+            "Level 3 🔴 (The Parallel Layout Challenge): Let's explore circuit layouts! Look at your current circuit. Now, add ONE MORE resistor of the exact same value in parallel (side-by-side) across your resistor. Take a photo. Compare the brightness: original circuit vs. two resistors in parallel. What do you notice?\n\n"
+            "第三關 🔴 (並聯結構大挑戰): 我哋一齊探索電路結構！睇吓你依家個電路。依家將第二粒相同數值嘅電阻同原本粒「並聯」（並排相接）。影張相。對比返兩種情況：原本個電路 vs 並聯兩粒，你觀察到燈嘅光度有咩分別？"
+        )
     challenges.append(level3_text)
 
     return challenges
+    
 
 # --- 6. MAIN UI ---
 
@@ -855,7 +868,7 @@ if active_input:
         elif st.session_state.step == 5:
             st.subheader("🚀 Socratic Challenge Mode / 蘇格拉底挑戰模式")
             
-            challenges = get_socratic_challenges(selected_task)
+            challenges = get_socratic_challenges(selected_task, user_id)
             
             # Display past experiments to enforce the "progressive/spiral" feeling
             for msg in st.session_state.socratic_chat:
