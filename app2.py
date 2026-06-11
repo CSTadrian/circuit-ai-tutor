@@ -580,7 +580,7 @@ if active_input:
                         - OTHER COMPONENTS: Label them uniquely (e.g., 'Resistor 1', 'LED 1', 'Button 1').
                         - PINS/LEGS SCHEMA: Order each component's pin locations sequentially within its 'legs' coordinate array so they transparently map to 'Pin 1', 'Pin 2', 'Pin 3' respectively.
                         - POWER SUPPLY: Must identify the power input module. It has exactly 2 pins: the red wire/pin (+ve/Vcc) and the black wire/pin (-ve/GND).
-                        - SLIDE-SWITCH: You MUST identify exactly 3 pins (legs) positioned continuously in a single straight row. 
+                        - SLIDE-SWITCH: You MUST identify exactly 3 pins (legs) positioned continuously in a single straight row or a single straight column.
                         - 4-pin Push Button, LDR, LED
                         - RESISTOR: Identify 5-band resistors and strictly categorize their detected values using these explicit color signatures:
                           * '10k ohm' resistor: characterized by containing a red band/line.
