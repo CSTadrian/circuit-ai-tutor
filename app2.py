@@ -586,8 +586,8 @@ if active_input:
                           * '10k ohm' resistor: characterized by containing a red band/line.
                           * '300 ohm' resistor: characterized by containing an orange band/line.
                           * '150 ohm' resistor: characterized by containing a green band/line.
-                          * '1k ohm' resistor: characterized by containing mostly black and brown bands/lines.
-                        Return JSON mapping 'breadboard_corners' and 'components'.
+                          * '1k ohm' resistor: If a resistor strictly DOES NOT contain any red, orange, or green bands/lines, it is with certainty a 1k ohm resistor (which typically features mostly black, brown, or grey bands). Use this elimination rule to improve accuracy.
+                          Return JSON mapping 'breadboard_corners' and 'components'.
                         """
                     resp = client.models.generate_content(
                         model=MODEL_ID, contents=[raw_student, prompt],
