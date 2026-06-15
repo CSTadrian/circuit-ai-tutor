@@ -28,7 +28,7 @@ MODEL_ID = "gemini-3.1-pro-preview"
 PARENT_FOLDER_ID = "1_cn9lfvMLaozDTx8pvU6LP62J9AVFrvz"
 CSV_FILENAME = "circuit_audit_logs.csv"
 
-# --- LANGUAGE DICTIONARY (Updated for Brightness Calculation Mode) ---
+# --- LANGUAGE DICTIONARY ---
 UI = {
     "en": {
         "title": "🔌 AI Circuit Luminance Explorer",
@@ -50,6 +50,7 @@ UI = {
         "step3_title": "🧠 Step 3: Brightness Calculation & Diagnosis",
         "checking": "Analyzing electrical loops and running numerical Ohm's Law calculations...",
         "ai_diag": "AI Analysis: Red circles indicate potential wiring or safety issues",
+        "semantic_map_title": "🗺️ Detected Circuit Semantic Layout Map",
         "save": "💾 Save to Drive",
         "back": "🔙 Back",
         "new": "🎉 New Invention",
@@ -61,7 +62,7 @@ UI = {
         1. Upload a photo of *any* circuit you built using a Single LED and 10kΩ Resistors.
         2. Let the AI discover your layout (Step 1).
         3. Verify pin alignments (Step 2).
-        4. See the exact **numerical brightness calculation** and get tips to make it even brighter (Step 3)!
+        4. See the exact **numerical brightness calculation** and text-based schematic map (Step 3)!
         
         **Visual Legend:**
         * 🔴 **Red Circle:** Electrical issue (e.g., open loop, short circuit).
@@ -87,6 +88,7 @@ UI = {
         "step3_title": "🧠 第三步：亮度數值計算與電路診斷",
         "checking": "正在分析電路迴路並進行歐姆定律數值計算...",
         "ai_diag": "AI 診斷：紅圈表示潛在的接線問題",
+        "semantic_map_title": "🗺️ 偵測到嘅電路結構路徑圖",
         "save": "💾 儲存至 Drive",
         "back": "🔙 返回",
         "new": "🎉 新發明挑戰",
@@ -98,7 +100,7 @@ UI = {
         1. 使用單粒 LED 同埋數粒 10kΩ 電阻組裝電路並上傳照片。
         2. 讓 AI 自動偵測你嘅電路結構（第一步）。
         3. 微調引腳落點位置（第二步）。
-        4. 睇吓 AI 幫你計算出嚟嘅**精準亮度電流數值**，挑機寫出最光嘅電路（第三步）！
+        4. 睇吓 AI 幫你計算出嚟嘅**精準亮度電流數值**同埋文字結構路徑圖（第三步）！
         
         **圖示說明：**
         * 🔴 **紅圈：** 電路問題（例如：斷路、短路）。
@@ -581,7 +583,20 @@ if active_input:
                                - Step 1: Voltage remaining for resistors (5V - 2V = 3V)
                                - Step 2: Total combined resistance calculation based on their network layout.
                                - Step 3: Final current delivered to the LED in mA.
-                            4. **MAXIMUM LUMINANCE CHALLENGE**: Actively encourage the student pair to rebuild the circuit to find the highest possible current using multiple 10k resistors. Explain clearly to them that adding resistors in parallel creates more lanes for electricity, dropping total resistance and making the LED shine brighter!
+                            4. **VISUAL SEMANTIC CIRCUIT MAP**: Map the exact sequential trace connection path from the Positive Power Supply Rail to the Ground Rail into the string variable 'circuit_semantic_map'. Construct a neat, clean, vertically aligned ASCII text diagram flowchart.
+                               Example format for a single loop:
+                               [+5V Power Rail] 
+                                      │
+                               [Row 10: Resistor 1 Pin 1]
+                               [Row 10: Resistor 1 Pin 2]
+                                      │
+                               [Row 15: LED 1 Pin 1]
+                               [Row 15: LED 1 Pin 2]
+                                      │
+                               [GND Power Rail]
+                               
+                               If components are placed in parallel branches, split the ASCII diagram lanes symmetrically to show that electricity divides into separate concurrent pathways (e.g., branched lane paths).
+                            5. **MAXIMUM LUMINANCE CHALLENGE**: Actively encourage the student pair to rebuild the circuit to find the highest possible current using multiple 10k resistors. Explain clearly to them that adding resistors in parallel creates more lanes for electricity, dropping total resistance and making the LED shine brighter!
                             
                             Bilingual Format:
                             Provide the full math breakdown and text in the 'feedback' string with English first, followed by a newline, and then a formal written Cantonese translation.
@@ -602,6 +617,7 @@ if active_input:
                                         "properties": {
                                             "inferred_circuit_name": {"type": "STRING"},
                                             "feedback": {"type": "STRING"},
+                                            "circuit_semantic_map": {"type": "STRING"},
                                             "success_summary": {"type": "ARRAY", "items": {"type": "STRING"}},
                                             "error_summary": {"type": "ARRAY", "items": {"type": "STRING"}},
                                             "calculated_current_ma": {"type": "NUMBER"},
@@ -616,7 +632,7 @@ if active_input:
                                                 }
                                             }
                                         },
-                                        "required": ["inferred_circuit_name", "feedback", "detected_errors", "success_summary", "error_summary", "calculated_current_ma"]
+                                        "required": ["inferred_circuit_name", "feedback", "circuit_semantic_map", "detected_errors", "success_summary", "error_summary", "calculated_current_ma"]
                                     }
                                 )
                             )
@@ -673,6 +689,11 @@ if active_input:
             
             if st.session_state.img4 is not None:
                 st.image(st.session_state.img4, caption=UI[l]["ai_diag"], use_container_width=True)
+                
+                # Render the text-based schematic diagram
+                st.markdown(f"### {UI[l]['semantic_map_title']}")
+                ascii_diagram = st.session_state.analysis_result.get("circuit_semantic_map", "No Map Generated")
+                st.code(ascii_diagram, language="text")
                 
                 feedback_text = st.session_state.analysis_result.get("feedback", "")
                 st.info(feedback_text)
