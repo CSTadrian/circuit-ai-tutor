@@ -28,10 +28,10 @@ MODEL_ID = "gemini-3.1-pro-preview"
 PARENT_FOLDER_ID = "1_cn9lfvMLaozDTx8pvU6LP62J9AVFrvz"
 CSV_FILENAME = "circuit_audit_logs.csv"
 
-# --- LANGUAGE DICTIONARY (Updated for Schematicless Exploration) ---
+# --- LANGUAGE DICTIONARY (Updated for Brightness Calculation Mode) ---
 UI = {
     "en": {
-        "title": "🔌 AI Circuit Explorer (Schematic-Free Mode)",
+        "title": "🔌 AI Circuit Luminance Explorer",
         "setup": "Setup",
         "user_id": "Select User ID",
         "inferred_task": "Inferred Invention Type",
@@ -44,11 +44,11 @@ UI = {
         "step1_btn": "🔍 Step 1: Discover Components & Intent",
         "analyzing": "AI reverse-engineering breadboard layout...",
         "step2_title": "⚙️ Step 2: Fine-Tune Component Pins (Auto-Snapping)",
-        "step2_confirm": "✅ Confirm & Analyze Circuit Logic",
+        "step2_confirm": "✅ Confirm & Calculate Circuit Brightness",
         "snapped": "*(Y auto-snapped to nearest row: {y})*",
         "verify": "Verify Orange Legs & Yellow Pins (Snapped to Blue Rows)",
-        "step3_title": "🧠 Step 3: AI Intent & Diagnosis Verdict",
-        "checking": "Analyzing electrical loops and inferring system goals...",
+        "step3_title": "🧠 Step 3: Brightness Calculation & Diagnosis",
+        "checking": "Analyzing electrical loops and running numerical Ohm's Law calculations...",
         "ai_diag": "AI Analysis: Red circles indicate potential wiring or safety issues",
         "save": "💾 Save to Drive",
         "back": "🔙 Back",
@@ -58,18 +58,17 @@ UI = {
         "camera": "Take a Photo of your Circuit",
         "guide_text": """
         **How to Start:**
-        1. Upload a photo of *any* circuit you built.
-        2. Let the AI discover what components you used (Step 1).
-        3. Verify the pin alignments (Step 2).
-        4. See if the AI can guess your invention and check its logic (Step 3)!
+        1. Upload a photo of *any* circuit you built using a Single LED and 10kΩ Resistors.
+        2. Let the AI discover your layout (Step 1).
+        3. Verify pin alignments (Step 2).
+        4. See the exact **numerical brightness calculation** and get tips to make it even brighter (Step 3)!
         
         **Visual Legend:**
-        * 🔴 **Red Circle:** Electrical issue (e.g., open loop, short circuit, missing protection).
-        * 🟦 **Blue Box:** Layout anomaly.
+        * 🔴 **Red Circle:** Electrical issue (e.g., open loop, short circuit).
         """,
     },
     "hk": {
-        "title": "🔌 AI 自由電路探險家",
+        "title": "🔌 AI 電路亮度大探險",
         "setup": "設定",
         "user_id": "選擇學生 ID",
         "inferred_task": "AI 推斷嘅發明類型",
@@ -82,12 +81,12 @@ UI = {
         "step1_btn": "🔍 第一步：探索零件與發明意圖",
         "analyzing": "AI 正在逆向分析麵包板結構...",
         "step2_title": "⚙️ 第二步：微調零件引腳（自動對齊）",
-        "step2_confirm": "✅ 確認並分析電路邏輯",
+        "step2_confirm": "✅ 確認並分析電路亮度",
         "snapped": "*(Y 軸已自動對齊至最近的行：{y})*",
         "verify": "請核對橙色引腳與黃色接點（已對齊至淺藍色行）",
-        "step3_title": "🧠 第三步：AI 意圖推斷與電路診斷",
-        "checking": "正在分析電路迴路並推斷組裝目標...",
-        "ai_diag": "AI 診斷：紅圈表示潛在的接線或安全問題",
+        "step3_title": "🧠 第三步：亮度數值計算與電路診斷",
+        "checking": "正在分析電路迴路並進行歐姆定律數值計算...",
+        "ai_diag": "AI 診斷：紅圈表示潛在的接線問題",
         "save": "💾 儲存至 Drive",
         "back": "🔙 返回",
         "new": "🎉 新發明挑戰",
@@ -96,14 +95,13 @@ UI = {
         "camera": "拍攝電路照片",
         "guide_text": """
         **使用步驟：**
-        1. 隨意組裝電路並上傳照片
-        2. 讓 AI 自動偵測你使用了什麼零件（第一步）
-        3. 微調引腳落點位置（第二步）
-        4. 看看 AI 能不能猜出你的發明意圖並檢查線路（第三步）！
+        1. 使用單粒 LED 同埋數粒 10kΩ 電阻組裝電路並上傳照片。
+        2. 讓 AI 自動偵測你嘅電路結構（第一步）。
+        3. 微調引腳落點位置（第二步）。
+        4. 睇吓 AI 幫你計算出嚟嘅**精準亮度電流數值**，挑機寫出最光嘅電路（第三步）！
         
         **圖示說明：**
-        * 🔴 **紅圈：** 電路問題（例如：斷路、短路、缺少限流電阻）。
-        * 🟦 **藍框：** 佈局異常。
+        * 🔴 **紅圈：** 電路問題（例如：斷路、短路）。
         """,
     }
 }
@@ -289,7 +287,7 @@ def create_visual_report(successes, errors, lang):
     draw.text((30, 20), title, fill=(0, 0, 0))
     
     draw.rectangle([30, 60, 770, 280], outline=(0, 150, 0), width=3, fill=(240, 255, 240))
-    draw.text((50, 75), "✅ What you did well! / 做得好嘅地方！", fill=(0, 128, 0))
+    draw.text((50, 75), "✅ Electrical Successes / 順利運作指標", fill=(0, 128, 0))
     
     y_off = 110
     for item in successes[:5]: 
@@ -297,7 +295,7 @@ def create_visual_report(successes, errors, lang):
         y_off += 30
 
     draw.rectangle([30, 310, 770, 560], outline=(200, 100, 0), width=3, fill=(255, 250, 240))
-    draw.text((50, 325), "🛠️ Things to check / 需要檢查嘅地方", fill=(200, 100, 0))
+    draw.text((50, 325), "🛠️ Engineering Constraints / 硬件設計限制", fill=(200, 100, 0))
     
     y_off = 360
     for item in errors[:5]:
@@ -311,7 +309,6 @@ def save_to_drive(user_id, inferred_task_name, ai_feedback, images_dict):
     hk_tz = pytz.timezone('Asia/Hong_Kong')
     hk_time_str = datetime.now(hk_tz).strftime('%Y-%m-%d %H:%M:%S')
     
-    # Generate clean alphanumeric prefix from inferred name
     clean_task = "".join([c for c in inferred_task_name if c.isalnum() or c=='_'])[:15]
     file_prefix = f"user{user_id}_{clean_task}"
 
@@ -369,8 +366,6 @@ if "analysis_result" not in st.session_state: st.session_state.analysis_result =
 if "hough_rows" not in st.session_state: st.session_state.hough_rows = []
 if "breadboard_corners" not in st.session_state: st.session_state.breadboard_corners = None
 if "last_input_id" not in st.session_state: st.session_state.last_input_id = None
-if "socratic_q_idx" not in st.session_state: st.session_state.socratic_q_idx = 0
-if "socratic_chat" not in st.session_state: st.session_state.socratic_chat = []
 
 for i in range(1, 5): 
     if f"img{i}" not in st.session_state: st.session_state[f"img{i}"] = None
@@ -383,8 +378,6 @@ def reset_flow():
         else: st.session_state[key] = None
     st.session_state.hough_rows = []
     st.session_state.breadboard_corners = None
-    st.session_state.socratic_q_idx = 0
-    st.session_state.socratic_chat = []
 
 # --- 5. MAIN UI ---
 lang_select = st.radio("🌐", ["English", "繁體中文"], horizontal=True, label_visibility="collapsed")
@@ -437,7 +430,6 @@ if active_input:
         if st.session_state.step == 1:
             grid_visualization = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
             
-            # Expanded layout for detail visualization
             orig_w, orig_h = grid_visualization.size
             large_grid_img = grid_visualization.resize((orig_w * 2, orig_h * 2), PILImage.Resampling.LANCZOS)
             
@@ -447,13 +439,13 @@ if active_input:
             if st.button(UI[l]["step1_btn"], type="primary"):
                 with st.spinner(UI[l]["analyzing"]):
                     prompt = """
-                        1. Identify the BREADBOARD boundaries: Provide the [y, x] coordinates for the four outer corners (top_left, top_right, bottom_right, bottom_left).
+                        1. Identify the BREADBOARD boundaries: Provide [y, x] coordinates for the four outer corners (top_left, top_right, bottom_right, bottom_left).
                         2. Identify all components and jumper wires physically placed on the breadboard. Follow these strict schema rules:
                         - JUMPER WIRES: Uniquely identify and label every single wire sequentially (e.g., 'Wire 1', 'Wire 2').
-                        - OTHER COMPONENTS: Label them uniquely (e.g., 'Resistor 1', 'LED 1', 'Button 1').
+                        - OTHER COMPONENTS: Label them uniquely (e.g., 'Resistor 1', 'LED 1').
                         - PINS/LEGS SCHEMA: Order each component's pin locations sequentially within its 'legs' coordinate array.
-                        - POWER SUPPLY: Locate power rails or connections (+ve/Vcc and -ve/GND).
-                        - RESISTOR SIGNATURES: Differentiate values based on color band characteristics (10k ohm, 1k ohm, 300 ohm, 150 ohm).
+                        - POWER SUPPLY: Locate power rails (+ve/Vcc and -ve/GND).
+                        - RESISTOR SIGNATURES: Treat all detected resistors as 10k ohm units for our math engine analysis.
                         Return JSON mapping 'breadboard_corners' and 'components'.
                         """
                     resp = client.models.generate_content(
@@ -557,15 +549,15 @@ if active_input:
             st.subheader("Step 3: Intent & Connection Verification / 逆向意圖與落點確認")
             
             if l == "en":
-                st.warning("🔍 **Review AI Mapping Alignment:** Confirm that the yellow marker locations perfectly capture your physical pins before initiating the reverse-engineering diagnosis.")
+                st.warning("🔍 **Review AI Mapping Alignment:** Confirm that the yellow marker locations perfectly capture your physical pins before calculating the circuit's explicit brightness value.")
             else:
-                st.warning("🔍 **確認線路落點：** 請確保黃色標籤位置完全切合你嘅實體引腳，然後點擊下方開始由 AI 逆向診斷你組裝嘅電路。")
+                st.warning("🔍 **確認線路落點：** 請確保黃色標籤位置完全切合你嘅實體引腳，然後點擊下方開始計算電路嘅實際亮度數值。")
             
             w3, h3 = st.session_state.img3.size
             large_img3_review = st.session_state.img3.resize((w3 * 2, h3 * 2), PILImage.Resampling.LANCZOS)
             st.image(large_img3_review, caption="Alignment Precision View", use_container_width=True)
             
-            btn_text = "🤖 Run Autonomous AI Analysis" if l == "en" else "🤖 開始 AI 智能分析"
+            btn_text = "🤖 Run Brightness & Engineering Analysis" if l == "en" else "🤖 開始亮度與線路智能分析"
             
             col_btn_run, col_btn_back = st.columns([1, 4])
             with col_btn_run:
@@ -574,26 +566,27 @@ if active_input:
                         summary = st.session_state.components_df.to_string(index=False)
                         
                         prompt = f"""
-                            You are an autonomous engineering tutor analyzing a physical breadboard setup with NO pre-defined target template.
+                            You are an autonomous engineering tutor analyzing a physical breadboard setup containing a single LED and a network of 10k ohm resistors.
                             
                             Your tasks are:
-                            1. **INFER INTENT**: Look at the component configuration and connectivity string below. Deduce what circuit system the user is trying to build (e.g., 'A button-controlled single LED setup', 'Two LEDs wired in parallel with a protective resistor', 'A basic power-to-LED closed loop'). Give this system a descriptive title in 'inferred_circuit_name'.
-                            2. **ELECTRICAL VALIDITY AUDIT**: Check the layout for sound circuit design principles:
-                               - Closed Loop: Does power travel seamlessly from the Vcc source, through active components, and safely terminate in the GND rail?
-                               - Safety/Overcurrent protection: Do semiconductor components (like LEDs) feature current-limiting resistors?
-                               - Shorts & Floating Connections: Are components correctly mapped across terminal strips or accidentally shorted onto the same row?
-                            3. **DYNAMIC CHALLENGE GENERATION**: Generate an array of exactly 3 progressive Socratic challenges tailored explicitly for their specific inferred circuit system. 
-                               - Level 1: Property modification challenge (e.g., swapping resistor values or flipping LED polarity).
-                               - Level 2: Interactive behavior challenge (e.g., integrating a switch or push-button seamlessly).
-                               - Level 3: Structural layout challenge (e.g., converting part of the loop from series to parallel).
-                            
-                            Pedagogical Scaffolding Rule:
-                            If errors are found, use open Socratic questioning to let pairs discover *where* the continuity fails. If 100% correct, praise their standalone design and tell them they are ready for the custom challenge mode.
+                            1. **INFER RESISTOR LAYOUT SYSTEM**: Count the number of active 10k ohm resistors connected to the LED loop. Determine if they are in Series, Parallel, or just a single resistor. Deduced title goes into 'inferred_circuit_name'.
+                            2. **NUMERICAL OHM'S LAW BRIGHTNESS ENGINE**: Perform an explicit step-by-step mathematical calculation of the loop's current to gauge visual brightness.
+                               - Baseline Constraints: Power Supply = 5V. Red LED forward voltage drop = 2V. This leaves exactly 3V across the resistor network (V_resistors = 5V - 2V = 3V).
+                               - Resistor Values: Every resistor is exactly 10,000 ohms.
+                               - Case 1 (1 Resistor): R_total = 10,000 ohms. Current (I) = 3V / 10,000 ohms = 0.3 mA.
+                               - Case 2 (2 Resistors in Series): R_total = 20,000 ohms. Current (I) = 3V / 20,000 ohms = 0.15 mA. (Dimmer!)
+                               - Case 3 (2 Resistors in Parallel): R_total = 5,000 ohms. Current (I) = 3V / 5,000 ohms = 0.6 mA. (Brighter!)
+                               - General Parallel Case (N Resistors in Parallel): R_total = 10,000 / N. Current (I) = 3V / R_total = 0.3 * N mA.
+                            3. **EXPLICIT STEP-BY-STEP OUTPUT**: In the 'feedback' string, output the exact mathematical sequence transparently so students can follow it:
+                               - Step 1: Voltage remaining for resistors (5V - 2V = 3V)
+                               - Step 2: Total combined resistance calculation based on their network layout.
+                               - Step 3: Final current delivered to the LED in mA.
+                            4. **MAXIMUM LUMINANCE CHALLENGE**: Actively encourage the student pair to rebuild the circuit to find the highest possible current using multiple 10k resistors. Explain clearly to them that adding resistors in parallel creates more lanes for electricity, dropping total resistance and making the LED shine brighter!
                             
                             Bilingual Format:
-                            Provide the 'feedback' string with English first, followed by a newline, and then a formal Cantonese translation.
+                            Provide the full math breakdown and text in the 'feedback' string with English first, followed by a newline, and then a formal written Cantonese translation.
                             
-                            Component Coordinates & Snapped Rows:
+                            Component Coordinates:
                             {summary}
                             """
                         
@@ -602,7 +595,7 @@ if active_input:
                                 model=MODEL_ID, 
                                 contents=[st.session_state.img3, prompt],
                                 config=types.GenerateContentConfig(
-                                    temperature=0.2,
+                                    temperature=0.1,
                                     response_mime_type="application/json",
                                     response_schema={
                                         "type": "OBJECT",
@@ -611,7 +604,7 @@ if active_input:
                                             "feedback": {"type": "STRING"},
                                             "success_summary": {"type": "ARRAY", "items": {"type": "STRING"}},
                                             "error_summary": {"type": "ARRAY", "items": {"type": "STRING"}},
-                                            "socratic_challenges": {"type": "ARRAY", "items": {"type": "STRING"}},
+                                            "calculated_current_ma": {"type": "NUMBER"},
                                             "detected_errors": {
                                                 "type": "ARRAY", 
                                                 "items": {
@@ -623,7 +616,7 @@ if active_input:
                                                 }
                                             }
                                         },
-                                        "required": ["inferred_circuit_name", "feedback", "detected_errors", "success_summary", "error_summary", "socratic_challenges"]
+                                        "required": ["inferred_circuit_name", "feedback", "detected_errors", "success_summary", "error_summary", "calculated_current_ma"]
                                     }
                                 )
                             )
@@ -660,7 +653,7 @@ if active_input:
                             st.rerun()
                             
                         except Exception as e:
-                            st.error(f"AI Autonomous Analysis failed: {e}")
+                            st.error(f"AI Numerical Analysis failed: {e}")
                             st.session_state.step = 2
                             st.rerun()
             with col_btn_back:
@@ -668,12 +661,15 @@ if active_input:
                     st.session_state.step = 2
                     st.rerun()
 
-        # STEP 4: AUTONOMOUS VERDICT DISPLAY
+        # STEP 4: LUMINANCE VERDICT DISPLAY
         elif st.session_state.step == 4:
             st.subheader(UI[l]["step3_title"])
             
             inferred_title = st.session_state.analysis_result.get("inferred_circuit_name", "Detected System")
             st.metric(label=UI[l]["inferred_task"], value=inferred_title)
+            
+            current_val = st.session_state.analysis_result.get("calculated_current_ma", 0.0)
+            st.metric(label="Calculated LED Loop Current / 計算所得電路電流", value=f"{current_val:.3f} mA")
             
             if st.session_state.img4 is not None:
                 st.image(st.session_state.img4, caption=UI[l]["ai_diag"], use_container_width=True)
@@ -688,10 +684,7 @@ if active_input:
                 st.image(report_card_img, use_container_width=True)
 
             if not error_list:
-                st.success("🎉 Perfect layout signature! Ready to begin exploration challenges? / 完美嘅電路佈局！準備好接受智能生成嘅挑戰未？")
-                if st.button("🚀 Enter Socratic Challenge Mode! / 進入蘇格拉底挑戰模式", type="primary"):
-                    st.session_state.step = 5
-                    st.rerun()
+                st.success("🎯 Engineering Loop Verified! Challenge: Can you add more 10kΩ resistors in parallel to drive this mA value higher and make the brightest LED? / 🎯 電路安全驗證成功！大挑戰：你能不能組裝更多 10kΩ 電阻形成並聯網絡，將 mA 電流數值推向最高，挑戰做出全場最閃亮嘅 LED？")
                     
             st.divider()
             col_b, col_c = st.columns(2)
@@ -700,83 +693,6 @@ if active_input:
                     st.session_state.step = 3
                     st.session_state.analysis_result = None 
                     st.session_state.img4 = None
-                    st.rerun()
-            with col_c:
-                if st.button(UI[l]["new"]):
-                    reset_flow()
-                    st.session_state.last_input_id = None
-                    st.rerun()
-
-        # STEP 5: DYNAMIC GENERATED SOCRATIC CHALLENGE MODE
-        elif st.session_state.step == 5:
-            st.subheader("🚀 Dynamic Socratic Challenges / 智能生成型挑戰模式")
-            
-            challenges = st.session_state.analysis_result.get("socratic_challenges", [])
-            
-            for msg in st.session_state.socratic_chat:
-                with st.chat_message(msg["role"]):
-                    st.markdown(msg["content"])
-                        
-            if st.session_state.socratic_q_idx < len(challenges):
-                current_q = challenges[st.session_state.socratic_q_idx]
-                
-                st.info(f"**Generated Challenge ({st.session_state.socratic_q_idx + 1}/{len(challenges)}):**\n\n{current_q}")
-                
-                st.markdown("### Verify Your Experiment 🔬")
-                student_text = st.text_area("What did you change and what happened? / 你改咗咩？觀察到咩？")
-                
-                socratic_upload_mode = st.radio("Upload modified view:", ["Camera 📸", "File 📁"], horizontal=True, label_visibility="collapsed", key=f"s_upload_{st.session_state.socratic_q_idx}")
-                
-                if socratic_upload_mode.startswith("Camera"):
-                    proof_img = st.camera_input("Take a photo of the new circuit", key=f"s_cam_{st.session_state.socratic_q_idx}")
-                else:
-                    proof_img = st.file_uploader("Upload a photo", type=["jpg", "png", "jpeg"], key=f"s_file_{st.session_state.socratic_q_idx}")
-                    
-                if st.button("Verify My Experiment! 🔍", type="primary"):
-                    if not student_text or not proof_img:
-                        st.warning("Please provide both your explanation and an image! / 請同時提供文字解釋及相片！")
-                    else:
-                        with st.spinner("AI is verifying your hands-on experiment..."):
-                            img_pil = process_uploaded_image(io.BytesIO(proof_img.getvalue()))
-                            history_context = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in st.session_state.socratic_chat])
-                            
-                            prompt = f"""
-                                Tasks & Context: {st.session_state.analysis_result.get('inferred_circuit_name')}
-                                Previous Chat Logs:
-                                {history_context}
-                                
-                                Validate whether the new circuit image and the following user explanation prove they successfully solved this milestone:
-                                Milestone Question: {current_q}
-                                User Reflection: "{student_text}"
-                                
-                                If successful, return output starting EXACTLY with '[VERIFICATION: PASSED]'. If missing components or faulty, output '[VERIFICATION: FAILED]' along with Socratic coaching.
-                                """
-                            try:
-                                resp = client.models.generate_content(
-                                    model=MODEL_ID, contents=[img_pil, prompt],
-                                    config=types.GenerateContentConfig(temperature=0.4)
-                                )
-                                feedback = resp.text
-                                display_feedback = feedback.replace("[VERIFICATION: PASSED]", "").replace("[VERIFICATION: FAILED]", "").strip()
-                                
-                                st.session_state.socratic_chat.append({"role": "user", "content": f"📝 **Observation:** {student_text}\n*(New Photo Uploaded)*"})
-                                st.session_state.socratic_chat.append({"role": "assistant", "content": display_feedback})
-                                
-                                if "[VERIFICATION: PASSED]" in feedback:
-                                    st.session_state.socratic_q_idx += 1
-                                    
-                                st.rerun()
-                                
-                            except Exception as e:
-                                st.error(f"AI Verification Error: {e}")
-            else:
-                st.success("🏆 You are a Circuit Master! All challenges completed! / 🏆 你已經成為電路大師！完成晒所有生成挑戰！")
-                
-            st.divider()
-            col_b, col_c = st.columns(2)
-            with col_b:
-                if st.button("Back to Circuit Check" if l == "en" else "返回電路檢查"):
-                    st.session_state.step = 4
                     st.rerun()
             with col_c:
                 if st.button(UI[l]["new"]):
