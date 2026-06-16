@@ -71,7 +71,7 @@ UI = {
         1. Select Arena & Submit Hardware Configuration Photo.
         2. Scan Architecture (Step 1) to build digital structural map.
         3. Clear the **Prediction Gate** (Step 2) to unlock live simulation data.
-        4. Read Telemetry HUD and execute Socratic experiments (Step 3 & 4) to break room records!
+        4. Read Telemetry HUD and execute optimization adjustments to break room records!
         
         **HUD Telemetry Icons:**
         * 🔴 **Red Ring:** System structural break (Open Circuit / Floating Node).
@@ -81,8 +81,8 @@ UI = {
         "prediction_header": "🔮 The Prediction Gate",
         "prediction_prompt": "Before the AI Engine simulates your circuit, your team must lock in a structural hypothesis choice. What will this configuration change do?",
         "predict_err": "Please select a hypothesis choice before confirming your setup!",
-        "metrics_header": "🏎️ Live Performance Metrics",
-        "metric_brightness": "💡 Brightness Score (Power Output)",
+        "metrics_header": "🏎️ Live Performance Metrics & Scoreboard",
+        "metric_brightness": "💡 Current-to-Marks Score",
         "metric_resistance": "🚧 Traffic Jam Thickness (Resistance Blockage)",
         "metric_capacitance": "💧 Energy Water Tank Volume",
         "metric_ldr_delta": "🌗 Light-to-Shadow Delta Swing",
@@ -122,7 +122,7 @@ UI = {
         1. 選擇關卡並提交硬件配置相片。
         2. 掃描結構（第一步）以建立數位電路網絡地圖。
         3. 通過 **「預測閘門」**（第二步）鎖定假設，以解鎖實時模擬數據。
-        4. 解讀 HUD 數據並執行蘇格拉底探究任務（第三、四步）去衝擊全班紀錄！
+        4. 解讀 HUD 數據指標，即時優化線路去衝擊全班龍虎榜紀錄！
         
         **面板圖示說明：**
         * 🔴 **紅圈：** 結構性斷路 / 懸空節點（電力無法返回負極）。
@@ -132,15 +132,15 @@ UI = {
         "prediction_header": "🔮 預測閘門 (Prediction Gate)",
         "prediction_prompt": "喺 AI 引擎幫你運行模擬之前，你嘅隊伍必須先鎖定一個結構性假設。你認為今次改動會帶嚟咩結果？",
         "predict_err": "請先選擇一個結果假設，先可以鎖定並確認佈局！",
-        "metrics_header": "🏎️ 實時系統性能指標 (HUD)",
-        "metric_brightness": "💡 亮度得分 (實際功率輸出)",
+        "metrics_header": "🏎️ 實時系統性能指標與計分板 (HUD)",
+        "metric_brightness": "💡 電流對照得分 (Marks)",
         "metric_resistance": "🚧 交通擠塞厚度 (總電阻屏障)",
         "metric_capacitance": "💧 儲能水箱容量 (電容容量)",
         "metric_ldr_delta": "🌗 光影動態擺幅 (LDR 變動差值)",
     }
 }
 
-# --- 2. AUTHENTICATION & INITIALIZATION (CACHED PROTECTION LABELS) ---
+# --- 2. AUTHENTICATION & INITIALIZATION (CACHED GLOBAL INSTANCES) ---
 @st.cache_resource
 def get_drive_creds():
     oauth_info = st.secrets["google_oauth"]
@@ -176,10 +176,10 @@ def init_genai_client():
         st.error("GCP Service Account layout configuration missing from secrets file!")
         st.stop()
 
-# Bind the client strictly to global namespace space
+# Global API Reference Holder
 client = init_genai_client()
 
-# --- 3. SYSTEM GLOBAL ROUTINES & COGNITIVE LOGIC ENGINE ---
+# --- 3. SYSTEM CORE ROUTINES ---
 def reset_flow():
     for key in ["step", "components_df", "analysis_result", "img1", "img2", "img3", "img4"]:
         if "df" in key: st.session_state[key] = pd.DataFrame()
@@ -187,8 +187,6 @@ def reset_flow():
         else: st.session_state[key] = None
     st.session_state.hough_rows = []
     st.session_state.breadboard_corners = None
-    st.session_state.socratic_q_idx = 0
-    st.session_state.socratic_chat = []
     st.session_state.locked_prediction = "None"
 
 def detect_horizontal_rows(pil_img):
@@ -408,66 +406,19 @@ def save_to_drive(user_id, inferred_task_name, ai_feedback, images_dict, predict
     except Exception as e:
         st.error(f"Drive Save Error: {e}")
 
-ANALOG_COHORTS = {
-    "Task 1": {
-        True: [
-            "Level 1 🟢 (The Twin Bridge): Connect TWO 10k ohm resistors side-by-side (parallel) across the lane. Look at your new Brightness score. Why did adding more resistance obstacles make the light brighter?\n\n第一關 🟢 (雙子橋樑): 將兩粒 10k ohm 電阻並排（並聯）跨接喺車道上。睇下你嘅亮度得分。點解加多粒阻礙物，粒燈反而會變光咗？",
-            "Level 2 🟡 (The Triple Lane): Add a THIRD 10k ohm resistor parallel to the first two. Observe the Traffic Jam score. Did the blockage grow thicker or thinner? Explain how electricity chooses its path!\n\n第二關 🟡 (三線行車): 加上第三粒 10k ohm 電阻進行並聯。觀察「交通擠塞」得分。究竟阻礙物係變厚咗定薄咗？試下解釋電流係點樣揀路行！",
-            "Level 3 🔴 (The Short Circuit Boundary): What happens if you remove all resistors and run a single straight wire into the LED? Predict the danger before you scan! How does a floor resistor protect a system?\n\n第三關 🔴 (短路邊界大挑戰): 如果抆走晒所有電阻，直接用一條導線駁入 LED 會發生咩事？喺掃描前先預測危險！限流底層電阻係點樣保護一個系統？"
-        ],
-        False: [
-            "Level 1 🟢 (The Series Trap): Connect two 10k ohm resistors end-to-end (series) in a single line before the LED. Scan it. Why did the Traffic Jam score double, and what happened to the brightness?\n\n第一關 🟢 (串聯陷阱): 將兩粒 10k ohm 電阻排成一條直線（串聯）接喺 LED 前面。掃描佢。點解「交通擠塞」分數翻咗倍，而亮度又發生咗咩事？",
-            "Level 2 🟡 (The Reversibility Loop): Keep the series resistors, but swap the physical layout order (LED first, then resistors). Does changing the structural order change the terminal brightness score? Why?\n\n第二關 🟡 (順序對調圈): 保留串聯電阻，但將硬件位置對調（LED 放前，電阻放後）。改變排隊次序會唔會影響最終嘅亮度得分？點解？",
-            "Level 3 🔴 (The Mixed Highway): Try to place two resistors in parallel, and then chain a third resistor in series right after them. Analyze your HUD metrics. How does this combined configuration scale your final current output?\n\n第三關 🔴 (混合高速公路): 嘗試將兩粒電阻並聯，然後喺後面串聯駁上第三粒電阻。分析你嘅 HUD 數據。呢種混合排列點樣影響你最終嘅電流輸出？"
-        ]
-    },
-    "Task 2": {
-        True: [
-            "Level 1 🟢 (The Tank Valve Test): Move your resistor so it sits directly inside the discharge path between the capacitor bucket and the LED. What changes on the fade-out timeline?\n\n第一關 🟢 (水箱水閥測試): 移動你嘅電阻，等佢直接坐喺電容水箱同 LED 之間嘅放電路徑上。變暗時間線產生咗咩變化？",
-            "Level 2 🟡 (The Dual Bucket Stack): Add a second, identical 220uF capacitor side-by-side (parallel) with the first one. Look at your Energy Tank metric. Did you increase water storage volume or pressure?\n\n第二關 🟡 (雙水箱並聯): 將第二粒相同嘅 220uF 電容並排（並聯）接上。睇下你嘅「儲能水箱」指標。你究竟係增加了儲水容量，定係增加了水壓？",
-            "Level 3 🔴 (The Latching Gate Logic): Toggle your slide-switch rapidly back and forth. Can you trace how the switch mechanically redirects power from the battery into the storage tank versus locking it into the LED loop?\n\n第三關 🔴 (鎖定閘門邏輯): 快速來回切換你嘅滑動開關掣。你能唔能追蹤到開關掣係點樣透過機械結構，將電力由電池導向儲能水箱，抑或鎖定喺 LED 迴路入面放電？"
-        ],
-        False: [
-            "Level 1 🟢 (The Resistor Pipe Chain): Chain two 10k ohm resistors in series inside the discharge loop. Does a longer single-file pipe line slow down the water flow or speed it up?\n\n第一關 🟢 (串聯水管鏈): 喺放電迴路裏面串聯裝上兩粒 10k ohm 電阻。排成單行、更長嘅水管線，會令水流減慢定加快？",
-            "Level 2 🟡 (The Parallel Leak): Arrange your resistors side-by-side in parallel instead of series inside the capacitor loop. Look at the fade clock. Why did the parallel highway empty the water tank instantly?\n\n第二關 🟡 (並聯洩漏): 喺電容迴路中將電阻改為並排（並聯）接駁。觀察變暗時鐘。點解並聯快線會令水箱一瞬間排空？",
-            "Level 3 🔴 (The Giant Dynamic Window): Try to maximize your layout using all available capacitors and resistors to construct the ultimate slow-drain setup. Can your team push the timeline past 10 seconds?\n\n第三關 🔴 (極限動態視窗): 嘗試用盡手頭上所有嘅電容同電阻，砌出終極慢速放電佈局。你嘅隊伍能唔能將時間線推高過 10 秒？"
-        ]
-    },
-    "Task 3": [
-        "Level 1 🟢 (The Total Shadow Void): Shield the LDR using an opaque cup or your thumb until room light drops to zero. Read the HUD delta score. What happens to an LDR's internal bridge blockage when darkness hits?\n\n第一關 🟢 (全黑盲區): 用不透明嘅杯或大拇指完全遮蓋 LDR 阻擋所有光線。讀取 HUD 擺幅得分。當黑暗襲來時，LDR 內部嘅「道路屏障」發生咗咩事？",
-        "Level 2 🟡 (The Protective Floor Boundary): Remove your 1k ohm inline series resistor and run only the LDR. Shine a blinding flashlight directly on it. Why does the AI sound an alarm, and how does a safety floor resistor prevent system burnouts?\n\n第二關 🟡 (安全底線邊界): 抆走 1k ohm 限流電阻，只留下 LDR。用強光電筒直接照射。點解 AI 會發出警告？安全底線電阻點樣防止系統元件燒毀？",
-        "Level 3 🔴 (The Dynamic Voltage Maximizer): Adjust your baseline fixed resistance layer to match your LDR's ambient room midpoint value. Can your team unlock the highest dynamic contrast swing code on the leaderboard?\n\n第三關 🔴 (動態擺幅極大化): 調整你嘅固定底層電阻，去配對你粒 LDR 喺課室光線下嘅中位數。你能不能解鎖龍虎榜上最高嘅對比度差值？"
-    ]
-}
-
-def get_socratic_challenges(task_name, user_id):
-    try:
-        uid_int = int(user_id)
-    except (ValueError, TypeError):
-        uid_int = 0
-    is_odd = (uid_int % 2 != 0)
-    
-    if "Task 1" in task_name:
-        return ANALOG_COHORTS["Task 1"][is_odd]
-    elif "Task 2" in task_name:
-        return ANALOG_COHORTS["Task 2"][is_odd]
-    else:
-        return ANALOG_COHORTS["Task 3"]
-
-# --- 4. GLOBAL ENVIRONMENT CONTROLLER ---
+# --- 6. GLOBAL ENVIRONMENT INITIALIZATION ---
 if "step" not in st.session_state: st.session_state.step = 1
 if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
 if "analysis_result" not in st.session_state: st.session_state.analysis_result = None
 if "hough_rows" not in st.session_state: st.session_state.hough_rows = []
 if "breadboard_corners" not in st.session_state: st.session_state.breadboard_corners = None
 if "last_input_id" not in st.session_state: st.session_state.last_input_id = None
-if "socratic_q_idx" not in st.session_state: st.session_state.socratic_q_idx = 0
-if "socratic_chat" not in st.session_state: st.session_state.socratic_chat = []
 if "locked_prediction" not in st.session_state: st.session_state.locked_prediction = "None"
 
 for i in range(1, 5): 
     if f"img{i}" not in st.session_state: st.session_state[f"img{i}"] = None
 
+# LANG SELECTOR
 lang_select = st.radio("🌐", ["English", "繁體中文"], horizontal=True, label_visibility="collapsed")
 l = "en" if lang_select == "English" else "hk"
 
@@ -495,7 +446,7 @@ with st.sidebar:
     st.markdown(f"### {UI[l]['guide_title']}")
     st.markdown(UI[l]['guide_text'])
 
-# --- 5. RUNTIME STATE MACHINE ---
+# --- 7. MAIN STATE RUNTIME MACHINE ---
 if active_input:
     current_input_id = getattr(active_input, "file_id", str(hash(active_input.getvalue())))
     
@@ -514,7 +465,7 @@ if active_input:
 
         is_camera_mode = (input_mode == "Camera 📸")
 
-        # --- STEP 1: COMPONENT TRACK ACQUISITION ---
+        # --- STEP 1: LOGIC TOPOLOGY SCANNING ---
         if st.session_state.step == 1:
             grid_visualization = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
             orig_w, orig_h = grid_visualization.size
@@ -589,9 +540,10 @@ if active_input:
                     base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
                     st.session_state.img2 = draw_pins_on_image(base_grid_img, st.session_state.components_df)
                     st.session_state.step = 2
+                    st.header("")
                     st.rerun()
 
-        # --- STEP 2: PREDICTION GATE HYPOTHESIS ACCREDITATION ---
+        # --- STEP 2: HYPOTHESIS PREDICTION GATE ---
         elif st.session_state.step == 2:
             st.subheader(UI[l]["step2_title"])
             
@@ -639,7 +591,7 @@ if active_input:
                     st.session_state.step = 3
                     st.rerun()
 
-        # --- STEP 3: REVERSE ENGINEERING ALIGNMENT LOOP ---
+        # --- STEP 3: ANALYTICAL ENGINE & TRANSFORMATION CALCULATIONS ---
         elif st.session_state.step == 3:
             st.subheader("Step 3: Intent & Connection Verification / 逆向意圖與落點確認")
             st.warning("🔍 Double-check pins before mapping / 評分前請細心核對")
@@ -766,12 +718,12 @@ if active_input:
                             st.error(f"AI Numerical Core Execution Failed: {e}")
                             st.session_state.step = 2
                             st.rerun()
-            with st.sidebar:
+            with col_btn_back:
                 if st.button(UI[l]["back"]):
                     st.session_state.step = 2
                     st.rerun()
 
-        # --- STEP 4: TELEMETRY PERFORMANCE HUD ---
+        # --- STEP 4: THE ULTIMATE TELEMETRY SCORE HUD ARENA ---
         elif st.session_state.step == 4:
             st.subheader(UI[l]["step3_title"])
             
@@ -781,6 +733,7 @@ if active_input:
             
             m_col1, m_col2, m_col3 = st.columns(3)
             with m_col1:
+                # Direct scaling output to marks dashboard layout
                 st.markdown(f"""<div class='metric-card'><h4>{UI[l]['metric_brightness']}</h4><h2>{res_data.get('brightness_score', 0)} MARKS</h2></div>""", unsafe_allow_html=True)
             with m_col2:
                 st.markdown(f"""<div class='metric-card' style='border-left-color: #ef4444;'><h4>{UI[l]['metric_resistance']}</h4><h2>{res_data.get('traffic_jam_score', 0)} %</h2></div>""", unsafe_allow_html=True)
@@ -800,6 +753,7 @@ if active_input:
                 st.markdown(f"### {UI[l]['semantic_map_title']}")
                 st.code(res_data.get("circuit_semantic_map", "No Map Generated"), language="text")
                 
+                # Exposes step-by-step mathematical reasoning block safely here
                 st.info(res_data.get("feedback", ""))
                 
                 success_list = res_data.get("success_summary", [])
@@ -809,10 +763,7 @@ if active_input:
                 st.image(report_card_img, use_container_width=True)
 
             if not error_list:
-                st.success("🏆 Hardware Core Loop Stable! Optimization Sandbox unlocked! / 基礎結構安全無誤！優化競技場沙盒已解鎖！")
-                if st.button("🚀 Enter Progressive Socratic Sandbox / 進入蘇格拉底深度挑戰", type="primary"):
-                    st.session_state.step = 5
-                    st.rerun()
+                st.success("🏆 Hardware Optimization Registered Successfully! Modify layout or choose another quest arena to continue. / 🏆 線路線路優化運算成功！你可以繼續修改線路挑機高分，或者選擇解鎖新任務！")
                     
             st.divider()
             col_b, col_c = st.columns(2)
@@ -821,85 +772,6 @@ if active_input:
                     st.session_state.step = 3
                     st.session_state.analysis_result = None 
                     st.session_state.img4 = None
-                    st.rerun()
-            with col_c:
-                if st.button(UI[l]["new"]):
-                    reset_flow()
-                    st.session_state.last_input_id = None
-                    st.rerun()
-
-        # # --- STEP 5: SPIRAL PROGRESSIVE SANDBOX ---
-        # elif st.session_state.step == 5:
-        #     st.subheader("🚀 Socratic Challenge Sandbox / 蘇格拉底探究沙盒")
-            
-        #     challenges = get_socratic_challenges(selected_task, user_id)
-            
-        #     for msg in st.session_state.socratic_chat:
-        #         with st.chat_message(msg["role"]):
-        #             st.markdown(msg["content"])
-                    
-        #     if st.session_state.socratic_q_idx < len(challenges):
-        #         current_q = challenges[st.session_state.socratic_q_idx]
-        #         st.info(f"**Current Arena Challenge ({st.session_state.socratic_q_idx + 1}/{len(challenges)}):**\n\n{current_q}")
-                
-        #         st.markdown("### Verify Experiment Modification / 驗證你嘅變項修改 🔬")
-        #         student_text = st.text_area("What variable did you change, and what metric shifted on the board? / 你改動咗邊個變項？數據有咩轉變？")
-                
-        #         socratic_upload_mode = st.radio("Scan modification layout:", ["Camera 📸", "File 📁"], horizontal=True, label_visibility="collapsed", key=f"s_upload_{st.session_state.socratic_q_idx}")
-        #         if socratic_upload_mode.startswith("Camera"):
-        #             proof_img = st.camera_input("Scan modified hardware alignment", key=f"s_cam_{st.session_state.socratic_q_idx}")
-        #         else:
-        #             proof_img = st.file_uploader("Upload modification proof photo", type=["jpg", "png", "jpeg"], key=f"s_file_{st.session_state.socratic_q_idx}")
-                    
-        #         if st.button("Submit Experiment to Leaderboard Engine! 🔍", type="primary"):
-        #             if not student_text or not proof_img:
-        #                 st.warning("Please submit both text reasoning logs and a photo scan! / 請同時提供文字推論紀錄與配置相片！")
-        #             else:
-        #                 with st.spinner("AI checking modified structural execution mechanics..."):
-        #                     img_pil = process_uploaded_image(io.BytesIO(proof_img.getvalue()))
-        #                     history_context = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in st.session_state.socratic_chat])
-                            
-        #                     prompt = f"""
-        #                         Task Arena Master: {selected_task}
-        #                         Past Experiment Iterations Registry:
-        #                         {history_context}
-                                
-        #                         Targeted Socratic Objective: {current_q}
-        #                         Student Team In-Situ Reason Log: "{student_text}"
-                                
-        #                         Task Requirement: Check if the new circuit photo asset AND their textual reasoning log successfully prove they completed the TARGETED sandbox level.
-        #                         If successful -> Begin string output exactly with prefix '[VERIFICATION: PASSED]' followed by enthusiastic, bilingual text validating their learning.
-        #                         If failed -> Begin string output exactly with prefix '[VERIFICATION: FAILED]' followed by a strategic hint. Do not provide answers.
-        #                         """
-                            
-        #                     try:
-        #                         resp = client.models.generate_content(
-        #                             model=MODEL_ID, 
-        #                             contents=[img_pil, prompt],
-        #                             config=types.GenerateContentConfig(temperature=0.4)
-        #                         )
-        #                         feedback = resp.text
-        #                         display_feedback = feedback.replace("[VERIFICATION: PASSED]", "").replace("[VERIFICATION: FAILED]", "").strip()
-                                
-        #                         st.session_state.socratic_chat.append({"role": "user", "content": f"📝 **Team Logic Log:** {student_text}\n*(Hardware Scan Uploaded)*"})
-        #                         st.session_state.socratic_chat.append({"role": "assistant", "content": display_feedback})
-                                
-        #                         if "[VERIFICATION: PASSED]" in feedback:
-        #                             st.session_state.socratic_q_idx += 1
-                                    
-        #                         st.rerun()
-                                
-        #                     except Exception as e:
-        #                         st.error(f"Scaffold Evaluation Failed: {e}")
-                                
-            # else:
-            #     st.success("🏆 Elite Circuit Master Status Achieved! Arena Challenges Completed! / 🏆 恭喜你完成全套大挑戰，榮登終極電路大師寶座！")
-                
-            st.divider()
-            col_b, col_c = st.columns(2)
-            with col_b:
-                if st.button("Return to Simulation HUD" if l == "en" else "返回主數據儀表面板"):
-                    st.session_state.step = 4
                     st.rerun()
             with col_c:
                 if st.button(UI[l]["new"]):
