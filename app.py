@@ -204,7 +204,7 @@ def detect_horizontal_rows(pil_img):
 
     window_size = max(int(height * 0.005), 5)
     kernel = np.ones(window_size) / window_size
-    smoothed_sums = np.convolve(row_sums, kernel, mode='same')
+    smoothed_sums = np Convolve = np.convolve(row_sums, kernel, mode='same')
 
     min_peak_distance = max(int(height * 0.012), 10)
     threshold_val = np.max(smoothed_sums) * 0.08 
@@ -375,7 +375,7 @@ def save_to_drive(user_id, inferred_task_name, ai_feedback, images_dict, score_a
             csv_bytes = new_row.to_csv(index=False).encode('utf-8')
             meta = {'name': CSV_FILENAME, 'parents': [PARENT_FOLDER_ID]}
             media = MediaIoBaseUpload(io.BytesIO(csv_bytes), mimetype='text/csv')
-            service.files().create(body=meta, media_body=media).execute()
+            service.files().create(body=meta, media_body=meta).execute()
         else:
             file_id = items[0]['id']
             request = service.files().get_media(fileId=file_id)
@@ -409,10 +409,9 @@ if "last_input_id" not in st.session_state: st.session_state.last_input_id = Non
 for i in range(1, 5): 
     if f"img{i}" not in st.session_state: st.session_state[f"img{i}"] = None
 
-# 🌟 CRITICAL: 全局初始化變數安全鎖，防止 Streamlit 在異步刷新時觸發 NameError 🌟
+# 🌟 SECURITY VARIABLE INITIALIZATION TO PREVENT FLOATING RUNTIME NAMEERRORS 🌟
 active_input = None
 
-# 語系切換
 lang_select = st.radio("🌐", ["English", "繁體中文"], horizontal=True, label_visibility="collapsed")
 l = "en" if lang_select == "English" else "hk"
 
@@ -474,15 +473,17 @@ if active_input:
                         1. Identify the BREADBOARD boundaries: Provide [y, x] coordinates for the four outer corners (top_left, top_right, bottom_right, bottom_left).
                         2. Identify all components and jumper wires physically placed on the breadboard. Follow these strict schema rules:
                         - JUMPER WIRES: Uniquely identify and label every single wire sequentially (e.g., 'Wire 1', 'Wire 2').
-                        - OTHER STRATEGIC ASSETS: Label them uniquely (e.g., 'Resistor 1', 'LED 1', 'Capacitor 1', 'Slide-Switch 1', 'Button 1', 'Battery Box 1').
+                        - OTHER STRATEGIC ASSETS: Label them uniquely (e.g., 'Resistor 1', 'LED 1', 'Capacitor 1', 'Special Button 1', 'Battery Box 1').
                         - PINS/LEGS SCHEMA: Order each component's pin locations sequentially within its 'legs' coordinate array.
                         - BATTERY BOX POWER SUPPLY EXPLICIT PIN LAWS: Scan for an external battery module or battery pins if present. 
                           * You MUST strictly label the RED wire/pin node location coordinates as 'Battery Box 1 (Power +ve)'.
                           * You MUST strictly label the BLACK wire/pin node location coordinates as 'Battery Box 1 (Power -ve)'.
                           * If no physical external battery module is captured on the board, fallback safely to standard power rails column markings.
                         - CRITICAL SELECTOR INTERFACE CONTINUITY LAWS:
-                          * SLIDE-SWITCH: Specifically scan for a 3-pin matrix component. Based on its layout axis orientation, you MUST assume its 3 legs are always continuous in a single horizontal row or a single vertical column without skipping holes.
-                          * BUTTON / PUSH-BUTTON: A 4-pin square matrix component configuration that straddles the center divider groove of the board.
+                          * SPECIAL BUTTON / PUSH-BUTTON: For Task 2, this is a special 4-pin tactile routing button. 
+                          * Teach the model its internal physical switching rules: 
+                            - Unpressed State: Current flows strictly horizontally between adjacent pins.
+                            - Pressed State: Current flows vertically and diagonally across pins.
                         - CAPACITOR COMPLIANCE: Mark any storage cylinder component. Always assign 220uF properties.
                         - HIGH-ACCURACY RESISTOR COLOR SIGNATURE MATRIX: Scan bands with maximum precision:
                           * Contains a visual GREEN line/band -> Classify value string strictly as '150 ohm'.
@@ -606,10 +607,11 @@ if active_input:
                                - Compute loop current (mA) strictly based on Ohm's law: I = 3V / R_total.
                                - SCORING CRITERIA formula: current_ma * 100. Write final marks integer into 'brightness_score'.
                             2. TASK 2 (LONGEST FADE-OUT CHALLENGE):
-                               - CRITICAL INTERFACE VALIDATION: This task strictly demands a 3-pin Slide-Switch to mechanically toggle loops. If the student placed a 4-pin Push-Button ('Button') on the board instead, this is a critical asset violation. You MUST immediately inject an error item into 'detected_errors' with error_type 'Component Asset Mismatch', completely override and force 'brightness_score' to 0, and output this exact bilingual Socratic hint inside the 'feedback' string:
-                                 "It looks like you are trying to route your energy tank using a temporary bridge (a 4-pin button) instead of a 3-lane crossroad gate (a slide-switch). Look closely at your components—which one has 3 legs to redirect the flow of electricity?\\n\\n睇落你正喺度嘗試用一條臨時橋樑（4腳按鈕）去引導你個儲能水箱，而唔係用一個三線路口閘門（滑動開關）。細心睇吓你手頭上嘅零件——邊一個擁有 3 隻引腳可以幫電流轉向？"
-                               - If a valid 3-pin switch is active, verify that it separates the circuit into a battery charging path and a capacitor discharging path. 
-                               - Capacitance is fixed at 220uF (0.00022 F). Read resistor values ('150 ohm', '300 ohm', '1k ohm', '10k ohm'). 
+                               - SPECIAL INTERFACE STATE MACHINE SIMULATION: This task demands a 4-pin 'Special Button 1' and one Capacitor.
+                               - Capacitance is fixed at 220uF (0.00022 F). Read resistor values ('150 ohm', '300 ohm', '1k ohm', '10k ohm').
+                               - You must evaluate the circuit topology under TWO concurrent structural states of this special button:
+                                 * State A (Unpressed): Current flows strictly horizontally between adjacent pins. Evaluate if this horizontal path successfully routes Power Box (+ve) to charge the 220uF capacitor bucket.
+                                 * State B (Pressed): Current switches to flow vertically and diagonally across pins. Evaluate if this path successfully isolates/disconnects the main power supply and routes the capacitor's stored energy through the series resistor chain into the LED to execute a long fade-out loop.
                                - Math Formula: Calculate RC time constant τ = R_total * 0.00022. Stacking higher resistance in a series chain slows leakage time and drives the score higher up to 100 marks. Parallel paths cause instant tank leakage (0 marks). Write the final integer score into 'brightness_score'. Set 'water_tank_score'.
                             3. TASK 3 (MAX LDR DIFFERENCE CHALLENGE):
                                - Goal: Maximize 'ldr_delta_score' (0-100) light-to-dark contrast swing.
@@ -632,26 +634,9 @@ if active_input:
                             Strictly use these exact typographic schemas for component layers:
                             - Resistor Block: ─[═]─
                             - LED Block: ─▶│─
-                            - Slide-Switch Block: ─[██]─
-                            - Push-Button Block: ─[░░]─
+                            - Special Push-Button Block: ─[░░]─ (Label internal states clearly: Horiz if Unpressed / Vert+Diag if Pressed)
                             - Capacitor Block: ─┤│─
                             - Ground Rail Block: ⏚
-                            
-                            Example layout structure blueprint for multi-lane parallel networks:
-                                   [ 🔴 +5V Power Source ]
-                                             │
-                                   ┌─────────┴─────────┐
-                                   │                   │
-                             [ 🚧 Resistor 1 ]   [ 🚧 Resistor 2 ]
-                               ─[═]─ 10kΩ          ─[═]─ 10kΩ
-                                   │                   │
-                                   └─────────┬─────────┘
-                                             │
-                                      [ 💡 LED 1 ]
-                                        ─▶│─ (Red)
-                                             │
-                                   [ 🔵 0V Ground Rail ]
-                                             ⏚
                             
                             Bilingual Format:
                             Provide the full explanation string in 'feedback' with English text first, followed by a newline, then a formal written Cantonese translation.
