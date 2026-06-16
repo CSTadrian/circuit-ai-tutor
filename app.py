@@ -34,7 +34,7 @@ MODEL_ID = "gemini-3.1-pro-preview"
 PARENT_FOLDER_ID = "1_cn9lfvMLaozDTx8pvU6LP62J9AVFrvz"
 CSV_FILENAME = "circuit_audit_logs.csv"
 
-# --- UI LANGUAGE DICTIONARY (FIXED KEYERROR ALIGNMENT) ---
+# --- UI LANGUAGE DICTIONARY ---
 UI = {
     "en": {
         "title": "🔌 AI Circuit Quest: Optimization Arena",
@@ -420,7 +420,7 @@ def get_socratic_challenges(task_name, user_id):
             ]
         else:
             challenges = [
-                "Level 1 🟢 (The Resistor Pipe Chain): Chain two 10k ohm resistors in series inside the discharge loop. Does a longer single-file pipe line slow down the water flow or speed it up?\n\n第一關 🟢 (串聯水管鏈): 喺放電迴路裏面串聯兩粒 10k ohm 電阻。排成單行、更長嘅水管線，會令水流減慢定加快？",
+                "Level 1 🟢 (The Resistor Pipe Chain): Chain two 10k ohm resistors in series inside the discharge loop. Does a longer single-file pipe line slow down the water flow or speed it up?\n\n第一關 🟢 (串聯水管鏈): 喺放電迴路裏面串聯裝上兩粒 10k ohm 電阻。排成單行、更長嘅水管線，會令水流減慢定加快？",
                 "Level 2 🟡 (The Parallel Leak): Arrange your resistors side-by-side in parallel instead of series inside the capacitor loop. Look at the fade clock. Why did the parallel highway empty the water tank instantly?\n\n第二關 🟡 (並聯洩漏): 喺電容迴路中將電阻改為並排（並聯）接駁。觀察變暗時鐘。點解並聯快線會令水箱一瞬間排空？",
                 "Level 3 🔴 (The Giant Dynamic Window): Try to maximize your layout using all available capacitors and resistors to construct the ultimate slow-drain setup. Can your team push the timeline past 10 seconds?\n\n第三關 🔴 (極限動態視窗): 嘗試用盡手頭上所有嘅電容同電阻，砌出終極慢速放電佈局。你嘅隊伍能唔能將時間線推高過 10 秒？"
             ]
@@ -531,25 +531,25 @@ if active_input:
                             temperature=0.0,
                             response_mime_type="application/json",
                             response_schema={
-                                "type": "OBJECT",
+                                "type": "object",
                                 "properties": {
                                     "breadboard_corners": {
-                                        "type": "OBJECT",
+                                        "type": "object",
                                         "properties": {
-                                            "top_left": {"type": "ARRAY", "items": {"type": "INTEGER"}},
-                                            "top_right": {"type": "ARRAY", "items": {"type": "INTEGER"}},
-                                            "bottom_right": {"type": "ARRAY", "items": {"type": "INTEGER"}},
-                                            "bottom_left": {"type": "ARRAY", "items": {"type": "INTEGER"}},
+                                            "top_left": {"type": "array", "items": {"type": "integer"}},
+                                            "top_right": {"type": "array", "items": {"type": "integer"}},
+                                            "bottom_right": {"type": "array", "items": {"type": "integer"}},
+                                            "bottom_left": {"type": "array", "items": {"type": "integer"}},
                                         }
                                     },
                                     "components": {
-                                        "type": "ARRAY", 
+                                        "type": "array", 
                                         "items": {
-                                            "type": "OBJECT", 
+                                            "type": "object", 
                                             "properties": {
-                                                "name": {"type": "STRING"},
-                                                "center": {"type": "ARRAY", "items": {"type": "INTEGER"}},
-                                                "legs": {"type": "ARRAY", "items": {"type": "ARRAY", "items": {"type": "INTEGER"}}}
+                                                "name": {"type": "string"},
+                                                "center": {"type": "array", "items": {"type": "integer"}},
+                                                "legs": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}}}
                                             }
                                         }
                                     }
@@ -651,9 +651,9 @@ if active_input:
                             
                             Perform an electrical analysis check and calculate performance metrics:
                             1. TASK 1 (BRIGHTEST LED CHALLENGE):
-                               - Goal: Maximize 'brightness_score' (0-200) by dropping total network resistance.
-                               - Resistors in PARALLEL lower resistance: Each valid parallel 10k lane lowers 'traffic_jam_score' and increases 'brightness_score' by +40 points.
-                               - Calculated Ohm's Law loop current value in mA into 'calculated_current_ma' (3V / R_total).
+                               - Goal: Maximize 'brightness_score' by dropping total network resistance. Every valid parallel resistor lane drives current higher.
+                               - Compute the loop current (mA) strictly based on Ohm's law: I = 3V / R_total.
+                               - SCORING CRITERIA: Scale the current directly into 'brightness_score' using the classroom formula: current_ma * 100. For instance, 0.300 mA = 30 marks.
                             2. TASK 2 (LONGEST FADE-OUT CHALLENGE):
                                - Goal: Maximize 'fade_duration_score' (0-100) using the RC time formula with a 220uF capacitor.
                                - Resistors in a SERIES chain add resistance, stretching the time constant (+25 per series resistor). Parallel layout empties tank instantly.
@@ -680,25 +680,25 @@ if active_input:
                                     temperature=0.0,
                                     response_mime_type="application/json",
                                     response_schema={
-                                        "type": "OBJECT",
+                                        "type": "object",
                                         "properties": {
-                                            "inferred_circuit_name": {"type": "STRING"},
-                                            "feedback": {"type": "STRING"},
-                                            "circuit_semantic_map": {"type": "STRING"},
-                                            "success_summary": {"type": "ARRAY", "items": {"type": "STRING"}},
-                                            "error_summary": {"type": "ARRAY", "items": {"type": "STRING"}},
-                                            "brightness_score": {"type": "INTEGER"},
-                                            "traffic_jam_score": {"type": "INTEGER"},
-                                            "water_tank_score": {"type": "INTEGER"},
-                                            "ldr_delta_score": {"type": "INTEGER"},
-                                            "calculated_current_ma": {"type": "NUMBER"},
+                                            "inferred_circuit_name": {"type": "string"},
+                                            "feedback": {"type": "string"},
+                                            "circuit_semantic_map": {"type": "string"},
+                                            "success_summary": {"type": "array", "items": {"type": "string"}},
+                                            "error_summary": {"type": "array", "items": {"type": "string"}},
+                                            "brightness_score": {"type": "integer"},
+                                            "traffic_jam_score": {"type": "integer"},
+                                            "water_tank_score": {"type": "integer"},
+                                            "ldr_delta_score": {"type": "integer"},
+                                            "calculated_current_ma": {"type": "number"},
                                             "detected_errors": {
-                                                "type": "ARRAY", 
+                                                "type": "array", 
                                                 "items": {
-                                                    "type": "OBJECT",
+                                                    "type": "object",
                                                     "properties": {
-                                                        "error_type": {"type": "STRING"},
-                                                        "location": {"type": "ARRAY", "items": {"type": "INTEGER"}}
+                                                        "error_type": {"type": "string"},
+                                                        "location": {"type": "array", "items": {"type": "integer"}}
                                                     }
                                                 }
                                             }
@@ -763,7 +763,7 @@ if active_input:
             
             m_col1, m_col2, m_col3 = st.columns(3)
             with m_col1:
-                st.markdown(f"""<div class='metric-card'><h4>{UI[l]['metric_brightness']}</h4><h2>{res_data.get('brightness_score', 0)} PTS</h2></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class='metric-card'><h4>{UI[l]['metric_brightness']}</h4><h2>{res_data.get('brightness_score', 0)} MARKS</h2></div>""", unsafe_allow_html=True)
             with m_col2:
                 st.markdown(f"""<div class='metric-card' style='border-left-color: #ef4444;'><h4>{UI[l]['metric_resistance']}</h4><h2>{res_data.get('traffic_jam_score', 0)} %</h2></div>""", unsafe_allow_html=True)
             with m_col3:
