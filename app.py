@@ -15,12 +15,19 @@ from google import genai
 from google.genai import types
 from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
+from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 import random
 
-# --- 1. CONFIGURATION & SETUP ---
+# --- 1. CONFIGURATION & GAMIFIED TASK SETUP ---
+TASKS = {
+    "Task 1: Brightest LED Challenge": "task1_brightness.png",
+    "Task 2: Longest Fade-out Challenge": "task2_fade.png",
+    "Task 3: Max LDR Difference Challenge": "task3_ldr.png"
+}
+
 DATA_FOLDER = "data"
 MODEL_ID = "gemini-3.1-pro-preview"
 
@@ -28,83 +35,107 @@ MODEL_ID = "gemini-3.1-pro-preview"
 PARENT_FOLDER_ID = "1_cn9lfvMLaozDTx8pvU6LP62J9AVFrvz"
 CSV_FILENAME = "circuit_audit_logs.csv"
 
-# --- LANGUAGE DICTIONARY ---
+# --- UI LANGUAGE DICTIONARY ---
 UI = {
     "en": {
-        "title": "🔌 AI Circuit Luminance Explorer",
-        "setup": "Setup",
-        "user_id": "Select User ID",
-        "inferred_task": "Inferred Invention Type",
-        "input_mode": "Input Method",
+        "title": "🔌 AI Circuit Quest: Optimization Arena",
+        "setup": "Game Setup",
+        "user_id": "Select Team / User ID",
+        "task": "Select Quest Arena",
+        "target": "Target Strategy Worksheet Guide",
+        "input_mode": "Capture Method",
         "mode_upload": "Upload Image",
         "mode_camera": "Use Camera",
-        "upload": "Upload Student Photo",
-        "reset": "Reset Process",
-        "your_circuit": "Your Circuit (Pale Blue = Internal Connections)",
-        "step1_btn": "🔍 Step 1: Discover Components & Intent",
-        "analyzing": "AI reverse-engineering breadboard layout...",
-        "step2_title": "⚙️ Step 2: Fine-Tune Component Pins (Auto-Snapping)",
-        "step2_confirm": "✅ Confirm & Calculate Circuit Brightness",
-        "snapped": "*(Y auto-snapped to nearest row: {y})*",
-        "verify": "Verify Orange Legs & Yellow Pins (Snapped to Blue Rows)",
-        "step3_title": "🧠 Step 3: Brightness Calculation & Diagnosis",
-        "checking": "Analyzing electrical loops and running numerical Ohm's Law calculations...",
-        "ai_diag": "AI Analysis: Red circles indicate potential wiring or safety issues",
-        "semantic_map_title": "🗺️ Detected Circuit Semantic Layout Map",
-        "save": "💾 Save to Drive",
-        "back": "🔙 Back",
-        "new": "🎉 New Invention",
-        "upload_prompt": "Please select an input method to upload or capture a photo.",
-        "guide_title": "📖 Quick Guide",
-        "camera": "Take a Photo of your Circuit",
+        "upload": "Upload Circuit Configuration Photo",
+        "reset": "Reset Current Quest",
+        "schematic": "Quest Reference Schematic",
+        "your_circuit": "Your Layout Scan (Pale Blue = Internal Lanes Connected)",
+        "step1_btn": "🔍 Step 1: Scan Component Architecture",
+        "analyzing": "AI Engine reverse-engineering hardware topology...",
+        "step2_title": "⚙️ Step 2: Fine-Tune Pin Connections (Auto-Snapping Rows)",
+        "step2_confirm": "🔒 Lock Setup & Predict Outcome",
+        "snapped": "*(Leg auto-aligned to nearest horizontal lane: {y})*",
+        "verify": "Verify Orange Paths & Yellow Target Pins (Snapped to Blue Lanes)",
+        "step3_title": "📊 Step 3: Performance Telemetry HUD & Diagnosis",
+        "checking": "Calculating electrical network transformations...",
+        "ai_diag": "AI Scan HUD: Red circles flag system blockages/open nodes",
+        "save": "💾 Save Score to Drive",
+        "back": "🔙 Modify Hardware",
+        "new": "🎉 Choose Next Quest",
+        "upload_prompt": "Select an input method to scan your hardware configuration.",
+        "prompt_addition": "", 
+        "guide_title": "📖 Quest Field Guide",
+        "camera": "Scan Your Live Configuration",
         "guide_text": """
-        **How to Start:**
-        1. Upload a photo of *any* circuit you built using a Single LED and 10kΩ Resistors.
-        2. Let the AI discover your layout (Step 1).
-        3. Verify pin alignments (Step 2).
-        4. See the exact **numerical brightness calculation** and text-based schematic map (Step 3)!
+        **Quest Loop:**
+        1. Select Arena & Submit Hardware Configuration Photo.
+        2. Scan Architecture (Step 1) to build digital structural map.
+        3. Clear the **Prediction Gate** (Step 2) to unlock live simulation data.
+        4. Read Telemetry HUD and execute Socratic experiments (Step 3 & 4) to break room records!
         
-        **Visual Legend:**
-        * 🔴 **Red Circle:** Electrical issue (e.g., open loop, short circuit).
+        **HUD Telemetry Icons:**
+        * 🔴 **Red Ring:** System structural break (Open Circuit / Floating Node).
+        * 🟦 **Blue Frame:** Component asset structural mismatch.
+        * 🟡 **Yellow Ring:** Axis orientation or directional polarity failure.
         """,
+        "prediction_header": "🔮 The Prediction Gate",
+        "prediction_prompt": "Before the AI Engine simulates your circuit, your team must lock in a structural hypothesis choice. What will this configuration change do?",
+        "predict_err": "Please select a hypothesis choice before confirming your setup!",
+        "metrics_header": "🏎️ Live Performance Metrics",
+        "metric_brightness": "💡 Brightness Score (Power Output)",
+        "metric_resistance": "🚧 Traffic Jam Thickness (Resistance Blockage)",
+        "metric_capacitance": "💧 Energy Water Tank Volume",
+        "metric_ldr_delta": "🌗 Light-to-Shadow Delta Swing",
     },
     "hk": {
-        "title": "🔌 AI 電路亮度大探險",
-        "setup": "設定",
-        "user_id": "選擇學生 ID",
-        "inferred_task": "AI 推斷嘅發明類型",
+        "title": "🔌 AI 電路大挑戰：極限優化競技場",
+        "setup": "遊戲設定",
+        "user_id": "選擇隊伍 / 學生 ID",
+        "task": "選擇挑戰關卡",
+        "target": "目標任務工作紙指引",
         "input_mode": "輸入方式",
         "mode_upload": "上傳圖片",
         "mode_camera": "使用相機",
-        "upload": "上傳學生電路照片",
-        "reset": "重置流程",
-        "your_circuit": "你的電路（淺藍色線 = 麵包板內部接線）",
-        "step1_btn": "🔍 第一步：探索零件與發明意圖",
-        "analyzing": "AI 正在逆向分析麵包板結構...",
-        "step2_title": "⚙️ 第二步：微調零件引腳（自動對齊）",
-        "step2_confirm": "✅ 確認並分析電路亮度",
-        "snapped": "*(Y 軸已自動對齊至最近的行：{y})*",
-        "verify": "請核對橙色引腳與黃色接點（已對齊至淺藍色行）",
-        "step3_title": "🧠 第三步：亮度數值計算與電路診斷",
-        "checking": "正在分析電路迴路並進行歐姆定律數值計算...",
-        "ai_diag": "AI 診斷：紅圈表示潛在的接線問題",
-        "semantic_map_title": "🗺️ 偵測到嘅電路結構路徑圖",
-        "save": "💾 儲存至 Drive",
-        "back": "🔙 返回",
-        "new": "🎉 新發明挑戰",
-        "upload_prompt": "請選擇上傳照片或拍攝新照片以開始。",
-        "guide_title": "📖 快速指南",
-        "camera": "拍攝電路照片",
+        "upload": "上傳實體結構相片",
+        "reset": "重置當前挑戰",
+        "schematic": "挑戰參考電路圖",
+        "your_circuit": "你嘅線路掃描（淺藍色線 = 麵包板內部已連通車道）",
+        "step1_btn": "🔍 第一步：掃描零件結構拓撲",
+        "analyzing": "AI 引擎正喺度逆向解構你嘅硬件佈局...",
+        "step2_title": "⚙️ 第二步：微調引腳位置（自動對齊橫向車道）",
+        "step2_confirm": "🔒 鎖定佈局並進行成果預測",
+        "snapped": "*(引腳已自動對齊至最近嘅橫向車道：{y})*",
+        "verify": "請核對橙色路徑與黃色接點（已對齊至淺藍色車道）",
+        "step3_title": "📊 第三步：實時性能數據面板（HUD）與核心診斷",
+        "checking": "正在運算電路網絡之物理數據表現...",
+        "ai_diag": "AI 診斷面板：紅圈表示系統內部有斷開或懸空阻礙",
+        "save": "💾 儲存分數至 Drive",
+        "back": "🔙 修改實體硬件",
+        "new": "🎉 挑戰下一關",
+        "upload_prompt": "請選擇上傳相片或開啟相機鏡頭以開始挑戰。",
+        "guide_title": "📖 競技場實戰指南",
+        "camera": "拍攝當前硬件佈局",
         "guide_text": """
-        **使用步驟：**
-        1. 使用單粒 LED 同埋數粒 10kΩ 電阻組裝電路並上傳照片。
-        2. 讓 AI 自動偵測你嘅電路結構（第一步）。
-        3. 微調引腳落點位置（第二步）。
-        4. 睇吓 AI 幫你計算出嚟嘅**精準亮度電流數值**同埋文字結構路徑圖（第三步）！
+        **核心玩法循環：**
+        1. 選擇關卡並提交硬件配置相片。
+        2. 掃描結構（第一步）以建立數位電路網絡地圖。
+        3. 通過 **「預測閘門」**（第二步）鎖定假設，以解鎖實時模擬數據。
+        4. 解讀 HUD 數據並執行蘇格拉底探究任務（第三、四步）去衝擊全班紀錄！
         
-        **圖示說明：**
-        * 🔴 **紅圈：** 電路問題（例如：斷路、短路）。
+        **面板圖示說明：**
+        * 🔴 **紅圈：** 結構性斷路 / 懸空節點（電力無法返回負極）。
+        * 🟦 **藍框：** 元件型號錯誤或阻值不符。
+        * 🟡 **黃圈：** 方向性極性接反或軸向打橫放錯。
         """,
+        "prompt_addition": "Please provide the 'feedback' text entirely in written formal Cantonese (Traditional Chinese). Ensure the tone is encouraging for a primary/secondary school student.",
+        "prediction_header": "🔮 預測閘門 (Prediction Gate)",
+        "prediction_prompt": "喺 AI 引擎幫你運行模擬之前，你嘅隊伍必須先鎖定一個結構性假設。你認為今次改動會帶嚟咩結果？",
+        "predict_err": "請先選擇一個結果假設，先可以鎖定並確認佈局！",
+        "metrics_header": "🏎️ 實時系統性能指標 (HUD)",
+        "metric_brightness": "💡 亮度得分 (實際功率輸出)",
+        "metric_resistance": "🚧 交通擠塞厚度 (總電阻屏障)",
+        "metric_capacitance": "💧 儲能水箱容量 (電容容量)",
+        "metric_ldr_delta": "🌗 光影動態擺幅 (LDR 變動差值)",
     }
 }
 
@@ -138,16 +169,27 @@ else:
     st.error("GCP Service Account secrets not found!")
     st.stop()
 
-# --- 3. UI CUSTOMIZATION ---
-st.set_page_config(page_title="AI Circuit Explorer", layout="wide")
+# --- 3. UI CUSTOMIZATION (Hiding Menus for Dedicated iPad Layouts) ---
+st.set_page_config(page_title="AI Circuit Quest", layout="wide")
 st.markdown("""
     <style>
     #MainMenu, footer, header {visibility: hidden;}
     [data-testid="stToolbar"], .stDeployButton {display:none !important;}
     #root > div:nth-child(1) > div > div > div > div > section > div {padding-top: 0rem;}
+    
+    /* Gamified Dashboard Styling */
+    .metric-card {
+        background-color: #1e293b;
+        color: #f8fafc;
+        padding: 15px;
+        border-radius: 10px;
+        border-left: 5px solid #3b82f6;
+        margin-bottom: 10px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
+# --- 4. COMPUTER VISION BREADBOARD PROCESSING ENGINE ---
 def detect_horizontal_rows(pil_img):
     if pil_img is None: return []
     img_cv = np.array(pil_img)
@@ -186,7 +228,6 @@ def detect_horizontal_rows(pil_img):
     if len(peaks) > 5:
         distances = [peaks[i] - peaks[i-1] for i in range(1, len(peaks))]
         median_dist = np.median(distances)
-        
         filled_peaks = []
         for i in range(len(peaks)-1):
             filled_peaks.append(peaks[i])
@@ -200,7 +241,7 @@ def detect_horizontal_rows(pil_img):
         peaks = filled_peaks
 
     return [int((y / height) * 1000) for y in peaks]
-    
+
 def process_uploaded_image(file_input):
     try:
         if isinstance(file_input, str):
@@ -284,12 +325,11 @@ def draw_pins_on_image(image, df_components):
 def create_visual_report(successes, errors, lang):
     img = PILImage.new('RGB', (800, 600), color=(255, 255, 255))
     draw = ImageDraw.Draw(img)
-    
     title = "Visual Performance Summary 📊" if lang == "en" else "視覺化成果總結 📊"
     draw.text((30, 20), title, fill=(0, 0, 0))
     
     draw.rectangle([30, 60, 770, 280], outline=(0, 150, 0), width=3, fill=(240, 255, 240))
-    draw.text((50, 75), "✅ Electrical Successes / 順利運作指標", fill=(0, 128, 0))
+    draw.text((50, 75), "✅ Optimization Wins / 表現出色嘅地方：", fill=(0, 128, 0))
     
     y_off = 110
     for item in successes[:5]: 
@@ -297,7 +337,7 @@ def create_visual_report(successes, errors, lang):
         y_off += 30
 
     draw.rectangle([30, 310, 770, 560], outline=(200, 100, 0), width=3, fill=(255, 250, 240))
-    draw.text((50, 325), "🛠️ Engineering Constraints / 硬件設計限制", fill=(200, 100, 0))
+    draw.text((50, 325), "🛠️ System Blockages to Inspect / 需要修正嘅屏障：", fill=(200, 100, 0))
     
     y_off = 360
     for item in errors[:5]:
@@ -306,13 +346,12 @@ def create_visual_report(successes, errors, lang):
         
     return img
 
-def save_to_drive(user_id, inferred_task_name, ai_feedback, images_dict):
+def save_to_drive(user_id, task_name, ai_feedback, images_dict, prediction_made, score_achieved):
     service = get_drive_service()
     hk_tz = pytz.timezone('Asia/Hong_Kong')
     hk_time_str = datetime.now(hk_tz).strftime('%Y-%m-%d %H:%M:%S')
-    
-    clean_task = "".join([c for c in inferred_task_name if c.isalnum() or c=='_'])[:15]
-    file_prefix = f"user{user_id}_{clean_task}"
+    task_num = task_name.split(":")[0].replace("Task", "").strip()
+    file_prefix = f"user{user_id}_task{task_num}"
 
     try:
         for img_key, img_obj in images_dict.items():
@@ -326,9 +365,14 @@ def save_to_drive(user_id, inferred_task_name, ai_feedback, images_dict):
                 service.files().create(body=img_metadata, media_body=media).execute()
 
         new_row = pd.DataFrame([{
-            "User ID": user_id, "Time": hk_time_str, 
-            "Raw": f"{file_prefix}_1.png", "Final": f"{file_prefix}_4.png", 
-            "Feedback": ai_feedback
+            "User ID": user_id, 
+            "Time": hk_time_str, 
+            "Task Arena": task_name,
+            "Prediction Made": prediction_made,
+            "Optimization Score": score_achieved,
+            "Raw Link": f"{file_prefix}_1.png", 
+            "Final HUD Link": f"{file_prefix}_4.png", 
+            "Socratic Feedback": ai_feedback
         }])
 
         query = f"name='{CSV_FILENAME}' and '{PARENT_FOLDER_ID}' in parents and trashed=false"
@@ -356,50 +400,99 @@ def save_to_drive(user_id, inferred_task_name, ai_feedback, images_dict):
             media = MediaIoBaseUpload(io.BytesIO(updated_csv_bytes), mimetype='text/csv')
             service.files().update(fileId=file_id, media_body=media).execute()
             
-        st.toast("✅ Automatically saved to Google Drive!")
+        st.toast("🏆 Quest performance synced securely to Classroom Drive!")
         
     except Exception as e:
         st.error(f"Drive Save Error: {e}")
 
-# --- 4. SESSION STATE ---
-if "step" not in st.session_state: st.session_state.step = 1
-if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
-if "analysis_result" not in st.session_state: st.session_state.analysis_result = None
-if "hough_rows" not in st.session_state: st.session_state.hough_rows = []
-if "breadboard_corners" not in st.session_state: st.session_state.breadboard_corners = None
-if "last_input_id" not in st.session_state: st.session_state.last_input_id = None
+# --- 5. PROGRESSIVE SOCRATIC EXPERIMENT GENERATOR ---
+def get_socratic_challenges(task_name, user_id):
+    """
+    Returns 3 spiral, progressive inquiry challenges mapped specifically to the 3 newly launched optimization tasks.
+    Enforces deterministic cohort tracking mapping based on user ID parity.
+    """
+    try:
+        uid_int = int(user_id)
+    except (ValueError, TypeError):
+        uid_int = 0
+        
+    is_odd = (uid_int % 2 != 0)
+    challenges = []
 
-for i in range(1, 5): 
-    if f"img{i}" not in st.session_state: st.session_state[f"img{i}"] = None
-if "lang" not in st.session_state: st.session_state.lang = "en"
+    # --- TASK 1 ARENA: BRIGHTEST LED (PARALLEL COHORTS) ---
+    if "Task 1" in task_name:
+        if is_odd:
+            # Odd Cohort Line: Parallel Expansion Track
+            challenges = [
+                "Level 1 🟢 (The Twin Bridge): Connect TWO 10k ohm resistors side-by-side (parallel) across the lane. Look at your new Brightness score. Why did adding more resistance obstacles make the light brighter?\n\n第一關 🟢 (雙子橋樑): 將兩粒 10k ohm 電阻並排（並聯）跨接喺車道上。睇下你嘅亮度得分。點解加多粒阻礙物，粒燈反而會變光咗？",
+                "Level 2 🟡 (The Triple Lane): Add a THIRD 10k ohm resistor parallel to the first two. Observe the Traffic Jam score. Did the blockage grow thicker or thinner? Explain how electricity chooses its path!\n\n第二關 🟡 (三線行車): 加上第三粒 10k ohm 電阻進行並聯。觀察「交通擠塞」得分。究竟阻礙物係變厚咗定薄咗？試下解釋電流係點樣揀路行！",
+                "Level 3 🔴 (The Short Circuit Boundary): What happens if you remove all resistors and run a single straight wire into the LED? Predict the danger before you scan! How does a floor resistor protect a system?\n\n第三關 🔴 (短路邊界大挑戰): 如果抆走晒所有電阻，直接用一條導線駁入 LED 會發生咩事？喺掃描前先預測危險！限流底層電阻係點樣保護一個系統？"
+            ]
+        else:
+            # Even Cohort Line: Mixed Structural Order Track
+            challenges = [
+                "Level 1 🟢 (The Series Trap): Connect two 10k ohm resistors end-to-end (series) in a single line before the LED. Scan it. Why did the Traffic Jam score double, and what happened to the brightness?\n\n第一關 🟢 (串聯陷阱): 將兩粒 10k ohm 電阻排成一條直線（串聯）接喺 LED 前面。掃描佢。點解「交通擠塞」分數翻咗倍，而亮度又發生咗咩事？",
+                "Level 2 🟡 (The Reversibility Loop): Keep the series resistors, but swap the physical layout order (LED first, then resistors). Does changing the structural order change the terminal brightness score? Why?\n\n第二關 🟡 (順序對調圈): 保留串聯電阻，但將硬件位置對調（LED 放前，電阻放後）。改變排隊次序會唔會影響最終嘅亮度得分？點解？",
+                "Level 3 🔴 (The Mixed Highway): Try to place two resistors in parallel, and then chain a third resistor in series right after them. Analyze your HUD metrics. How does this combined configuration scale your final current output?\n\n第三關 🔴 (混合高速公路): 嘗試將兩粒電阻並聯，然後喺後面串聯駁上第三粒電阻。分析你嘅 HUD 數據。呢種混合排列點樣影響你最終嘅電流輸出？"
+            ]
 
-def reset_flow():
-    for key in ["step", "components_df", "analysis_result", "img1", "img2", "img3", "img4"]:
-        if "df" in key: st.session_state[key] = pd.DataFrame()
-        elif "step" in key: st.session_state[key] = 1
-        else: st.session_state[key] = None
-    st.session_state.hough_rows = []
-    st.session_state.breadboard_corners = None
+    # --- TASK 2 ARENA: LONGEST FADE-OUT (RC TIMELINE COHORTS) ---
+    elif "Task 2" in task_name:
+        if is_odd:
+            challenges = [
+                "Level 1 🟢 (The Tank Valve Test): Move your resistor so it sits directly inside the discharge path between the capacitor bucket and the LED. What changes on the fade-out timeline?\n\n第一關 🟢 (水箱水閥測試): 移動你嘅電阻，等佢直接坐喺電容水箱同 LED 之間嘅放電路徑上。變暗時間線產生咗咩變化？",
+                "Level 2 🟡 (The Dual Bucket Stack): Add a second, identical 220uF capacitor side-by-side (parallel) with the first one. Look at your Energy Tank metric. Did you increase water storage volume or pressure?\n\n第二關 🟡 (雙水箱並聯): 將第二粒相同嘅 220uF 電容並排（並聯）接上。睇下你嘅「儲能水箱」指標。你究竟係增加了儲水容量，定係增加了水壓？",
+                "Level 3 🔴 (The Latching Gate Logic): Toggle your slide-switch rapidly back and forth. Can you trace how the switch mechanically redirects power from the battery into the storage tank versus locking it into the LED loop?\n\n第三關 🔴 (鎖定閘門邏輯): 快速來回切換你嘅滑動開關掣。你能唔能追蹤到開關掣係點樣透過機械結構，將電力由電池導向儲能水箱，抑或鎖定喺 LED 迴路入面放電？"
+            ]
+        else:
+            challenges = [
+                "Level 1 🟢 (The Resistor Pipe Chain): Chain two 10k ohm resistors in series inside the discharge loop. Does a longer single-file pipe line slow down the water flow or speed it up?\n\n第一關 🟢 (串聯水管鏈): 喺放電迴路裏面串聯兩粒 10k ohm 電阻。排成單行、更長嘅水管線，會令水流減慢定加快？",
+                "Level 2 🟡 (The Parallel Leak): Arrange your resistors side-by-side in parallel instead of series inside the capacitor loop. Look at the fade clock. Why did the parallel highway empty the water tank instantly?\n\n第二關 🟡 (並聯洩漏): 喺電容迴路中將電阻改為並排（並聯）接駁。觀察變暗時鐘。點解並聯快線會令水箱一瞬間排空？",
+                "Level 3 🔴 (The Giant Dynamic Window): Try to maximize your layout using all available capacitors and resistors to construct the ultimate slow-drain setup. Can your team push the timeline past 10 seconds?\n\n第三關 🔴 (極限動態視窗): 嘗試用盡手頭上所有嘅電容同電阻，砌出終極慢速放電佈局。你嘅隊伍能唔能將時間線推高過 10 秒？"
+            ]
 
-# --- 5. MAIN UI ---
+    # --- TASK 3 ARENA: MAX LDR DIFFERENCE (DYNAMIC VOLTAGE SWING COHORTS) ---
+    else:
+        challenges = [
+            "Level 1 🟢 (The Total Shadow Void): Shield the LDR using an opaque cup or your thumb until room light drops to zero. Read the HUD delta score. What happens to an LDR's internal bridge blockage when darkness hits?\n\n第一關 🟢 (全黑盲區): 用不透明嘅杯或大拇指完全遮蓋 LDR 阻擋所有光線。讀取 HUD 擺幅得分。當黑暗襲來時，LDR 內部嘅「道路屏障」發生咗咩事？",
+            "Level 2 🟡 (The Protective Floor Boundary): Remove your 1k ohm inline series resistor and run only the LDR. Shine a blinding flashlight directly on it. Why does the AI sound an alarm, and how does a safety floor resistor prevent system burnouts?\n\n第二關 🟡 (安全底線邊界): 抆走 1k ohm 限流電阻，只留下 LDR。用強光電筒直接照射。點解 AI 會發出警告？安全底線電阻點樣防止系統元件燒毀？",
+            "Level 3 🔴 (The Dynamic Voltage Maximizer): Adjust your baseline fixed resistance layer to match your LDR's ambient room midpoint value. Can your team unlock the highest dynamic contrast swing code on the leaderboard?\n\n第三關 🔴 (動態擺幅極大化): 調整你嘅固定底層電阻，去配對你粒 LDR 喺課室光線下嘅中位數。你嘅隊伍能唔能解鎖龍虎榜上最高嘅對比度差值？"
+        ]
+
+    return challenges
+
+# --- 6. MAIN WORKSPACE UI ---
 lang_select = st.radio("🌐", ["English", "繁體中文"], horizontal=True, label_visibility="collapsed")
 l = "en" if lang_select == "English" else "hk"
 
 st.title(UI[l]["title"])
 
+# SIDEBAR CONTROLS
 with st.sidebar:
     st.header(UI[l]["setup"])
-    user_id = st.selectbox(UI[l]["user_id"], [f"{i:02d}" for i in range(51)])
+    user_id = st.selectbox(UI[l]["user_id"], [f"{i:02d}" for i in range(1, 61)])
+    selected_task = st.selectbox(UI[l]["task"], list(TASKS.keys()))
     
+    # Render static strategy reference image guide
+    path = os.path.join(DATA_FOLDER, TASKS[selected_task])
+    if os.path.exists(path):
+        raw_schematic = process_uploaded_image(path)
+        st.image(raw_schematic, caption=UI[l]["target"])
+    else:
+        # Graceful procedural layout rendering if file absent during deploy
+        raw_schematic = PILImage.new('RGB', (300, 200), color=(70, 130, 180))
+        draw = ImageDraw.Draw(raw_schematic)
+        draw.text((30, 80), f"Quest Strategy Guide Active", fill=(255,255,255))
+        st.image(raw_schematic, caption=UI[l]["target"])
+
     st.divider()
 
-    # UPLOAD METHOD TOGGLE
-    input_mode = st.radio("Upload Method" if l == "en" else "上傳方式", ["Camera 📸", "File Upload 📁"], index=1, horizontal=True)
-    
+    # INPUT INTERFACE CAPTURE
+    input_mode = st.radio(UI[l]["input_mode"], ["Camera 📸", "File Upload 📁"], index=1, horizontal=True)
     if input_mode == "Camera 📸":
-        active_input = st.camera_input("Take photo of circuit" if l == "en" else "拍攝電路照片")
+        active_input = st.camera_input(UI[l]["camera"])
     else:
-        active_input = st.file_uploader("Upload photo" if l == "en" else "上傳照片", type=["jpg", "png", "jpeg","heic"])
+        active_input = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "heic"])
         
     st.divider()
     
@@ -411,7 +504,7 @@ with st.sidebar:
     st.markdown(f"### {UI[l]['guide_title']}")
     st.markdown(UI[l]['guide_text'])
 
-# --- 6. APPLICATION LOGIC ---
+# --- 7. APPLICATION LOGIC RUNTIME STATE-MACHINE ---
 if active_input:
     current_input_id = getattr(active_input, "file_id", str(hash(active_input.getvalue())))
     
@@ -421,34 +514,41 @@ if active_input:
         st.session_state.img1 = process_uploaded_image(io.BytesIO(active_input.getvalue()))
     elif st.session_state.img1 is None:
         st.session_state.img1 = process_uploaded_image(io.BytesIO(active_input.getvalue()))
-    
+        
     raw_student = st.session_state.img1
 
     if raw_student is not None:
         if not st.session_state.hough_rows:
             st.session_state.hough_rows = detect_horizontal_rows(raw_student)
 
-        # STEP 1: COMPONENT DETECTION
+        is_camera_mode = (input_mode == "Camera 📸")
+
+        # --- STEP 1: INITIAL STRUCTURAL EXTRACTION ---
         if st.session_state.step == 1:
             grid_visualization = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
             
-            orig_w, orig_h = grid_visualization.size
-            large_grid_img = grid_visualization.resize((orig_w * 2, orig_h * 2), PILImage.Resampling.LANCZOS)
-            
-            st.subheader(UI[l]["your_circuit"])
-            st.image(large_grid_img, use_container_width=True)
+            if is_camera_mode:
+                orig_w, orig_h = grid_visualization.size
+                large_grid_img = grid_visualization.resize((orig_w * 3, orig_h * 3), PILImage.Resampling.LANCZOS)
+                st.subheader(UI[l]["your_circuit"])
+                st.image(large_grid_img, use_container_width=True)
+            else:
+                col1, col2 = st.columns(2)
+                col1.image(raw_schematic, caption=UI[l]["schematic"])
+                col2.image(grid_visualization, caption=UI[l]["your_circuit"])
 
             if st.button(UI[l]["step1_btn"], type="primary"):
                 with st.spinner(UI[l]["analyzing"]):
                     prompt = """
-                        1. Identify the BREADBOARD boundaries: Provide [y, x] coordinates for the four outer corners (top_left, top_right, bottom_right, bottom_left).
-                        2. Identify all components and jumper wires physically placed on the breadboard. Follow these strict schema rules:
-                        - JUMPER WIRES: Uniquely identify and label every single wire sequentially (e.g., 'Wire 1', 'Wire 2').
-                        - OTHER COMPONENTS: Label them uniquely (e.g., 'Resistor 1', 'LED 1').
-                        - PINS/LEGS SCHEMA: Order each component's pin locations sequentially within its 'legs' coordinate array.
-                        - POWER SUPPLY: Locate power rails (+ve/Vcc and -ve/GND).
-                        - RESISTOR SIGNATURES: Treat all detected resistors as 10k ohm units for our math engine analysis.
-                        Return JSON mapping 'breadboard_corners' and 'components'.
+                        1. Identify the BREADBOARD boundaries: Provide the [y, x] coordinates for the four outer corners (top_left, top_right, bottom_right, bottom_left).
+                        2. Identify all components and jumper wires physically placed on the breadboard. Follow these strict naming constraints:
+                        - JUMPER WIRES: Label sequentially (e.g., 'Wire 1', 'Wire 2').
+                        - OPTIMIZATION ASSETS: Label uniquely (e.g., 'Resistor 1', 'LED 1', 'Capacitor 1', 'Slide-Switch 1', 'LDR 1').
+                        - PINS ARRAYS: Map each component's trace coordinates sequentially to identify hardware intersection rows.
+                        - SLIDE-SWITCH: Must find exactly 3 consecutive hardware mapping pins positioned in a linear matrix row or column.
+                        - RESISTORS COLOR SIGNATURE MATRIX:
+                          * Treat all resistors as 10k ohm baseline values for calculation mapping unless explicitly overridden.
+                        Return a clean structured JSON object holding 'breadboard_corners' and 'components'.
                         """
                     resp = client.models.generate_content(
                         model=MODEL_ID, contents=[raw_student, prompt],
@@ -484,16 +584,13 @@ if active_input:
                     )
                     
                     result = resp.parsed
-                    if isinstance(result, list) and len(result) > 0:
-                        result = result[0]
-                    
+                    if isinstance(result, list) and len(result) > 0: result = result[0]
                     st.session_state.breadboard_corners = result.get("breadboard_corners", {})
 
                     records = []
                     for item in result.get("components", []):
                         center = item.get('center', [500, 500])
-                        cy, cx = center if (isinstance(center, list) and len(center) == 2) else (500, 500)
-                            
+                        cy, cx = center[0], center[1] if isinstance(center, list) and len(center) == 2 else (500, 500)
                         legs = item.get('legs', [])
                         if isinstance(legs, list):
                             for i, leg in enumerate(legs):
@@ -509,9 +606,23 @@ if active_input:
                     st.session_state.step = 2
                     st.rerun()
 
-        # STEP 2: TUNING PIN PLACEMENTS
+        # --- STEP 2: THE PREDICTION GATE & ALIGNMENT LOCK ---
         elif st.session_state.step == 2:
             st.subheader(UI[l]["step2_title"])
+            
+            # Formulate the Predictive Validation Gate
+            st.markdown(f"### {UI[l]['prediction_header']}")
+            st.info(UI[l]["prediction_prompt"])
+            
+            hypotheses_options = [
+                "--- Select Hypothesis / 請選擇假設 ---",
+                "📈 Increase Performance Score (Brighter Light / Longer Fade) / 提升表現分數 (更亮 / 更耐)",
+                "📉 Decrease Performance Score (Dimmer Light / Faster Drain) / 降低表現分數 (變暗 / 變快放電)",
+                "💥 Short Circuit System Condition / 引發系統短路狀態"
+            ]
+            selected_hypothesis = st.selectbox("Your Hypothesis Choice / 你組別嘅預測：", hypotheses_options, key="quest_prediction")
+            
+            st.divider()
             edit_col, img_col = st.columns([1, 2])
                 
             updated_data = []
@@ -520,46 +631,44 @@ if active_input:
                     with st.expander(f"📍 {row['Component']}"):
                         lx = st.slider(f"Adjust X position", 0, 1000, int(row["LX"]), key=f"x{i}")
                         raw_ly = st.slider(f"Adjust Y position", 0, 1000, int(row["LY"]), key=f"y{i}")
-                        
-                        snapped_ly = raw_ly
-                        if st.session_state.hough_rows:
-                            snapped_ly = min(st.session_state.hough_rows, key=lambda ry: abs(ry - raw_ly))
-                        
+                        snapped_ly = min(st.session_state.hough_rows, key=lambda ry: abs(ry - raw_ly)) if st.session_state.hough_rows else raw_ly
                         if raw_ly != snapped_ly:
                             st.caption(UI[l]["snapped"].format(y=snapped_ly))
-                            
                         updated_data.append({"Component": row["Component"], "CX": row["CX"], "CY": row["CY"], "LX": lx, "LY": snapped_ly})
             edited_df = pd.DataFrame(updated_data)
 
             with img_col:
                 base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
                 st.session_state.img3 = draw_pins_on_image(base_grid_img, edited_df)
-                
                 tune_w, tune_h = st.session_state.img3.size
                 large_img3 = st.session_state.img3.resize((tune_w * 2, tune_h * 2), PILImage.Resampling.LANCZOS)
                 st.image(large_img3, caption=UI[l]["verify"], use_container_width=True)
 
             if st.button(UI[l]["step2_confirm"], type="primary"):
-                st.session_state.components_df = edited_df
-                st.session_state.analysis_result = None
-                st.session_state.img4 = None
-                st.session_state.step = 3
-                st.rerun()
+                if selected_hypothesis == hypotheses_options[0]:
+                    st.error(UI[l]["predict_err"])
+                else:
+                    st.session_state.components_df = edited_df
+                    st.session_state.locked_prediction = selected_hypothesis
+                    st.session_state.analysis_result = None
+                    st.session_state.img4 = None
+                    st.session_state.step = 3
+                    st.rerun()
 
-        # STEP 3: REVERSE ENGINEERING INTENT & VERIFICATION REVIEW
+        # --- STEP 3: TRANSPARENCY INTENT ASSURANCE VIEW ---
         elif st.session_state.step == 3:
-            st.subheader("Step 3: Intent & Connection Verification / 逆向意圖與落點確認")
+            st.subheader("Step 3: Intent Boundary Review / 檢查對齊與落點")
             
             if l == "en":
-                st.warning("🔍 **Review AI Mapping Alignment:** Confirm that the yellow marker locations perfectly capture your physical pins before calculating the circuit's explicit brightness value.")
+                st.warning("🔍 **Final check before computing gamified metrics!** Confirm that the yellow tracking dots match your physical layout intentions. Do not let vision calibration errors penalize your score.")
             else:
-                st.warning("🔍 **確認線路落點：** 請確保黃色標籤位置完全切合你嘅實體引腳，然後點擊下方開始計算電路嘅實際亮度數值。")
+                st.warning("🔍 **計算遊戲分數前最後檢查！** 請確認黃色追蹤點符合你實體線路嘅設計本意。唔好俾視覺對齊誤差影響你組嘅計分。")
             
             w3, h3 = st.session_state.img3.size
             large_img3_review = st.session_state.img3.resize((w3 * 2, h3 * 2), PILImage.Resampling.LANCZOS)
-            st.image(large_img3_review, caption="Alignment Precision View", use_container_width=True)
+            st.image(large_img3_review, caption="Enlarged Calibration HUD Verification Plot", use_container_width=True)
             
-            btn_text = "🤖 Run Brightness & Engineering Analysis" if l == "en" else "🤖 開始亮度與線路智能分析"
+            btn_text = "🤖 Fire Up Simulation Engine" if l == "en" else "🤖 啟動系統數值模擬引擎"
             
             col_btn_run, col_btn_back = st.columns([1, 4])
             with col_btn_run:
@@ -568,41 +677,37 @@ if active_input:
                         summary = st.session_state.components_df.to_string(index=False)
                         
                         prompt = f"""
-                            You are an autonomous engineering tutor analyzing a physical breadboard setup containing a single LED and a network of 10k ohm resistors.
+                            Task Arena Objective Target: {selected_task}. 
+                            Evaluate the following hardware configuration mapping table and compute simplified gamified metrics matching these strict optimization formulas:
                             
-                            Your tasks are:
-                            1. **INFER RESISTOR LAYOUT SYSTEM**: Count the number of active 10k ohm resistors connected to the LED loop. Determine if they are in Series, Parallel, or just a single resistor. Deduced title goes into 'inferred_circuit_name'.
-                            2. **NUMERICAL OHM'S LAW BRIGHTNESS ENGINE**: Perform an explicit step-by-step mathematical calculation of the loop's current to gauge visual brightness.
-                               - Baseline Constraints: Power Supply = 5V. Red LED forward voltage drop = 2V. This leaves exactly 3V across the resistor network (V_resistors = 5V - 2V = 3V).
-                               - Resistor Values: Every resistor is exactly 10,000 ohms.
-                               - Case 1 (1 Resistor): R_total = 10,000 ohms. Current (I) = 3V / 10,000 ohms = 0.3 mA.
-                               - Case 2 (2 Resistors in Series): R_total = 20,000 ohms. Current (I) = 3V / 20,000 ohms = 0.15 mA. (Dimmer!)
-                               - Case 3 (2 Resistors in Parallel): R_total = 5,000 ohms. Current (I) = 3V / 5,000 ohms = 0.6 mA. (Brighter!)
-                               - General Parallel Case (N Resistors in Parallel): R_total = 10,000 / N. Current (I) = 3V / R_total = 0.3 * N mA.
-                            3. **EXPLICIT STEP-BY-STEP OUTPUT**: In the 'feedback' string, output the exact mathematical sequence transparently so students can follow it:
-                               - Step 1: Voltage remaining for resistors (5V - 2V = 3V)
-                               - Step 2: Total combined resistance calculation based on their network layout.
-                               - Step 3: Final current delivered to the LED in mA.
-                            4. **VISUAL SEMANTIC CIRCUIT MAP**: Map the exact sequential trace connection path from the Positive Power Supply Rail to the Ground Rail into the string variable 'circuit_semantic_map'. Construct a neat, clean, vertically aligned ASCII text diagram flowchart.
-                               Example format for a single loop:
-                               [+5V Power Rail] 
-                                      │
-                               [Row 10: Resistor 1 Pin 1]
-                               [Row 10: Resistor 1 Pin 2]
-                                      │
-                               [Row 15: LED 1 Pin 1]
-                               [Row 15: LED 1 Pin 2]
-                                      │
-                               [GND Power Rail]
-                               
-                               If components are placed in parallel branches, split the ASCII diagram lanes symmetrically to show that electricity divides into separate concurrent pathways (e.g., branched lane paths).
-                            5. **MAXIMUM LUMINANCE CHALLENGE**: Actively encourage the student pair to rebuild the circuit to find the highest possible current using multiple 10k resistors. Explain clearly to them that adding resistors in parallel creates more lanes for electricity, dropping total resistance and making the LED shine brighter!
+                            1. TASK 1 (BRIGHTEST LED CHALLENGE):
+                               - Goal is to maximize 'brightness_score' (scale 0-200) by reducing 'traffic_jam_score' (resistance blockage, scale 0-100).
+                               - Adding 10k ohm resistors side-by-side in PARALLEL lowers total resistance. Each valid parallel branch lowers 'traffic_jam_score' and increases 'brightness_score' by +40 points.
+                               - Chaining resistors in a straight SERIES line increases 'traffic_jam_score' and drops 'brightness_score'.
+                               - Calculate the exact analytical current loop value in mA into 'calculated_current_ma'.
                             
-                            Bilingual Format:
-                            Provide the full math breakdown and text in the 'feedback' string with English first, followed by a newline, and then a formal written Cantonese translation.
+                            2. TASK 2 (LONGEST FADE-OUT CHALLENGE):
+                               - Goal is to maximize 'fade_duration_score' (scale 0-100) using the RC time formula.
+                               - Chaining resistors in a single-file SERIES line adds resistance, slowing discharge time constant. This drops 'traffic_jam_score' but boosts 'fade_duration_score' linearly (+25 per series resistor).
+                               - Parallel resistors empty the 'water_tank_score' (capacitance layer) instantly, resulting in 0 fade score.
+                               - Slide-switch must correctly act as a gate isolating battery power from the discharge loop.
                             
-                            Component Coordinates:
+                            3. TASK 3 (MAX LDR DIFFERENCE CHALLENGE):
+                               - Goal is to maximize 'ldr_delta_score' (scale 0-100).
+                               - Evaluated by checking for an inline 1k ohm protection floor resistor. If missing, flag critical burnout hazard and clamp score to 0.
+                            
+                            Pedagogical Scaffold Guardrail:
+                            - If structural faults (Open Circuits / Misaligned Rows) are detected, you MUST leverage SOCRATIC FEEDBACK. Do not provide row locations or coordinates. Ask guiding questions using water pipe/highway traffic metaphors.
+                            - If 100% correct, celebrate their telemetry score and invite them to enter the bonus Socratic Sandbox.
+                            
+                            Provide 'feedback' text string bilingually (English first, followed by Traditional Cantonese Chinese).
+                            
+                            Map the physical sequence into an ASCII text diagram for 'circuit_semantic_map'.
+                            
+                            Component Spatial Registry:
                             {summary}
+                            
+                            Return a valid JSON holding: 'inferred_circuit_name' (string), 'feedback' (string), 'circuit_semantic_map' (string), 'success_summary' (array of strings), 'error_summary' (array of strings), 'brightness_score' (int), 'traffic_jam_score' (int), 'water_tank_score' (int), 'ldr_delta_score' (int), 'calculated_current_ma' (number), and 'detected_errors' (array of object shapes with error_type and location array).
                             """
                         
                         try:
@@ -610,7 +715,7 @@ if active_input:
                                 model=MODEL_ID, 
                                 contents=[st.session_state.img3, prompt],
                                 config=types.GenerateContentConfig(
-                                    temperature=0.1,
+                                    temperature=0.0,
                                     response_mime_type="application/json",
                                     response_schema={
                                         "type": "OBJECT",
@@ -620,6 +725,10 @@ if active_input:
                                             "circuit_semantic_map": {"type": "STRING"},
                                             "success_summary": {"type": "ARRAY", "items": {"type": "STRING"}},
                                             "error_summary": {"type": "ARRAY", "items": {"type": "STRING"}},
+                                            "brightness_score": {"type": "INTEGER"},
+                                            "traffic_jam_score": {"type": "INTEGER"},
+                                            "water_tank_score": {"type": "INTEGER"},
+                                            "ldr_delta_score": {"type": "INTEGER"},
                                             "calculated_current_ma": {"type": "NUMBER"},
                                             "detected_errors": {
                                                 "type": "ARRAY", 
@@ -638,38 +747,47 @@ if active_input:
                             )
                             
                             result = resp.parsed
-                            if isinstance(result, list) and len(result) > 0:
-                                result = result[0]
-                            
+                            if isinstance(result, list) and len(result) > 0: result = result[0]
                             st.session_state.analysis_result = result
                             
+                            # Draw system alarms directly onto output HUD image layer
                             diag_img = st.session_state.img3.copy()
                             draw = ImageDraw.Draw(diag_img)
                             w, h = diag_img.size
-                            
                             errors = st.session_state.analysis_result.get("detected_errors", [])
                             for err in errors:
                                 loc = err.get("location", [])
                                 if len(loc) == 2:
-                                    draw.ellipse([loc[1]*w/1000-25, loc[0]*h/1000-25, loc[1]*w/1000+25, loc[0]*h/1000+25], outline="red", width=8)
+                                    px, py = loc[1] * w / 1000, loc[0] * h / 1000
+                                    draw.ellipse([px-25, py-25, px+25, py+25], outline="red", width=8)
                                         
                             st.session_state.img4 = diag_img
                             
-                            feedback_text = st.session_state.analysis_result.get("feedback", "")
-                            success_list = st.session_state.analysis_result.get("success_summary", [])
-                            error_list = st.session_state.analysis_result.get("error_summary", [])
-                            inferred_title = st.session_state.analysis_result.get("inferred_circuit_name", "Custom Invention")
-                            
+                            # Determine active optimization score parameter to log
+                            if "Task 1" in selected_task:
+                                final_score = result.get("brightness_score", 0)
+                            elif "Task 2" in selected_task:
+                                final_score = result.get("brightness_score", 0) # Fallback to standard tracking
+                            else:
+                                final_score = result.get("ldr_delta_score", 0)
+
+                            feedback_text = result.get("feedback", "")
+                            success_list = result.get("success_summary", [])
+                            error_list = result.get("error_summary", [])
                             report_card_img = create_visual_report(success_list, error_list, l)
                             
-                            save_to_drive(user_id, inferred_title, feedback_text, 
-                                          {"1": st.session_state.img1, "4": st.session_state.img4, "summary": report_card_img})
+                            # Automate background Drive capture sync pipeline
+                            save_to_drive(
+                                user_id, selected_task, feedback_text, 
+                                {"1": st.session_state.img1, "4": st.session_state.img4, "summary": report_card_img},
+                                st.session_state.locked_prediction, final_score
+                            )
                             
                             st.session_state.step = 4
                             st.rerun()
                             
                         except Exception as e:
-                            st.error(f"AI Numerical Analysis failed: {e}")
+                            st.error(f"Gamified Scoring Computation Terminated: {e}")
                             st.session_state.step = 2
                             st.rerun()
             with col_btn_back:
@@ -677,35 +795,49 @@ if active_input:
                     st.session_state.step = 2
                     st.rerun()
 
-        # STEP 4: LUMINANCE VERDICT DISPLAY
+        # --- STEP 4: ACTIVE TELEMETRY HUD ARENA ---
         elif st.session_state.step == 4:
             st.subheader(UI[l]["step3_title"])
             
-            inferred_title = st.session_state.analysis_result.get("inferred_circuit_name", "Detected System")
-            st.metric(label=UI[l]["inferred_task"], value=inferred_title)
+            # Render Gamified Instrumentation HUD Row Layout Cards
+            st.markdown(f"### {UI[l]['metrics_header']}")
+            res_data = st.session_state.analysis_result
             
-            current_val = st.session_state.analysis_result.get("calculated_current_ma", 0.0)
-            st.metric(label="Calculated LED Loop Current / 計算所得電路電流", value=f"{current_val:.3f} mA")
-            
+            m_col1, m_col2, m_col3 = st.columns(3)
+            with m_col1:
+                st.markdown(f"""<div class='metric-card'><h4>{UI[l]['metric_brightness']}</h4><h2>{res_data.get('brightness_score', 0)} PTS</h2></div>""", unsafe_allow_html=True)
+            with m_col2:
+                st.markdown(f"""<div class='metric-card' style='border-left-color: #ef4444;'><h4>{UI[l]['metric_resistance']}</h4><h2>{res_data.get('traffic_jam_score', 0)} %</h2></div>""", unsafe_allow_html=True)
+            with m_col3:
+                if "Task 2" in selected_task:
+                    st.markdown(f"""<div class='metric-card' style='border-left-color: #10b981;'><h4>{UI[l]['metric_capacitance']}</h4><h2>{res_data.get('water_tank_score', 0)} L</h2></div>""", unsafe_allow_html=True)
+                elif "Task 3" in selected_task:
+                    st.markdown(f"""<div class='metric-card' style='border-left-color: #f59e0b;'><h4>{UI[l]['metric_ldr_delta']}</h4><h2>{res_data.get('ldr_delta_score', 0)} Δ</h2></div>""", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""<div class='metric-card' style='border-left-color: #cccccc;'><h4>Calculated Current</h4><h2>{res_data.get('calculated_current_ma', 0.0):.3f} mA</h2></div>""", unsafe_allow_html=True)
+
+            st.divider()
+
             if st.session_state.img4 is not None:
                 st.image(st.session_state.img4, caption=UI[l]["ai_diag"], use_container_width=True)
                 
-                # Render the text-based schematic diagram
                 st.markdown(f"### {UI[l]['semantic_map_title']}")
-                ascii_diagram = st.session_state.analysis_result.get("circuit_semantic_map", "No Map Generated")
-                st.code(ascii_diagram, language="text")
+                st.code(res_data.get("circuit_semantic_map", "No Map Generated"), language="text")
                 
-                feedback_text = st.session_state.analysis_result.get("feedback", "")
-                st.info(feedback_text)
+                st.info(res_data.get("feedback", ""))
                 
-                success_list = st.session_state.analysis_result.get("success_summary", [])
-                error_list = st.session_state.analysis_result.get("error_summary", [])
+                success_list = res_data.get("success_summary", [])
+                error_list = res_data.get("error_summary", [])
                 
                 report_card_img = create_visual_report(success_list, error_list, l)
                 st.image(report_card_img, use_container_width=True)
 
+            # Check for structural baseline compliance before allowing entrance to Socratic Sandbox
             if not error_list:
-                st.success("🎯 Engineering Loop Verified! Challenge: Can you add more 10kΩ resistors in parallel to drive this mA value higher and make the brightest LED? / 🎯 電路安全驗證成功！大挑戰：你能不能組裝更多 10kΩ 電阻形成並聯網絡，將 mA 電流數值推向最高，挑戰做出全場最閃亮嘅 LED？")
+                st.success("🏆 Hardware Core Loop Stable! Optimization Sandbox unlocked! / 基礎結構安全無誤！優化競技場沙盒已解鎖！")
+                if st.button("🚀 Enter Progressive Socratic Sandbox / 進入蘇格拉底深度挑戰", type="primary"):
+                    st.session_state.step = 5
+                    st.rerun()
                     
             st.divider()
             col_b, col_c = st.columns(2)
@@ -720,5 +852,86 @@ if active_input:
                     reset_flow()
                     st.session_state.last_input_id = None
                     st.rerun()
+
+        # --- STEP 5: PERSONALIZED SOCRATIC CHALLENGE MATRIX ---
+        elif st.session_state.step == 5:
+            st.subheader("🚀 Socratic Challenge Sandbox / 蘇格拉底探究沙盒")
+            
+            challenges = get_socratic_challenges(selected_task, user_id)
+            
+            # Draw spiral chronological chat stream
+            for msg in st.session_state.socratic_chat:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
+                    
+            if st.session_state.socratic_q_idx < len(challenges):
+                current_q = challenges[st.session_state.socratic_q_idx]
+                
+                st.info(f"**Current Arena Challenge ({st.session_state.socratic_q_idx + 1}/{len(challenges)}):**\n\n{current_q}")
+                st.markdown("### Verify Experiment Modification / 驗證你嘅變項修改 🔬")
+                
+                student_text = st.text_area("What variable did you change, and what metric shifted on the board? / 你改動咗邊個變項？數據有咩轉變？")
+                
+                socratic_upload_mode = st.radio("Scan modification layout:", ["Camera 📸", "File 📁"], horizontal=True, label_visibility="collapsed", key=f"s_upload_{st.session_state.socratic_q_idx}")
+                if socratic_upload_mode.startswith("Camera"):
+                    proof_img = st.camera_input("Scan modified hardware alignment", key=f"s_cam_{st.session_state.socratic_q_idx}")
+                else:
+                    proof_img = st.file_uploader("Upload modification proof photo", type=["jpg", "png", "jpeg"], key=f"s_file_{st.session_state.socratic_q_idx}")
+                    
+                if st.button("Submit Experiment to Leaderboard Engine! 🔍", type="primary"):
+                    if not student_text or not proof_img:
+                        st.warning("Please submit both text reasoning logs and a photo scan! / 請同時提供文字推論紀錄與配置相片！")
+                    else:
+                        with st.spinner("AI checking modified structural execution mechanics..."):
+                            img_pil = process_uploaded_image(io.BytesIO(proof_img.getvalue()))
+                            history_context = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in st.session_state.socratic_chat])
+                            
+                            prompt = f"""
+                                Task Arena Master: {selected_task}
+                                Past Experiment Iterations Registry:
+                                {history_context}
+                                
+                                Targeted Socratic Objective: {current_q}
+                                Student Team In-Situ Reason Log: "{student_text}"
+                                
+                                Task Requirement: Check if the new circuit photo asset AND their textual reasoning log successfully prove they completed the TARGETED sandbox level.
+                                If successful -> Begin string output exactly with prefix '[VERIFICATION: PASSED]' followed by enthusiastic, bilingual text validating their learning.
+                                If failed -> Begin string output exactly with prefix '[VERIFICATION: FAILED]' followed by a strategic hint. Do not provide answers.
+                                """
+                            
+                            try:
+                                resp = client.models.generate_content(
+                                    model=MODEL_ID, 
+                                    contents=[img_pil, prompt],
+                                    config=types.GenerateContentConfig(temperature=0.4)
+                                )
+                                feedback = resp.text
+                                display_feedback = feedback.replace("[VERIFICATION: PASSED]", "").replace("[VERIFICATION: FAILED]", "").strip()
+                                
+                                st.session_state.socratic_chat.append({"role": "user", "content": f"📝 **Team Logic Log:** {student_text}\n*(Hardware Scan Uploaded)*"})
+                                st.session_state.socratic_chat.append({"role": "assistant", "content": display_feedback})
+                                
+                                if "[VERIFICATION: PASSED]" in feedback:
+                                    st.session_state.socratic_q_idx += 1
+                                    
+                                st.rerun()
+                                
+                            except Exception as e:
+                                st.error(f"Scaffold Evaluation Failed: {e}")
+                                
+            else:
+                st.success("🏆 Elite Circuit Master Status Achieved! Arena Challenges Completed! / 🏆 恭喜你完成全套大挑戰，榮登終極電路大師寶座！")
+                
+            st.divider()
+            col_b, col_c = st.columns(2)
+            with col_b:
+                if st.button("Return to Simulation HUD" if l == "en" else "返回主數據儀表面板"):
+                    st.session_state.step = 4
+                    st.rerun()
+            with col_c:
+                if st.button(UI[l]["new"]):
+                    reset_flow()
+                    st.session_state.last_input_id = None
+                    st.rerun()
 else:
-    st.error("Please upload an image or turn on the camera system to begin / 請上傳圖片或開啟相機鏡頭以開始")
+    st.error(UI[l]["upload_prompt"])
