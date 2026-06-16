@@ -473,7 +473,13 @@ if active_input:
                         - OTHER STRATEGIC ASSETS: Label them uniquely (e.g., 'Resistor 1', 'LED 1', 'Capacitor 1', 'Slide-Switch 1', 'LDR 1').
                         - PINS/LEGS SCHEMA: Order each component's pin locations sequentially within its 'legs' coordinate array.
                         - POWER SUPPLY RAIL LINKS: Locate positive (+ve/Vcc) and negative (-ve/GND) rail columns.
-                        - RESISTOR SIGNATURES: Treat all resistors as 10k ohm baseline values for calculation mapping unless overridden by task scope.
+                        - SLIDE-SWITCH MATRIX: Specifically scan for a linear 3-pin matrix unit for Task 2 controls.
+                        - CAPACITOR COMPLIANCE: Mark any storage cylinder component. Always assign 220uF properties.
+                        - HIGH-ACCURACY RESISTOR COLOR SIGNATURE MATRIX: Scan bands with maximum precision:
+                          * Contains a visual GREEN line/band -> Classify value string strictly as '150 ohm'.
+                          * Contains a visual ORANGE line/band -> Classify value string strictly as '300 ohm'.
+                          * Contains a visual RED line/band -> Classify value string strictly as '10k ohm'.
+                          * Absence of Green, Orange, or Red bands -> Classify value string strictly as '1k ohm'.
                         Return JSON mapping 'breadboard_corners' and 'components'.
                         """
                     resp = client.models.generate_content(
@@ -584,15 +590,18 @@ if active_input:
                         prompt = f"""
                             You are an autonomous engineering tutor reverse-engineering a student breadboard layout for: {selected_task}.
                             
-                            Perform an electrical analysis check and calculate performance metrics:
+                            Perform an electrical analysis check and calculate performance metrics based on these strict constraints:
                             1. TASK 1 (BRIGHTEST LED CHALLENGE):
-                               - Goal: Maximize 'brightness_score' by dropping total network resistance. Every valid parallel 10k lane drives current higher.
+                               - Goal: Maximize 'brightness_score' by dropping total network resistance. Every valid parallel lane drives current higher.
+                               - Read verified resistor data strings ('150 ohm', '300 ohm', '1k ohm', or '10k ohm').
                                - Compute loop current (mA) strictly based on Ohm's law: I = 3V / R_total.
-                               - SCORING CRITERIA formula: current_ma * 100. For instance, 0.300 mA = 30 marks, 0.600 mA = 60 marks, 0.900 mA = 90 marks. Write final marks integer into 'brightness_score'.
+                               - SCORING CRITERIA formula: current_ma * 100. Write final marks integer into 'brightness_score'.
                             2. TASK 2 (LONGEST FADE-OUT CHALLENGE):
-                               - Goal: Maximize 'fade_duration_score' (0-100) using the RC time formula with a 220uF capacitor.
-                               - Resistors in a SERIES chain add resistance, stretching discharge time window (+25 per series resistor). Parallel layout empties tank instantly.
-                               - Set 'water_tank_score' to show energy storage layer status.
+                               - HARDWARE COMPLIANCE: Must detect exactly one 3-pin Slide-Switch and one Capacitor. If missing, drop 'brightness_score' to 0 and flag error.
+                               - Capacitance value is fixed at exactly 220uF (0.00022 Farads). 
+                               - Resistors allowed: '150 ohm', '300 ohm', '1k ohm', or '10k ohm'. 
+                               - Math Formula: Calculate RC time constant τ = R_total * 0.00022. 
+                               - SCORING CRITERIA: Stacking higher resistors in a SERIES pipe chain stretches discharge duration (higher score up to 100 marks). Parallel combinations cause instant drainage leaks (0 marks). Write final integer score out of 100 directly into 'brightness_score'. Set 'water_tank_score' status block.
                             3. TASK 3 (MAX LDR DIFFERENCE CHALLENGE):
                                - Goal: Maximize 'ldr_delta_score' (0-100) light-to-dark contrast swing.
                                - Check for a 1k ohm inline protective series resistor. If missing, flag hazard and drop score to 0.
@@ -602,7 +611,7 @@ if active_input:
                             Format your math layout exactly as follows in both blocks:
                             - **Step 1: Electrical Pressure (Voltage Drop)** -> State that 5V Battery Supply minus 2V LED Forward Drop leaves exactly 3V for the resistor network.
                             - **Step 2: Traffic Jam Blockage (Total Resistance)** -> Explicitly show how the total resistance was derived based on their layout network configuration (e.g. adding end-to-end series loops vs side-by-side parallel lanes). Show numbers.
-                            - **Step 3: Final Flow Velocity (Ohm's Law Current & Marks Scaling)** -> Show Current = Voltage / Resistance. State the final resulting mA value and outline how multiplying it by 100 yields their final score out of 100 or 200 marks.
+                            - **Step 3: Final Flow Velocity (Ohm's Law Current or RC Time constant & Marks Scaling)** -> Show Current = Voltage / Resistance or Time Constant = R * C. State the final resulting mA or time value and outline how multiplying it scales their final score out of 100 or 200 marks.
                             - **Strategic Modification Hint**: Give direct strategic engineering clues on how they should alter their physical board components next time to drive metrics higher and scale up on the leaderboard!
                             
                             CRITICAL HYBRID SCHEMATIC MAP DIRECTIVE (For the 'circuit_semantic_map' block):
@@ -611,6 +620,8 @@ if active_input:
                             Strictly use these exact typographic schemas for component layers:
                             - Resistor Block: ─[═]─
                             - LED Block: ─▶│─
+                            - Slide-Switch Block: ─[██]─
+                            - Capacitor Block: ─┤│─
                             - Ground Rail Block: ⏚
                             
                             Example layout structure blueprint for multi-lane parallel networks:
