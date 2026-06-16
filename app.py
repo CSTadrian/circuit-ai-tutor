@@ -34,7 +34,7 @@ MODEL_ID = "gemini-3.1-pro-preview"
 PARENT_FOLDER_ID = "1_cn9lfvMLaozDTx8pvU6LP62J9AVFrvz"
 CSV_FILENAME = "circuit_audit_logs.csv"
 
-# --- UI LANGUAGE DICTIONARY (FULLY SYNCHRONIZED) ---
+# --- UI LANGUAGE DICTIONARY ---
 UI = {
     "en": {
         "title": "🔌 AI Circuit Quest: Optimization Arena",
@@ -140,7 +140,46 @@ UI = {
     }
 }
 
-# --- 2. GLOBAL ROUTINES & HELPERS (LEFT-ALIGNED FOR SCOPE INTEGRITY) ---
+# --- 2. AUTHENTICATION & INITIALIZATION (CACHED PROTECTION LABELS) ---
+@st.cache_resource
+def get_drive_creds():
+    oauth_info = st.secrets["google_oauth"]
+    creds = Credentials(
+        token=None,
+        refresh_token=oauth_info["refresh_token"],
+        client_id=oauth_info["client_id"],
+        client_secret=oauth_info["client_secret"],
+        token_uri="https://oauth2.googleapis.com/token",
+        scopes=['https://www.googleapis.com/auth/drive.file']
+    )
+    return creds
+
+def get_drive_service():
+    creds = get_drive_creds()
+    if not creds.valid:
+        creds.refresh(Request())
+    return build('drive', 'v3', credentials=creds, static_discovery=False)
+
+@st.cache_resource
+def init_genai_client():
+    if "gcp_service_account" in st.secrets:
+        try:
+            creds_info = st.secrets["gcp_service_account"]
+            credentials = service_account.Credentials.from_service_account_info(
+                creds_info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+            )
+            return genai.Client(vertexai=True, project=creds_info["project_id"], location="global", credentials=credentials)
+        except Exception as e:
+            st.error(f"Failed to compile GCP GenAI credentials: {e}")
+            st.stop()
+    else:
+        st.error("GCP Service Account layout configuration missing from secrets file!")
+        st.stop()
+
+# Bind the client strictly to global namespace space
+client = init_genai_client()
+
+# --- 3. SYSTEM GLOBAL ROUTINES & COGNITIVE LOGIC ENGINE ---
 def reset_flow():
     for key in ["step", "components_df", "analysis_result", "img1", "img2", "img3", "img4"]:
         if "df" in key: st.session_state[key] = pd.DataFrame()
@@ -369,50 +408,53 @@ def save_to_drive(user_id, inferred_task_name, ai_feedback, images_dict, predict
     except Exception as e:
         st.error(f"Drive Save Error: {e}")
 
+ANALOG_COHORTS = {
+    "Task 1": {
+        True: [
+            "Level 1 🟢 (The Twin Bridge): Connect TWO 10k ohm resistors side-by-side (parallel) across the lane. Look at your new Brightness score. Why did adding more resistance obstacles make the light brighter?\n\n第一關 🟢 (雙子橋樑): 將兩粒 10k ohm 電阻並排（並聯）跨接喺車道上。睇下你嘅亮度得分。點解加多粒阻礙物，粒燈反而會變光咗？",
+            "Level 2 🟡 (The Triple Lane): Add a THIRD 10k ohm resistor parallel to the first two. Observe the Traffic Jam score. Did the blockage grow thicker or thinner? Explain how electricity chooses its path!\n\n第二關 🟡 (三線行車): 加上第三粒 10k ohm 電阻進行並聯。觀察「交通擠塞」得分。究竟阻礙物係變厚咗定薄咗？試下解釋電流係點樣揀路行！",
+            "Level 3 🔴 (The Short Circuit Boundary): What happens if you remove all resistors and run a single straight wire into the LED? Predict the danger before you scan! How does a floor resistor protect a system?\n\n第三關 🔴 (短路邊界大挑戰): 如果抆走晒所有電阻，直接用一條導線駁入 LED 會發生咩事？喺掃描前先預測危險！限流底層電阻係點樣保護一個系統？"
+        ],
+        False: [
+            "Level 1 🟢 (The Series Trap): Connect two 10k ohm resistors end-to-end (series) in a single line before the LED. Scan it. Why did the Traffic Jam score double, and what happened to the brightness?\n\n第一關 🟢 (串聯陷阱): 將兩粒 10k ohm 電阻排成一條直線（串聯）接喺 LED 前面。掃描佢。點解「交通擠塞」分數翻咗倍，而亮度又發生咗咩事？",
+            "Level 2 🟡 (The Reversibility Loop): Keep the series resistors, but swap the physical layout order (LED first, then resistors). Does changing the structural order change the terminal brightness score? Why?\n\n第二關 🟡 (順序對調圈): 保留串聯電阻，但將硬件位置對調（LED 放前，電阻放後）。改變排隊次序會唔會影響最終嘅亮度得分？點解？",
+            "Level 3 🔴 (The Mixed Highway): Try to place two resistors in parallel, and then chain a third resistor in series right after them. Analyze your HUD metrics. How does this combined configuration scale your final current output?\n\n第三關 🔴 (混合高速公路): 嘗試將兩粒電阻並聯，然後喺後面串聯駁上第三粒電阻。分析你嘅 HUD 數據。呢種混合排列點樣影響你最終嘅電流輸出？"
+        ]
+    },
+    "Task 2": {
+        True: [
+            "Level 1 🟢 (The Tank Valve Test): Move your resistor so it sits directly inside the discharge path between the capacitor bucket and the LED. What changes on the fade-out timeline?\n\n第一關 🟢 (水箱水閥測試): 移動你嘅電阻，等佢直接坐喺電容水箱同 LED 之間嘅放電路徑上。變暗時間線產生咗咩變化？",
+            "Level 2 🟡 (The Dual Bucket Stack): Add a second, identical 220uF capacitor side-by-side (parallel) with the first one. Look at your Energy Tank metric. Did you increase water storage volume or pressure?\n\n第二關 🟡 (雙水箱並聯): 將第二粒相同嘅 220uF 電容並排（並聯）接上。睇下你嘅「儲能水箱」指標。你究竟係增加了儲水容量，定係增加了水壓？",
+            "Level 3 🔴 (The Latching Gate Logic): Toggle your slide-switch rapidly back and forth. Can you trace how the switch mechanically redirects power from the battery into the storage tank versus locking it into the LED loop?\n\n第三關 🔴 (鎖定閘門邏輯): 快速來回切換你嘅滑動開關掣。你能唔能追蹤到開關掣係點樣透過機械結構，將電力由電池導向儲能水箱，抑或鎖定喺 LED 迴路入面放電？"
+        ],
+        False: [
+            "Level 1 🟢 (The Resistor Pipe Chain): Chain two 10k ohm resistors in series inside the discharge loop. Does a longer single-file pipe line slow down the water flow or speed it up?\n\n第一關 🟢 (串聯水管鏈): 喺放電迴路裏面串聯裝上兩粒 10k ohm 電阻。排成單行、更長嘅水管線，會令水流減慢定加快？",
+            "Level 2 🟡 (The Parallel Leak): Arrange your resistors side-by-side in parallel instead of series inside the capacitor loop. Look at the fade clock. Why did the parallel highway empty the water tank instantly?\n\n第二關 🟡 (並聯洩漏): 喺電容迴路中將電阻改為並排（並聯）接駁。觀察變暗時鐘。點解並聯快線會令水箱一瞬間排空？",
+            "Level 3 🔴 (The Giant Dynamic Window): Try to maximize your layout using all available capacitors and resistors to construct the ultimate slow-drain setup. Can your team push the timeline past 10 seconds?\n\n第三關 🔴 (極限動態視窗): 嘗試用盡手頭上所有嘅電容同電阻，砌出終極慢速放電佈局。你嘅隊伍能唔能將時間線推高過 10 秒？"
+        ]
+    },
+    "Task 3": [
+        "Level 1 🟢 (The Total Shadow Void): Shield the LDR using an opaque cup or your thumb until room light drops to zero. Read the HUD delta score. What happens to an LDR's internal bridge blockage when darkness hits?\n\n第一關 🟢 (全黑盲區): 用不透明嘅杯或大拇指完全遮蓋 LDR 阻擋所有光線。讀取 HUD 擺幅得分。當黑暗襲來時，LDR 內部嘅「道路屏障」發生咗咩事？",
+        "Level 2 🟡 (The Protective Floor Boundary): Remove your 1k ohm inline series resistor and run only the LDR. Shine a blinding flashlight directly on it. Why does the AI sound an alarm, and how does a safety floor resistor prevent system burnouts?\n\n第二關 🟡 (安全底線邊界): 抆走 1k ohm 限流電阻，只留下 LDR。用強光電筒直接照射。點解 AI 會發出警告？安全底線電阻點樣防止系統元件燒毀？",
+        "Level 3 🔴 (The Dynamic Voltage Maximizer): Adjust your baseline fixed resistance layer to match your LDR's ambient room midpoint value. Can your team unlock the highest dynamic contrast swing code on the leaderboard?\n\n第三關 🔴 (動態擺幅極大化): 調整你嘅固定底層電阻，去配對你粒 LDR 喺課室光線下嘅中位數。你能不能解鎖龍虎榜上最高嘅對比度差值？"
+    ]
+}
+
 def get_socratic_challenges(task_name, user_id):
     try:
         uid_int = int(user_id)
     except (ValueError, TypeError):
         uid_int = 0
-        
     is_odd = (uid_int % 2 != 0)
-    challenges = []
-
+    
     if "Task 1" in task_name:
-        if is_odd:
-            challenges = [
-                "Level 1 🟢 (The Twin Bridge): Connect TWO 10k ohm resistors side-by-side (parallel) across the lane. Look at your new Brightness score. Why did adding more resistance obstacles make the light brighter?\n\n第一關 🟢 (雙子橋樑): 將兩粒 10k ohm 電阻並排（並聯）跨接喺車道上。睇下你嘅亮度得分。點解加多粒阻礙物，粒燈反而會變光咗？",
-                "Level 2 🟡 (The Triple Lane): Add a THIRD 10k ohm resistor parallel to the first two. Observe the Traffic Jam score. Did the blockage grow thicker or thinner? Explain how electricity chooses its path!\n\n第二關 🟡 (三線行車): 加上第三粒 10k ohm 電阻進行並聯。觀察「交通擠塞」得分。究竟阻礙物係變厚咗定薄咗？試下解釋電流係點樣揀路行！",
-                "Level 3 🔴 (The Short Circuit Boundary): What happens if you remove all resistors and run a single straight wire into the LED? Predict the danger before you scan! How does a floor resistor protect a system?\n\n第三關 🔴 (短路邊界大挑戰): 如果抆走晒所有電阻，直接用一條導線駁入 LED 會發生咩事？喺掃描前先預測危險！限流底層電阻係點樣保護一個系統？"
-            ]
-        else:
-            challenges = [
-                "Level 1 🟢 (The Series Trap): Connect two 10k ohm resistors end-to-end (series) in a single line before the LED. Scan it. Why did the Traffic Jam score double, and what happened to the brightness?\n\n第一關 🟢 (串聯陷阱): 將兩粒 10k ohm 電阻排成一條直線（串聯）接喺 LED 前面。掃描佢。點解「交通擠塞」分數翻咗倍，而亮度又發生咗咩事？",
-                "Level 2 🟡 (The Reversibility Loop): Keep the series resistors, but swap the physical layout order (LED first, then resistors). Does changing the structural order change the terminal brightness score? Why?\n\n第二關 🟡 (順序對調圈): 保留串聯電阻，但將硬件位置對調（LED 放前，電阻放後）。改變排隊次序會唔會影響最終嘅亮度得分？點解？",
-                "Level 3 🔴 (The Mixed Highway): Try to place two resistors in parallel, and then chain a third resistor in series right after them. Analyze your HUD metrics. How does this combined configuration scale your final current output?\n\n第三關 🔴 (混合高速公路): 嘗試將裝兩粒電阻並聯，然後喺後面串聯駁上第三粒電阻。分析你嘅 HUD 數據。呢種混合排列點樣影響你最終嘅電流輸出？"
-            ]
+        return ANALOG_COHORTS["Task 1"][is_odd]
     elif "Task 2" in task_name:
-        if is_odd:
-            challenges = [
-                "Level 1 🟢 (The Tank Valve Test): Move your resistor so it sits directly inside the discharge path between the capacitor bucket and the LED. What changes on the fade-out timeline?\n\n第一關 🟢 (水箱水閥測試): 移動你嘅電阻，等佢直接坐喺電容水箱同 LED 之間嘅放電路徑上。變暗時間線產生咗咩變化？",
-                "Level 2 🟡 (The Dual Bucket Stack): Add a second, identical 220uF capacitor side-by-side (parallel) with the first one. Look at your Energy Tank metric. Did you increase water storage volume or pressure?\n\n第二關 🟡 (雙水箱並聯): 將第二粒相同嘅 220uF 電容並排（並聯）接上。睇下你嘅「儲能水箱」指標。你究竟係增加了儲水容量，定係增加了水壓？",
-                "Level 3 🔴 (The Latching Gate Logic): Toggle your slide-switch rapidly back and forth. Can you trace how the switch mechanically redirects power from the battery into the storage tank versus locking it into the LED loop?\n\n第三關 🔴 (鎖定閘門邏輯): 快速來回切換你嘅滑動開關掣。你能唔能追蹤到開關掣係點樣透過機械結構，將電力由電池導向儲能水箱，抑或鎖定喺 LED 迴路入面放電？"
-            ]
-        else:
-            challenges = [
-                "Level 1 🟢 (The Resistor Pipe Chain): Chain two 10k ohm resistors in series inside the discharge loop. Does a longer single-file pipe line slow down the water flow or speed it up?\n\n第一關 🟢 (串聯水管鏈): 喺放電迴路裏面串聯裝上兩粒 10k ohm 電阻。排成單行、更長嘅水管線，會令水流減慢定加快？",
-                "Level 2 🟡 (The Parallel Leak): Arrange your resistors side-by-side in parallel instead of series inside the capacitor loop. Look at the fade clock. Why did the parallel highway empty the water tank instantly?\n\n第二關 🟡 (並聯洩漏): 喺電容迴路中將電阻改為並排（並聯）接駁。觀察變暗時鐘。點解並聯快線會令水箱一瞬間排空？",
-                "Level 3 🔴 (The Giant Dynamic Window): Try to maximize your layout using all available capacitors and resistors to construct the ultimate slow-drain setup. Can your team push the timeline past 10 seconds?\n\n第三關 🔴 (極限動態視窗): 嘗試用盡手頭上所有嘅電容同電阻，砌出終極慢速放電佈局。你嘅隊伍能唔能將時間線推高過 10 秒？"
-            ]
+        return ANALOG_COHORTS["Task 2"][is_odd]
     else:
-        challenges = [
-            "Level 1 🟢 (The Total Shadow Void): Shield the LDR using an opaque cup or your thumb until room light drops to zero. Read the HUD delta score. What happens to an LDR's internal bridge blockage when darkness hits?\n\n第一關 🟢 (全黑盲區): 用不透明嘅杯或大拇指完全遮蓋 LDR 阻擋所有光線。讀取 HUD 擺幅得分。當黑暗襲來時，LDR 內部嘅「道路屏障」發生咗咩事？",
-            "Level 2 🟡 (The Protective Floor Boundary): Remove your 1k ohm inline series resistor and run only the LDR. Shine a blinding flashlight directly on it. Why does the AI sound an alarm, and how does a safety floor resistor prevent system burnouts?\n\n第二關 🟡 (安全底線邊界): 抆走 1k ohm 限流電阻，只留下 LDR。用強光電筒直接照射。點解 AI 會發出警告？安全底線電阻點樣防止系統元件燒毀？",
-            "Level 3 🔴 (The Dynamic Voltage Maximizer): Adjust your baseline fixed resistance layer to match your LDR's ambient room midpoint value. Can your team unlock the highest dynamic contrast swing code on the leaderboard?\n\n第三關 🔴 (動態擺幅極大化): 調整你嘅固定底層電阻，去配對你粒 LDR 喺課室光線下嘅中位數。你能不能解鎖龍虎榜上最高嘅對比度差值？"
-        ]
-    return challenges
+        return ANALOG_COHORTS["Task 3"]
 
-# --- 3. SESSION STATE TRACKING MATRIX ---
+# --- 4. GLOBAL ENVIRONMENT CONTROLLER ---
 if "step" not in st.session_state: st.session_state.step = 1
 if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
 if "analysis_result" not in st.session_state: st.session_state.analysis_result = None
@@ -426,7 +468,6 @@ if "locked_prediction" not in st.session_state: st.session_state.locked_predicti
 for i in range(1, 5): 
     if f"img{i}" not in st.session_state: st.session_state[f"img{i}"] = None
 
-# --- 4. ENVIRONMENT ENVIRONMENT COMPILATION & SIDEBAR ---
 lang_select = st.radio("🌐", ["English", "繁體中文"], horizontal=True, label_visibility="collapsed")
 l = "en" if lang_select == "English" else "hk"
 
@@ -454,7 +495,7 @@ with st.sidebar:
     st.markdown(f"### {UI[l]['guide_title']}")
     st.markdown(UI[l]['guide_text'])
 
-# --- 5. MAIN ARCHITECTURE SYSTEM STATE MACHINE ---
+# --- 5. RUNTIME STATE MACHINE ---
 if active_input:
     current_input_id = getattr(active_input, "file_id", str(hash(active_input.getvalue())))
     
@@ -473,7 +514,7 @@ if active_input:
 
         is_camera_mode = (input_mode == "Camera 📸")
 
-        # --- STEP 1: COMPONENT LOGIC SCANNING ---
+        # --- STEP 1: COMPONENT TRACK ACQUISITION ---
         if st.session_state.step == 1:
             grid_visualization = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
             orig_w, orig_h = grid_visualization.size
@@ -550,7 +591,7 @@ if active_input:
                     st.session_state.step = 2
                     st.rerun()
 
-        # --- STEP 2: HYPOTHESIS HYPOTHESIS GATE & CALIBRATION LOCK ---
+        # --- STEP 2: PREDICTION GATE HYPOTHESIS ACCREDITATION ---
         elif st.session_state.step == 2:
             st.subheader(UI[l]["step2_title"])
             
@@ -598,7 +639,7 @@ if active_input:
                     st.session_state.step = 3
                     st.rerun()
 
-        # --- STEP 3: REAL-TIME SIMULATION & TRANSPARENT CALCULATION ---
+        # --- STEP 3: REVERSE ENGINEERING ALIGNMENT LOOP ---
         elif st.session_state.step == 3:
             st.subheader("Step 3: Intent & Connection Verification / 逆向意圖與落點確認")
             st.warning("🔍 Double-check pins before mapping / 評分前請細心核對")
@@ -725,12 +766,12 @@ if active_input:
                             st.error(f"AI Numerical Core Execution Failed: {e}")
                             st.session_state.step = 2
                             st.rerun()
-            with col_btn_back:
+            with st.sidebar:
                 if st.button(UI[l]["back"]):
                     st.session_state.step = 2
                     st.rerun()
 
-        # --- STEP 4: PERFORMANCE TELEMETRY HUD ---
+        # --- STEP 4: TELEMETRY PERFORMANCE HUD ---
         elif st.session_state.step == 4:
             st.subheader(UI[l]["step3_title"])
             
@@ -787,7 +828,7 @@ if active_input:
                     st.session_state.last_input_id = None
                     st.rerun()
 
-        # --- STEP 5: PERSONALIZED SOCRATIC MATRIX ---
+        # --- STEP 5: SPIRAL PROGRESSIVE SANDBOX ---
         elif st.session_state.step == 5:
             st.subheader("🚀 Socratic Challenge Sandbox / 蘇格拉底探究沙盒")
             
