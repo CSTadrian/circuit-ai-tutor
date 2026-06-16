@@ -325,7 +325,7 @@ def create_visual_report(successes, errors, lang):
     draw.text((50, 75), "✅ Optimization Wins / 表現出色嘅地方：", fill=(0, 128, 0))
     
     y_off = 110
-    for item in successes[:5]: 
+    for item in success_list if 'success_list' in locals() else successes[:5]: 
         draw.text((60, y_off), f"🌟 {item}", fill=(30, 30, 30))
         y_off += 30
 
@@ -333,7 +333,7 @@ def create_visual_report(successes, errors, lang):
     draw.text((50, 325), "🛠️ System Blockages to Inspect / 需要修正嘅屏障：", fill=(200, 100, 0))
     
     y_off = 360
-    for item in errors[:5]:
+    for item in error_list if 'error_list' in locals() else errors[:5]:
         draw.text((60, y_off), f"🔍 {item}", fill=(30, 30, 30))
         y_off += 30
         
@@ -398,7 +398,7 @@ def save_to_drive(user_id, inferred_task_name, ai_feedback, images_dict, score_a
     except Exception as e:
         st.error(f"Drive Save Error: {e}")
 
-# --- 4. GLOBAL ENVIRONMENT INITIALIZATION ---
+# --- 5. ENVIRONMENT INITIALIZATION ---
 if "step" not in st.session_state: st.session_state.step = 1
 if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
 if "analysis_result" not in st.session_state: st.session_state.analysis_result = None
@@ -409,34 +409,7 @@ if "last_input_id" not in st.session_state: st.session_state.last_input_id = Non
 for i in range(1, 5): 
     if f"img{i}" not in st.session_state: st.session_state[f"img{i}"] = None
 
-lang_select = st.radio("🌐", ["English", "繁體中文"], horizontal=True, label_visibility="collapsed")
-l = "en" if lang_select == "English" else "hk"
-
-st.title(UI[l]["title"])
-
-with st.sidebar:
-    st.header(UI[l]["setup"])
-    user_id = st.selectbox(UI[l]["user_id"], [f"{i:02d}" for i in range(1, 61)])
-    selected_task = st.selectbox("Select Arena / 選擇挑戰關卡", list(TASKS.keys()))
-    
-    st.divider()
-    input_mode = st.radio(UI[l]["input_mode"], ["Camera 📸", "File Upload 📁"], index=1, horizontal=True)
-    
-    if input_mode == "Camera 📸":
-        active_input = st.camera_input(UI[l]["camera"])
-    else:
-        active_input = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "heic"])
-        
-    st.divider()
-    if st.button(UI[l]["reset"]): 
-        reset_flow()
-        st.session_state.last_input_id = None
-        st.rerun()
-
-    st.markdown(f"### {UI[l]['guide_title']}")
-    st.markdown(UI[l]['guide_text'])
-
-# --- 5. RUNTIME STATE MACHINE ---
+# --- 6. RUNTIME STATE MACHINE ---
 if active_input:
     current_input_id = getattr(active_input, "file_id", str(hash(active_input.getvalue())))
     
@@ -470,13 +443,15 @@ if active_input:
                         1. Identify the BREADBOARD boundaries: Provide [y, x] coordinates for the four outer corners (top_left, top_right, bottom_right, bottom_left).
                         2. Identify all components and jumper wires physically placed on the breadboard. Follow these strict schema rules:
                         - JUMPER WIRES: Uniquely identify and label every single wire sequentially (e.g., 'Wire 1', 'Wire 2').
-                        - OTHER STRATEGIC ASSETS: Label them uniquely (e.g., 'Resistor 1', 'LED 1', 'Capacitor 1', 'Slide-Switch 1', 'Button 1').
+                        - OTHER STRATEGIC ASSETS: Label them uniquely (e.g., 'Resistor 1', 'LED 1', 'Capacitor 1', 'Slide-Switch 1', 'Button 1', 'Battery Box 1').
                         - PINS/LEGS SCHEMA: Order each component's pin locations sequentially within its 'legs' coordinate array.
-                        - POWER SUPPLY RAIL LINKS: Locate positive (+ve/Vcc) and negative (-ve/GND) rail columns.
-                        - CRITICAL SELECTOR INTERFACE DETECTION:
-                          * SLIDE-SWITCH: Specifically scan for a linear 3-pin component. Its pins MUST be positioned continuously in a single horizontal row or vertical column.
+                        - BATTERY BOX POWER SUPPLY EXPLICIT PIN LAWS: Scan for an external battery module or battery pins if present. 
+                          * You MUST strictly label the RED wire/pin node location coordinates as 'Battery Box 1 (Power +ve)'.
+                          * You MUST strictly label the BLACK wire/pin node location coordinates as 'Battery Box 1 (Power -ve)'.
+                          * If no physical external battery module is captured on the board, fallback safely to standard power rails column markings.
+                        - CRITICAL SELECTOR INTERFACE CONTINUITY LAWS:
+                          * SLIDE-SWITCH: Specifically scan for a 3-pin matrix component. Based on its layout axis orientation, you MUST assume its 3 legs are always continuous in a single horizontal row or a single vertical column without skipping holes.
                           * BUTTON / PUSH-BUTTON: A 4-pin square matrix component configuration that straddles the center divider groove of the board.
-                          * Do not mistake a 4-pin push-button for a 3-pin slide-switch. You must evaluate the exact count and continuous straight-line alignment of the pin nodes.
                         - CAPACITOR COMPLIANCE: Mark any storage cylinder component. Always assign 220uF properties.
                         - HIGH-ACCURACY RESISTOR COLOR SIGNATURE MATRIX: Scan bands with maximum precision:
                           * Contains a visual GREEN line/band -> Classify value string strictly as '150 ohm'.
@@ -609,6 +584,9 @@ if active_input:
                                - Goal: Maximize 'ldr_delta_score' (0-100) light-to-dark contrast swing.
                                - Check for a 1k ohm inline protective series resistor. If missing, flag hazard and drop score to 0.
                             
+                            POWER LOOP SOURCE TRACKING LAWS:
+                            - Trace loops originating from 'Battery Box 1 (Power +ve)' node to 'Battery Box 1 (Power -ve)' node if detected in registry summary. If absent, fallback to standard terminal strips and side distribution rails.
+                            
                             CRITICAL TRANSPARENT GRADED MATH REQUIREMENT (For the 'feedback' block):
                             You must expose the complete step-by-step calculation breakdown utilizing dual-coding (metaphors of highways/lanes for primary students, and formal algebraic formulas for secondary students) so the user pair understands exactly how to optimize their score next time.
                             Format your math layout exactly as follows in both blocks:
@@ -629,7 +607,7 @@ if active_input:
                             - Ground Rail Block: ⏚
                             
                             Example layout structure blueprint for multi-lane parallel networks:
-                                   [ 🔴 +5V Power Rail ]
+                                   [ 🔴 +5V Power Source ]
                                              │
                                    ┌─────────┴─────────┐
                                    │                   │
@@ -727,7 +705,7 @@ if active_input:
                             st.error(f"AI Numerical Core Execution Failed: {e}")
                             st.session_state.step = 2
                             st.rerun()
-            with st.sidebar:
+            with col_btn_back:
                 if st.button(UI[l]["back"]):
                     st.session_state.step = 2
                     st.rerun()
