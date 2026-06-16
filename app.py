@@ -34,7 +34,7 @@ MODEL_ID = "gemini-3.1-pro-preview"
 PARENT_FOLDER_ID = "1_cn9lfvMLaozDTx8pvU6LP62J9AVFrvz"
 CSV_FILENAME = "circuit_audit_logs.csv"
 
-# --- UI LANGUAGE DICTIONARY ---
+# --- UI LANGUAGE DICTIONARY (FULLY SYNCHRONIZED) ---
 UI = {
     "en": {
         "title": "🔌 AI Circuit Quest: Optimization Arena",
@@ -57,7 +57,7 @@ UI = {
         "snapped": "*(Leg auto-aligned to nearest horizontal lane: {y})*",
         "verify": "Verify Orange Paths & Yellow Target Pins (Snapped to Blue Lanes)",
         "step3_title": "📊 Step 3: Performance Telemetry HUD & Diagnosis",
-        "checking": "Calculating electrical network transformations...",
+        "checking": "Calculating electrical network transformations & processing Ohm's Law formulas...",
         "ai_diag": "AI Scan HUD: Red circles flag system blockages/open nodes",
         "semantic_map_title": "🗺️ Detected Circuit Semantic Layout Map",
         "save": "💾 Save Score to Drive",
@@ -108,7 +108,7 @@ UI = {
         "snapped": "*(引腳已自動對齊至最近嘅橫向車道：{y})*",
         "verify": "請核對橙色路徑與黃色接點（已對齊至淺藍色車道）",
         "step3_title": "📊 第三步：實時性能數據面板（HUD）與核心診斷",
-        "checking": "正在運算電路網絡之物理數據表現...",
+        "checking": "正在運算電路網絡之物理數據表現，並進行歐姆定律公式拆解...",
         "ai_diag": "AI 診斷面板：紅圈表示系統內部有斷開或懸空阻礙",
         "semantic_map_title": "🗺️ 偵測到嘅電路結構路徑圖",
         "save": "💾 儲存分數至 Drive",
@@ -140,37 +140,18 @@ UI = {
     }
 }
 
-# --- 2. AUTHENTICATION & INITIALIZATION ---
-@st.cache_resource
-def get_drive_creds():
-    oauth_info = st.secrets["google_oauth"]
-    creds = Credentials(
-        token=None,
-        refresh_token=oauth_info["refresh_token"],
-        client_id=oauth_info["client_id"],
-        client_secret=oauth_info["client_secret"],
-        token_uri="https://oauth2.googleapis.com/token",
-        scopes=['https://www.googleapis.com/auth/drive.file']
-    )
-    return creds
+# --- 2. GLOBAL ROUTINES & HELPERS (LEFT-ALIGNED FOR SCOPE INTEGRITY) ---
+def reset_flow():
+    for key in ["step", "components_df", "analysis_result", "img1", "img2", "img3", "img4"]:
+        if "df" in key: st.session_state[key] = pd.DataFrame()
+        elif "step" in key: st.session_state[key] = 1
+        else: st.session_state[key] = None
+    st.session_state.hough_rows = []
+    st.session_state.breadboard_corners = None
+    st.session_state.socratic_q_idx = 0
+    st.session_state.socratic_chat = []
+    st.session_state.locked_prediction = "None"
 
-def get_drive_service():
-    creds = get_drive_creds()
-    if not creds.valid:
-        creds.refresh(Request())
-    return build('drive', 'v3', credentials=creds, static_discovery=False)
-
-if "gcp_service_account" in st.secrets:
-    creds_info = st.secrets["gcp_service_account"]
-    credentials = service_account.Credentials.from_service_account_info(
-        creds_info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
-    )
-    client = genai.Client(vertexai=True, project=creds_info["project_id"], location="global", credentials=credentials)
-else:
-    st.error("GCP Service Account secrets not found!")
-    st.stop()
-
-# --- 3. COMPUTER VISION PROCESSORS & REPORT GENERATORS ---
 def detect_horizontal_rows(pil_img):
     if pil_img is None: return []
     img_cv = np.array(pil_img)
@@ -311,7 +292,7 @@ def create_visual_report(successes, errors, lang):
     draw.text((30, 20), title, fill=(0, 0, 0))
     
     draw.rectangle([30, 60, 770, 280], outline=(0, 150, 0), width=3, fill=(240, 255, 240))
-    draw.text((50, 75), "✅ Electrical Successes / 順利運作指標", fill=(0, 128, 0))
+    draw.text((50, 75), "✅ Optimization Wins / 表現出色嘅地方：", fill=(0, 128, 0))
     
     y_off = 110
     for item in successes[:5]: 
@@ -319,7 +300,7 @@ def create_visual_report(successes, errors, lang):
         y_off += 30
 
     draw.rectangle([30, 310, 770, 560], outline=(200, 100, 0), width=3, fill=(255, 250, 240))
-    draw.text((50, 325), "🛠️ Engineering Constraints / 硬件設計限制", fill=(200, 100, 0))
+    draw.text((50, 325), "🛠️ System Blockages to Inspect / 需要修正嘅屏障：", fill=(200, 100, 0))
     
     y_off = 360
     for item in errors[:5]:
@@ -383,12 +364,11 @@ def save_to_drive(user_id, inferred_task_name, ai_feedback, images_dict, predict
             media = MediaIoBaseUpload(io.BytesIO(updated_csv_bytes), mimetype='text/csv')
             service.files().update(fileId=file_id, media_body=media).execute()
             
-        st.toast("✅ Automatically saved to Google Drive leaderboard database!")
+        st.toast("🏆 Performance Synced and Saved to Leaderboard Drive!")
         
     except Exception as e:
         st.error(f"Drive Save Error: {e}")
 
-# --- 4. PROGRESSIVE SOCRATIC EXPERIMENT GENERATOR ---
 def get_socratic_challenges(task_name, user_id):
     try:
         uid_int = int(user_id)
@@ -409,7 +389,7 @@ def get_socratic_challenges(task_name, user_id):
             challenges = [
                 "Level 1 🟢 (The Series Trap): Connect two 10k ohm resistors end-to-end (series) in a single line before the LED. Scan it. Why did the Traffic Jam score double, and what happened to the brightness?\n\n第一關 🟢 (串聯陷阱): 將兩粒 10k ohm 電阻排成一條直線（串聯）接喺 LED 前面。掃描佢。點解「交通擠塞」分數翻咗倍，而亮度又發生咗咩事？",
                 "Level 2 🟡 (The Reversibility Loop): Keep the series resistors, but swap the physical layout order (LED first, then resistors). Does changing the structural order change the terminal brightness score? Why?\n\n第二關 🟡 (順序對調圈): 保留串聯電阻，但將硬件位置對調（LED 放前，電阻放後）。改變排隊次序會唔會影響最終嘅亮度得分？點解？",
-                "Level 3 🔴 (The Mixed Highway): Try to place two resistors in parallel, and then chain a third resistor in series right after them. Analyze your HUD metrics. How does this combined configuration scale your final current output?\n\n第三關 🔴 (混合高速公路): 嘗試將兩粒電阻並聯，然後喺後面串聯駁上第三粒電阻。分析你嘅 HUD 數據。呢種混合排列點樣影響你最終嘅電流輸出？"
+                "Level 3 🔴 (The Mixed Highway): Try to place two resistors in parallel, and then chain a third resistor in series right after them. Analyze your HUD metrics. How does this combined configuration scale your final current output?\n\n第三關 🔴 (混合高速公路): 嘗試將裝兩粒電阻並聯，然後喺後面串聯駁上第三粒電阻。分析你嘅 HUD 數據。呢種混合排列點樣影響你最終嘅電流輸出？"
             ]
     elif "Task 2" in task_name:
         if is_odd:
@@ -432,7 +412,7 @@ def get_socratic_challenges(task_name, user_id):
         ]
     return challenges
 
-# --- 5. GLOBAL SESSION STATE ENGINE ---
+# --- 3. SESSION STATE TRACKING MATRIX ---
 if "step" not in st.session_state: st.session_state.step = 1
 if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
 if "analysis_result" not in st.session_state: st.session_state.analysis_result = None
@@ -446,18 +426,7 @@ if "locked_prediction" not in st.session_state: st.session_state.locked_predicti
 for i in range(1, 5): 
     if f"img{i}" not in st.session_state: st.session_state[f"img{i}"] = None
 
-def reset_flow():
-    for key in ["step", "components_df", "analysis_result", "img1", "img2", "img3", "img4"]:
-        if "df" in key: st.session_state[key] = pd.DataFrame()
-        elif "step" in key: st.session_state[key] = 1
-        else: st.session_state[key] = None
-    st.session_state.hough_rows = []
-    st.session_state.breadboard_corners = None
-    st.session_state.socratic_q_idx = 0
-    st.session_state.socratic_chat = []
-    st.session_state.locked_prediction = "None"
-
-# --- 6. ENVIRONMENT COMPILATION & SIDEBAR CONTROL ---
+# --- 4. ENVIRONMENT ENVIRONMENT COMPILATION & SIDEBAR ---
 lang_select = st.radio("🌐", ["English", "繁體中文"], horizontal=True, label_visibility="collapsed")
 l = "en" if lang_select == "English" else "hk"
 
@@ -485,7 +454,7 @@ with st.sidebar:
     st.markdown(f"### {UI[l]['guide_title']}")
     st.markdown(UI[l]['guide_text'])
 
-# --- 7. MAIN STATE RUNTIME STATE MACHINE ---
+# --- 5. MAIN ARCHITECTURE SYSTEM STATE MACHINE ---
 if active_input:
     current_input_id = getattr(active_input, "file_id", str(hash(active_input.getvalue())))
     
@@ -504,7 +473,7 @@ if active_input:
 
         is_camera_mode = (input_mode == "Camera 📸")
 
-        # --- STEP 1: COMPONENT TRACE EXTRACTION ---
+        # --- STEP 1: COMPONENT LOGIC SCANNING ---
         if st.session_state.step == 1:
             grid_visualization = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
             orig_w, orig_h = grid_visualization.size
@@ -581,12 +550,12 @@ if active_input:
                     st.session_state.step = 2
                     st.rerun()
 
-        # --- STEP 2: HYPOTHESIS PREDICTION GATE & CALIBRATION LOCK ---
+        # --- STEP 2: HYPOTHESIS HYPOTHESIS GATE & CALIBRATION LOCK ---
         elif st.session_state.step == 2:
             st.subheader(UI[l]["step2_title"])
             
-            st.markdown("### 🔮 The Prediction Gate / 預測閘門")
-            st.info("Lock in your prediction hypothesis before the AI calculates system metrics! / 請先進行科學成果假設預測：")
+            st.markdown(f"### {UI[l]['prediction_header']}")
+            st.info(UI[l]["prediction_prompt"])
             
             hypotheses_options = [
                 "--- Select Hypothesis / 請選擇假設 ---",
@@ -620,7 +589,7 @@ if active_input:
 
             if st.button(UI[l]["step2_confirm"], type="primary"):
                 if selected_hypothesis == hypotheses_options[0]:
-                    st.error("Please lock in a valid hypothesis prediction choice first! / 請先選擇一個結果假設！")
+                    st.error(UI[l]["predict_err"])
                 else:
                     st.session_state.components_df = edited_df
                     st.session_state.locked_prediction = selected_hypothesis
@@ -629,7 +598,7 @@ if active_input:
                     st.session_state.step = 3
                     st.rerun()
 
-        # --- STEP 3: REVERSE ENGINEERING ALIGNMENT REVIEW ---
+        # --- STEP 3: REAL-TIME SIMULATION & TRANSPARENT CALCULATION ---
         elif st.session_state.step == 3:
             st.subheader("Step 3: Intent & Connection Verification / 逆向意圖與落點確認")
             st.warning("🔍 Double-check pins before mapping / 評分前請細心核對")
@@ -647,26 +616,34 @@ if active_input:
                         summary = st.session_state.components_df.to_string(index=False)
                         
                         prompt = f"""
-                            You are an autonomous engineering tutor reverse-engineering a student breadboard for: {selected_task}.
+                            You are an autonomous engineering tutor reverse-engineering a student breadboard layout for: {selected_task}.
                             
                             Perform an electrical analysis check and calculate performance metrics:
                             1. TASK 1 (BRIGHTEST LED CHALLENGE):
-                               - Goal: Maximize 'brightness_score' by dropping total network resistance. Every valid parallel resistor lane drives current higher.
-                               - Compute the loop current (mA) strictly based on Ohm's law: I = 3V / R_total.
-                               - SCORING CRITERIA: Scale the current directly into 'brightness_score' using the classroom formula: current_ma * 100. For instance, 0.300 mA = 30 marks.
+                               - Goal: Maximize 'brightness_score' by dropping total network resistance. Every valid parallel 10k lane drives current higher.
+                               - Compute loop current (mA) strictly based on Ohm's law: I = 3V / R_total.
+                               - SCORING CRITERIA formula: current_ma * 100. For instance, 0.300 mA = 30 marks, 0.600 mA = 60 marks, 0.900 mA = 90 marks. Write final marks integer into 'brightness_score'.
                             2. TASK 2 (LONGEST FADE-OUT CHALLENGE):
                                - Goal: Maximize 'fade_duration_score' (0-100) using the RC time formula with a 220uF capacitor.
-                               - Resistors in a SERIES chain add resistance, stretching the time constant (+25 per series resistor). Parallel layout empties tank instantly.
+                               - Resistors in a SERIES chain add resistance, stretching discharge time window (+25 per series resistor). Parallel layout empties tank instantly.
                                - Set 'water_tank_score' to show energy storage layer status.
                             3. TASK 3 (MAX LDR DIFFERENCE CHALLENGE):
                                - Goal: Maximize 'ldr_delta_score' (0-100) light-to-dark contrast swing.
                                - Check for a 1k ohm inline protective series resistor. If missing, flag hazard and drop score to 0.
                             
-                            Pedagogical Scaffolding Rule:
-                            - If any structural wiring errors exist, use written formal Cantonese and English SOCRATIC FEEDBACK in 'feedback'. Do not reveal row coordinate fixes. Use traffic/water bucket analogies.
+                            CRITICAL TRANSPARENT GRADED MATH REQUIREMENT (For the 'feedback' block):
+                            You must expose the complete step-by-step calculation breakdown utilizing dual-coding (metaphors of highways/lanes for primary students, and formal algebraic formulas for secondary students) so the user pair understands exactly how to optimize their score next time.
+                            Format your math layout exactly as follows in both blocks:
+                            - **Step 1: Electrical Pressure (Voltage Drop)** -> State that 5V Battery Supply minus 2V LED Forward Drop leaves exactly 3V for the resistor network.
+                            - **Step 2: Traffic Jam Blockage (Total Resistance)** -> Explicitly show how the total resistance was derived based on their layout network configuration (e.g. adding end-to-end series loops vs side-by-side parallel lanes). Show numbers.
+                            - **Step 3: Final Flow Velocity (Ohm's Law Current & Marks Scaling)** -> Show Current = Voltage / Resistance. State the final resulting mA value and outline how multiplying it by 100 yields their final score out of 100 or 200 marks.
+                            - **Strategic Modification Hint**: Give direct strategic engineering clues on how they should alter their physical board components next time to drive metrics higher and scale up on the leaderboard!
+                            
+                            Bilingual Format:
+                            Provide the full explanation string in 'feedback' with English text first, followed by a newline, then a formal written Cantonese translation.
                             
                             ASCII Text Map:
-                            Generate a clean vertically aligned text flow block for 'circuit_semantic_map' from positive power rail down to ground.
+                            Generate a clean vertically aligned text flowchart for 'circuit_semantic_map' from positive rail down to ground.
                             
                             Component Coordinates:
                             {summary}
@@ -753,7 +730,7 @@ if active_input:
                     st.session_state.step = 2
                     st.rerun()
 
-        # --- STEP 4: LIVE METRICS HUD & FEEDBACK ARENA ---
+        # --- STEP 4: PERFORMANCE TELEMETRY HUD ---
         elif st.session_state.step == 4:
             st.subheader(UI[l]["step3_title"])
             
@@ -791,7 +768,7 @@ if active_input:
                 st.image(report_card_img, use_container_width=True)
 
             if not error_list:
-                st.success("🏆 Hardware Core Loop Stable! Optimization Arena unlocked! / 基礎結構安全無誤！優化競技場沙盒已解鎖！")
+                st.success("🏆 Hardware Core Loop Stable! Optimization Sandbox unlocked! / 基礎結構安全無誤！優化競技場沙盒已解鎖！")
                 if st.button("🚀 Enter Progressive Socratic Sandbox / 進入蘇格拉底深度挑戰", type="primary"):
                     st.session_state.step = 5
                     st.rerun()
@@ -810,7 +787,7 @@ if active_input:
                     st.session_state.last_input_id = None
                     st.rerun()
 
-        # --- STEP 5: SPIRAL CHALLENGE MATRIX ---
+        # --- STEP 5: PERSONALIZED SOCRATIC MATRIX ---
         elif st.session_state.step == 5:
             st.subheader("🚀 Socratic Challenge Sandbox / 蘇格拉底探究沙盒")
             
