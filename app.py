@@ -828,69 +828,69 @@ if active_input:
                     st.session_state.last_input_id = None
                     st.rerun()
 
-        # --- STEP 5: SPIRAL PROGRESSIVE SANDBOX ---
-        elif st.session_state.step == 5:
-            st.subheader("🚀 Socratic Challenge Sandbox / 蘇格拉底探究沙盒")
+        # # --- STEP 5: SPIRAL PROGRESSIVE SANDBOX ---
+        # elif st.session_state.step == 5:
+        #     st.subheader("🚀 Socratic Challenge Sandbox / 蘇格拉底探究沙盒")
             
-            challenges = get_socratic_challenges(selected_task, user_id)
+        #     challenges = get_socratic_challenges(selected_task, user_id)
             
-            for msg in st.session_state.socratic_chat:
-                with st.chat_message(msg["role"]):
-                    st.markdown(msg["content"])
+        #     for msg in st.session_state.socratic_chat:
+        #         with st.chat_message(msg["role"]):
+        #             st.markdown(msg["content"])
                     
-            if st.session_state.socratic_q_idx < len(challenges):
-                current_q = challenges[st.session_state.socratic_q_idx]
-                st.info(f"**Current Arena Challenge ({st.session_state.socratic_q_idx + 1}/{len(challenges)}):**\n\n{current_q}")
+        #     if st.session_state.socratic_q_idx < len(challenges):
+        #         current_q = challenges[st.session_state.socratic_q_idx]
+        #         st.info(f"**Current Arena Challenge ({st.session_state.socratic_q_idx + 1}/{len(challenges)}):**\n\n{current_q}")
                 
-                st.markdown("### Verify Experiment Modification / 驗證你嘅變項修改 🔬")
-                student_text = st.text_area("What variable did you change, and what metric shifted on the board? / 你改動咗邊個變項？數據有咩轉變？")
+        #         st.markdown("### Verify Experiment Modification / 驗證你嘅變項修改 🔬")
+        #         student_text = st.text_area("What variable did you change, and what metric shifted on the board? / 你改動咗邊個變項？數據有咩轉變？")
                 
-                socratic_upload_mode = st.radio("Scan modification layout:", ["Camera 📸", "File 📁"], horizontal=True, label_visibility="collapsed", key=f"s_upload_{st.session_state.socratic_q_idx}")
-                if socratic_upload_mode.startswith("Camera"):
-                    proof_img = st.camera_input("Scan modified hardware alignment", key=f"s_cam_{st.session_state.socratic_q_idx}")
-                else:
-                    proof_img = st.file_uploader("Upload modification proof photo", type=["jpg", "png", "jpeg"], key=f"s_file_{st.session_state.socratic_q_idx}")
+        #         socratic_upload_mode = st.radio("Scan modification layout:", ["Camera 📸", "File 📁"], horizontal=True, label_visibility="collapsed", key=f"s_upload_{st.session_state.socratic_q_idx}")
+        #         if socratic_upload_mode.startswith("Camera"):
+        #             proof_img = st.camera_input("Scan modified hardware alignment", key=f"s_cam_{st.session_state.socratic_q_idx}")
+        #         else:
+        #             proof_img = st.file_uploader("Upload modification proof photo", type=["jpg", "png", "jpeg"], key=f"s_file_{st.session_state.socratic_q_idx}")
                     
-                if st.button("Submit Experiment to Leaderboard Engine! 🔍", type="primary"):
-                    if not student_text or not proof_img:
-                        st.warning("Please submit both text reasoning logs and a photo scan! / 請同時提供文字推論紀錄與配置相片！")
-                    else:
-                        with st.spinner("AI checking modified structural execution mechanics..."):
-                            img_pil = process_uploaded_image(io.BytesIO(proof_img.getvalue()))
-                            history_context = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in st.session_state.socratic_chat])
+        #         if st.button("Submit Experiment to Leaderboard Engine! 🔍", type="primary"):
+        #             if not student_text or not proof_img:
+        #                 st.warning("Please submit both text reasoning logs and a photo scan! / 請同時提供文字推論紀錄與配置相片！")
+        #             else:
+        #                 with st.spinner("AI checking modified structural execution mechanics..."):
+        #                     img_pil = process_uploaded_image(io.BytesIO(proof_img.getvalue()))
+        #                     history_context = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in st.session_state.socratic_chat])
                             
-                            prompt = f"""
-                                Task Arena Master: {selected_task}
-                                Past Experiment Iterations Registry:
-                                {history_context}
+        #                     prompt = f"""
+        #                         Task Arena Master: {selected_task}
+        #                         Past Experiment Iterations Registry:
+        #                         {history_context}
                                 
-                                Targeted Socratic Objective: {current_q}
-                                Student Team In-Situ Reason Log: "{student_text}"
+        #                         Targeted Socratic Objective: {current_q}
+        #                         Student Team In-Situ Reason Log: "{student_text}"
                                 
-                                Task Requirement: Check if the new circuit photo asset AND their textual reasoning log successfully prove they completed the TARGETED sandbox level.
-                                If successful -> Begin string output exactly with prefix '[VERIFICATION: PASSED]' followed by enthusiastic, bilingual text validating their learning.
-                                If failed -> Begin string output exactly with prefix '[VERIFICATION: FAILED]' followed by a strategic hint. Do not provide answers.
-                                """
+        #                         Task Requirement: Check if the new circuit photo asset AND their textual reasoning log successfully prove they completed the TARGETED sandbox level.
+        #                         If successful -> Begin string output exactly with prefix '[VERIFICATION: PASSED]' followed by enthusiastic, bilingual text validating their learning.
+        #                         If failed -> Begin string output exactly with prefix '[VERIFICATION: FAILED]' followed by a strategic hint. Do not provide answers.
+        #                         """
                             
-                            try:
-                                resp = client.models.generate_content(
-                                    model=MODEL_ID, 
-                                    contents=[img_pil, prompt],
-                                    config=types.GenerateContentConfig(temperature=0.4)
-                                )
-                                feedback = resp.text
-                                display_feedback = feedback.replace("[VERIFICATION: PASSED]", "").replace("[VERIFICATION: FAILED]", "").strip()
+        #                     try:
+        #                         resp = client.models.generate_content(
+        #                             model=MODEL_ID, 
+        #                             contents=[img_pil, prompt],
+        #                             config=types.GenerateContentConfig(temperature=0.4)
+        #                         )
+        #                         feedback = resp.text
+        #                         display_feedback = feedback.replace("[VERIFICATION: PASSED]", "").replace("[VERIFICATION: FAILED]", "").strip()
                                 
-                                st.session_state.socratic_chat.append({"role": "user", "content": f"📝 **Team Logic Log:** {student_text}\n*(Hardware Scan Uploaded)*"})
-                                st.session_state.socratic_chat.append({"role": "assistant", "content": display_feedback})
+        #                         st.session_state.socratic_chat.append({"role": "user", "content": f"📝 **Team Logic Log:** {student_text}\n*(Hardware Scan Uploaded)*"})
+        #                         st.session_state.socratic_chat.append({"role": "assistant", "content": display_feedback})
                                 
-                                if "[VERIFICATION: PASSED]" in feedback:
-                                    st.session_state.socratic_q_idx += 1
+        #                         if "[VERIFICATION: PASSED]" in feedback:
+        #                             st.session_state.socratic_q_idx += 1
                                     
-                                st.rerun()
+        #                         st.rerun()
                                 
-                            except Exception as e:
-                                st.error(f"Scaffold Evaluation Failed: {e}")
+        #                     except Exception as e:
+        #                         st.error(f"Scaffold Evaluation Failed: {e}")
                                 
             else:
                 st.success("🏆 Elite Circuit Master Status Achieved! Arena Challenges Completed! / 🏆 恭喜你完成全套大挑戰，榮登終極電路大師寶座！")
