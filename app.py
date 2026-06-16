@@ -34,13 +34,14 @@ MODEL_ID = "gemini-3.1-pro-preview"
 PARENT_FOLDER_ID = "1_cn9lfvMLaozDTx8pvU6LP62J9AVFrvz"
 CSV_FILENAME = "circuit_audit_logs.csv"
 
-# --- UI LANGUAGE DICTIONARY ---
+# --- UI LANGUAGE DICTIONARY (FIXED KEYERROR ALIGNMENT) ---
 UI = {
     "en": {
         "title": "🔌 AI Circuit Quest: Optimization Arena",
         "setup": "Game Setup",
         "user_id": "Select Team / User ID",
         "task": "Select Quest Arena",
+        "inferred_task": "AI Inferred Architecture",
         "target": "Target Strategy Worksheet Guide",
         "input_mode": "Capture Method",
         "mode_upload": "Upload Image",
@@ -91,6 +92,7 @@ UI = {
         "setup": "遊戲設定",
         "user_id": "選擇隊伍 / 學生 ID",
         "task": "選擇挑戰關卡",
+        "inferred_task": "AI 推斷嘅電路拓撲",
         "target": "目標任務工作紙指引",
         "input_mode": "輸入方式",
         "mode_upload": "上傳圖片",
@@ -426,7 +428,7 @@ def get_socratic_challenges(task_name, user_id):
         challenges = [
             "Level 1 🟢 (The Total Shadow Void): Shield the LDR using an opaque cup or your thumb until room light drops to zero. Read the HUD delta score. What happens to an LDR's internal bridge blockage when darkness hits?\n\n第一關 🟢 (全黑盲區): 用不透明嘅杯或大拇指完全遮蓋 LDR 阻擋所有光線。讀取 HUD 擺幅得分。當黑暗襲來時，LDR 內部嘅「道路屏障」發生咗咩事？",
             "Level 2 🟡 (The Protective Floor Boundary): Remove your 1k ohm inline series resistor and run only the LDR. Shine a blinding flashlight directly on it. Why does the AI sound an alarm, and how does a safety floor resistor prevent system burnouts?\n\n第二關 🟡 (安全底線邊界): 抆走 1k ohm 限流電阻，只留下 LDR。用強光電筒直接照射。點解 AI 會發出警告？安全底線電阻點樣防止系統元件燒毀？",
-            "Level 3 🔴 (The Dynamic Voltage Maximizer): Adjust your baseline fixed resistance layer to match your LDR's ambient room midpoint value. Can your team unlock the highest dynamic contrast swing code on the leaderboard?\n\n第三關 🔴 (動態擺幅極大化): 調整你嘅固定底層電阻，去配對你粒 LDR 喺課室光線下嘅中位數。你慢著能不能解鎖龍虎榜上最高嘅對比度差值？"
+            "Level 3 🔴 (The Dynamic Voltage Maximizer): Adjust your baseline fixed resistance layer to match your LDR's ambient room midpoint value. Can your team unlock the highest dynamic contrast swing code on the leaderboard?\n\n第三關 🔴 (動態擺幅極大化): 調整你嘅固定底層電阻，去配對你粒 LDR 喺課室光線下嘅中位數。你能不能解鎖龍虎榜上最高嘅對比度差值？"
         ]
     return challenges
 
@@ -630,7 +632,7 @@ if active_input:
         # --- STEP 3: REVERSE ENGINEERING ALIGNMENT REVIEW ---
         elif st.session_state.step == 3:
             st.subheader("Step 3: Intent & Connection Verification / 逆向意圖與落點確認")
-            st.warning(UI[l]["verify"])
+            st.warning("🔍 Double-check pins before mapping / 評分前請細心核對")
             
             w3, h3 = st.session_state.img3.size
             large_img3_review = st.session_state.img3.resize((w3 * 2, h3 * 2), PILImage.Resampling.LANCZOS)
@@ -721,7 +723,6 @@ if active_input:
                                         
                             st.session_state.img4 = diag_img
                             
-                            # Log core active metrics based on the current context window
                             if "Task 1" in selected_task:
                                 final_score = result.get("brightness_score", 0)
                             elif "Task 2" in selected_task:
@@ -760,7 +761,6 @@ if active_input:
             inferred_title = res_data.get("inferred_circuit_name", "Custom Setup Matrix")
             st.metric(label=UI[l]["inferred_task"], value=inferred_title)
             
-            # Formulate the 3-column game HUD telemetry blocks
             m_col1, m_col2, m_col3 = st.columns(3)
             with m_col1:
                 st.markdown(f"""<div class='metric-card'><h4>{UI[l]['metric_brightness']}</h4><h2>{res_data.get('brightness_score', 0)} PTS</h2></div>""", unsafe_allow_html=True)
