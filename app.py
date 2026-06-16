@@ -470,10 +470,13 @@ if active_input:
                         1. Identify the BREADBOARD boundaries: Provide [y, x] coordinates for the four outer corners (top_left, top_right, bottom_right, bottom_left).
                         2. Identify all components and jumper wires physically placed on the breadboard. Follow these strict schema rules:
                         - JUMPER WIRES: Uniquely identify and label every single wire sequentially (e.g., 'Wire 1', 'Wire 2').
-                        - OTHER STRATEGIC ASSETS: Label them uniquely (e.g., 'Resistor 1', 'LED 1', 'Capacitor 1', 'Slide-Switch 1', 'LDR 1').
+                        - OTHER STRATEGIC ASSETS: Label them uniquely (e.g., 'Resistor 1', 'LED 1', 'Capacitor 1', 'Slide-Switch 1', 'Button 1').
                         - PINS/LEGS SCHEMA: Order each component's pin locations sequentially within its 'legs' coordinate array.
                         - POWER SUPPLY RAIL LINKS: Locate positive (+ve/Vcc) and negative (-ve/GND) rail columns.
-                        - SLIDE-SWITCH MATRIX: Specifically scan for a linear 3-pin matrix unit for Task 2 controls.
+                        - CRITICAL SELECTOR INTERFACE DETECTION:
+                          * SLIDE-SWITCH: Specifically scan for a linear 3-pin component. Its pins MUST be positioned continuously in a single horizontal row or vertical column.
+                          * BUTTON / PUSH-BUTTON: A 4-pin square matrix component configuration that straddles the center divider groove of the board.
+                          * Do not mistake a 4-pin push-button for a 3-pin slide-switch. You must evaluate the exact count and continuous straight-line alignment of the pin nodes.
                         - CAPACITOR COMPLIANCE: Mark any storage cylinder component. Always assign 220uF properties.
                         - HIGH-ACCURACY RESISTOR COLOR SIGNATURE MATRIX: Scan bands with maximum precision:
                           * Contains a visual GREEN line/band -> Classify value string strictly as '150 ohm'.
@@ -597,11 +600,11 @@ if active_input:
                                - Compute loop current (mA) strictly based on Ohm's law: I = 3V / R_total.
                                - SCORING CRITERIA formula: current_ma * 100. Write final marks integer into 'brightness_score'.
                             2. TASK 2 (LONGEST FADE-OUT CHALLENGE):
-                               - HARDWARE COMPLIANCE: Must detect exactly one 3-pin Slide-Switch and one Capacitor. If missing, drop 'brightness_score' to 0 and flag error.
-                               - Capacitance value is fixed at exactly 220uF (0.00022 Farads). 
-                               - Resistors allowed: '150 ohm', '300 ohm', '1k ohm', or '10k ohm'. 
-                               - Math Formula: Calculate RC time constant τ = R_total * 0.00022. 
-                               - SCORING CRITERIA: Stacking higher resistors in a SERIES pipe chain stretches discharge duration (higher score up to 100 marks). Parallel combinations cause instant drainage leaks (0 marks). Write final integer score out of 100 directly into 'brightness_score'. Set 'water_tank_score' status block.
+                               - CRITICAL INTERFACE VALIDATION: This task strictly demands a 3-pin Slide-Switch to mechanically toggle loops. If the student placed a 4-pin Push-Button ('Button') on the board instead, this is a critical asset violation. You MUST immediately inject an error item into 'detected_errors' with error_type 'Component Asset Mismatch', completely override and force 'brightness_score' to 0, and output this exact bilingual Socratic hint inside the 'feedback' string:
+                                 "It looks like you are trying to route your energy tank using a temporary bridge (a 4-pin button) instead of a 3-lane crossroad gate (a slide-switch). Look closely at your components—which one has 3 legs to redirect the flow of electricity?\n\n睇落你正喺度嘗試用一條臨時橋樑（4腳按鈕）去引導你個儲能水箱，而唔係用一個三線路口閘門（滑動開關）。細心睇吓你手頭上嘅零件——邊一個擁有 3 隻引腳可以幫電流轉向？"
+                               - If a valid 3-pin switch is active, verify that it separates the circuit into a battery charging path and a capacitor discharging path. 
+                               - Capacitance is fixed at 220uF (0.00022 F). Read resistor values ('150 ohm', '300 ohm', '1k ohm', '10k ohm'). 
+                               - Math Formula: Calculate RC time constant τ = R_total * 0.00022. Stacking higher resistance in a series chain slows leakage time and drives the score higher up to 100 marks. Parallel paths cause instant tank leakage (0 marks). Write the final integer score into 'brightness_score'. Set 'water_tank_score'.
                             3. TASK 3 (MAX LDR DIFFERENCE CHALLENGE):
                                - Goal: Maximize 'ldr_delta_score' (0-100) light-to-dark contrast swing.
                                - Check for a 1k ohm inline protective series resistor. If missing, flag hazard and drop score to 0.
@@ -621,6 +624,7 @@ if active_input:
                             - Resistor Block: ─[═]─
                             - LED Block: ─▶│─
                             - Slide-Switch Block: ─[██]─
+                            - Push-Button Block: ─[░░]─
                             - Capacitor Block: ─┤│─
                             - Ground Rail Block: ⏚
                             
