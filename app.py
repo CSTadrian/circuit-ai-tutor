@@ -325,7 +325,7 @@ def create_visual_report(successes, errors, lang):
     draw.text((50, 75), "✅ Optimization Wins / 表現出色嘅地方：", fill=(0, 128, 0))
     
     y_off = 110
-    for item in success_list if 'success_list' in locals() else successes[:5]: 
+    for item in successes[:5]: 
         draw.text((60, y_off), f"🌟 {item}", fill=(30, 30, 30))
         y_off += 30
 
@@ -333,7 +333,7 @@ def create_visual_report(successes, errors, lang):
     draw.text((50, 325), "🛠️ System Blockages to Inspect / 需要修正嘅屏障：", fill=(200, 100, 0))
     
     y_off = 360
-    for item in error_list if 'error_list' in locals() else errors[:5]:
+    for item in errors[:5]:
         draw.text((60, y_off), f"🔍 {item}", fill=(30, 30, 30))
         y_off += 30
         
@@ -398,7 +398,7 @@ def save_to_drive(user_id, inferred_task_name, ai_feedback, images_dict, score_a
     except Exception as e:
         st.error(f"Drive Save Error: {e}")
 
-# --- 5. ENVIRONMENT INITIALIZATION ---
+# --- 4. GLOBAL ENVIRONMENT INITIALIZATION ---
 if "step" not in st.session_state: st.session_state.step = 1
 if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
 if "analysis_result" not in st.session_state: st.session_state.analysis_result = None
@@ -409,7 +409,38 @@ if "last_input_id" not in st.session_state: st.session_state.last_input_id = Non
 for i in range(1, 5): 
     if f"img{i}" not in st.session_state: st.session_state[f"img{i}"] = None
 
-# --- 6. RUNTIME STATE MACHINE ---
+# 🌟 CRITICAL: 全局初始化變數安全鎖，防止 Streamlit 在異步刷新時觸發 NameError 🌟
+active_input = None
+
+# 語系切換
+lang_select = st.radio("🌐", ["English", "繁體中文"], horizontal=True, label_visibility="collapsed")
+l = "en" if lang_select == "English" else "hk"
+
+st.title(UI[l]["title"])
+
+with st.sidebar:
+    st.header(UI[l]["setup"])
+    user_id = st.selectbox(UI[l]["user_id"], [f"{i:02d}" for i in range(1, 61)])
+    selected_task = st.selectbox("Select Arena / 選擇挑戰關卡", list(TASKS.keys()))
+    
+    st.divider()
+    input_mode = st.radio(UI[l]["input_mode"], ["Camera 📸", "File Upload 📁"], index=1, horizontal=True)
+    
+    if input_mode == "Camera 📸":
+        active_input = st.camera_input(UI[l]["camera"])
+    else:
+        active_input = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "heic"])
+        
+    st.divider()
+    if st.button(UI[l]["reset"]): 
+        reset_flow()
+        st.session_state.last_input_id = None
+        st.rerun()
+
+    st.markdown(f"### {UI[l]['guide_title']}")
+    st.markdown(UI[l]['guide_text'])
+
+# --- 5. RUNTIME STATE MACHINE ---
 if active_input:
     current_input_id = getattr(active_input, "file_id", str(hash(active_input.getvalue())))
     
@@ -576,7 +607,7 @@ if active_input:
                                - SCORING CRITERIA formula: current_ma * 100. Write final marks integer into 'brightness_score'.
                             2. TASK 2 (LONGEST FADE-OUT CHALLENGE):
                                - CRITICAL INTERFACE VALIDATION: This task strictly demands a 3-pin Slide-Switch to mechanically toggle loops. If the student placed a 4-pin Push-Button ('Button') on the board instead, this is a critical asset violation. You MUST immediately inject an error item into 'detected_errors' with error_type 'Component Asset Mismatch', completely override and force 'brightness_score' to 0, and output this exact bilingual Socratic hint inside the 'feedback' string:
-                                 "It looks like you are trying to route your energy tank using a temporary bridge (a 4-pin button) instead of a 3-lane crossroad gate (a slide-switch). Look closely at your components—which one has 3 legs to redirect the flow of electricity?\n\n睇落你正喺度嘗試用一條臨時橋樑（4腳按鈕）去引導你個儲能水箱，而唔係用一個三線路口閘門（滑動開關）。細心睇吓你手頭上嘅零件——邊一個擁有 3 隻引腳可以幫電流轉向？"
+                                 "It looks like you are trying to route your energy tank using a temporary bridge (a 4-pin button) instead of a 3-lane crossroad gate (a slide-switch). Look closely at your components—which one has 3 legs to redirect the flow of electricity?\\n\\n睇落你正喺度嘗試用一條臨時橋樑（4腳按鈕）去引導你個儲能水箱，而唔係用一個三線路口閘門（滑動開關）。細心睇吓你手頭上嘅零件——邊一個擁有 3 隻引腳可以幫電流轉向？"
                                - If a valid 3-pin switch is active, verify that it separates the circuit into a battery charging path and a capacitor discharging path. 
                                - Capacitance is fixed at 220uF (0.00022 F). Read resistor values ('150 ohm', '300 ohm', '1k ohm', '10k ohm'). 
                                - Math Formula: Calculate RC time constant τ = R_total * 0.00022. Stacking higher resistance in a series chain slows leakage time and drives the score higher up to 100 marks. Parallel paths cause instant tank leakage (0 marks). Write the final integer score into 'brightness_score'. Set 'water_tank_score'.
