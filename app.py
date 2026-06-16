@@ -99,7 +99,7 @@ UI = {
         "schematic": "挑戰參考電路圖",
         "your_circuit": "你嘅線路掃描（淺藍色線 = 麵包板內部已連通車道）",
         "step1_btn": "🔍 第一步：掃描零件結構拓撲",
-        "analyzing": "AI 引擎正喺度逆向解構你嘅硬件佈局...",
+        "analyzing": "AI 引擎正喺度逆向解隔你嘅硬件佈局...",
         "step2_title": "⚙️ 第二步：微調引腳位置（自動對齊橫向車道）",
         "step2_confirm": "🔒 鎖定佈局並計算模擬得分",
         "snapped": "*(引腳已自動對齊至最近嘅橫向車道：{y})*",
@@ -204,7 +204,7 @@ def detect_horizontal_rows(pil_img):
 
     window_size = max(int(height * 0.005), 5)
     kernel = np.ones(window_size) / window_size
-    smoothed_sums = np Convolve = np.convolve(row_sums, kernel, mode='same')
+    smoothed_sums = np.convolve(row_sums, kernel, mode='same')
 
     min_peak_distance = max(int(height * 0.012), 10)
     threshold_val = np.max(smoothed_sums) * 0.08 
@@ -375,7 +375,7 @@ def save_to_drive(user_id, inferred_task_name, ai_feedback, images_dict, score_a
             csv_bytes = new_row.to_csv(index=False).encode('utf-8')
             meta = {'name': CSV_FILENAME, 'parents': [PARENT_FOLDER_ID]}
             media = MediaIoBaseUpload(io.BytesIO(csv_bytes), mimetype='text/csv')
-            service.files().create(body=meta, media_body=meta).execute()
+            service.files().create(body=meta, media_body=media).execute()
         else:
             file_id = items[0]['id']
             request = service.files().get_media(fileId=file_id)
@@ -637,6 +637,22 @@ if active_input:
                             - Special Push-Button Block: ─[░░]─ (Label internal states clearly: Horiz if Unpressed / Vert+Diag if Pressed)
                             - Capacitor Block: ─┤│─
                             - Ground Rail Block: ⏚
+                            
+                            Example layout structure blueprint for multi-lane parallel networks:
+                                   [ 🔴 +5V Power Source ]
+                                             │
+                                   ┌─────────┴─────────┐
+                                   │                   │
+                             [ 🚧 Resistor 1 ]   [ 🚧 Resistor 2 ]
+                               ─[═]─ 10kΩ          ─[═]─ 10kΩ
+                                   │                   │
+                                   └─────────┬─────────┘
+                                             │
+                                      [ 💡 LED 1 ]
+                                        ─▶│─ (Red)
+                                             │
+                                   [ 🔵 0V Ground Rail ]
+                                             ⏚
                             
                             Bilingual Format:
                             Provide the full explanation string in 'feedback' with English text first, followed by a newline, then a formal written Cantonese translation.
