@@ -892,8 +892,8 @@ if active_input:
         #                     except Exception as e:
         #                         st.error(f"Scaffold Evaluation Failed: {e}")
                                 
-            else:
-                st.success("🏆 Elite Circuit Master Status Achieved! Arena Challenges Completed! / 🏆 恭喜你完成全套大挑戰，榮登終極電路大師寶座！")
+            # else:
+            #     st.success("🏆 Elite Circuit Master Status Achieved! Arena Challenges Completed! / 🏆 恭喜你完成全套大挑戰，榮登終極電路大師寶座！")
                 
             st.divider()
             col_b, col_c = st.columns(2)
