@@ -53,13 +53,13 @@ UI = {
         "step1_btn": "🔍 Step 1: Scan Component Architecture",
         "analyzing": "AI Engine reverse-engineering hardware topology...",
         "step2_title": "⚙️ Step 2: Fine-Tune Pin Connections (Auto-Snapping Rows)",
-        "step2_confirm": "🔒 Lock Setup & Predict Outcome",
+        "step2_confirm": "🔒 Lock Layout & Calculate Score",
         "snapped": "*(Leg auto-aligned to nearest horizontal lane: {y})*",
         "verify": "Verify Orange Paths & Yellow Target Pins (Snapped to Blue Lanes)",
         "step3_title": "📊 Step 3: Performance Telemetry HUD & Diagnosis",
         "checking": "Calculating electrical network transformations & processing Ohm's Law formulas...",
         "ai_diag": "AI Scan HUD: Red circles flag system blockages/open nodes",
-        "semantic_map_title": "🗺️ Detected Circuit Semantic Layout Map",
+        "semantic_map_title": "🗺️ Detected Circuit Schematic Map",
         "save": "💾 Save Score to Drive",
         "back": "🔙 Modify Hardware",
         "new": "🎉 Choose Next Quest",
@@ -70,17 +70,14 @@ UI = {
         **Quest Loop:**
         1. Select Arena & Submit Hardware Configuration Photo.
         2. Scan Architecture (Step 1) to build digital structural map.
-        3. Clear the **Prediction Gate** (Step 2) to unlock live simulation data.
-        4. Read Telemetry HUD and execute optimization adjustments to break room records!
+        3. Adjust pin alignments (Step 2) to match breadboard lanes.
+        4. Read Telemetry HUD (Step 4) and execute optimization adjustments to break room records!
         
         **HUD Telemetry Icons:**
         * 🔴 **Red Ring:** System structural break (Open Circuit / Floating Node).
         * 🟦 **Blue Frame:** Component asset structural mismatch.
         * 🟡 **Yellow Ring:** Axis orientation or directional polarity failure.
         """,
-        "prediction_header": "🔮 The Prediction Gate",
-        "prediction_prompt": "Before the AI Engine simulates your circuit, your team must lock in a structural hypothesis choice. What will this configuration change do?",
-        "predict_err": "Please select a hypothesis choice before confirming your setup!",
         "metrics_header": "🏎️ Live Performance Metrics & Scoreboard",
         "metric_brightness": "💡 Current-to-Marks Score",
         "metric_resistance": "🚧 Traffic Jam Thickness (Resistance Blockage)",
@@ -104,7 +101,7 @@ UI = {
         "step1_btn": "🔍 第一步：掃描零件結構拓撲",
         "analyzing": "AI 引擎正喺度逆向解構你嘅硬件佈局...",
         "step2_title": "⚙️ 第二步：微調引腳位置（自動對齊橫向車道）",
-        "step2_confirm": "🔒 鎖定佈局並進行成果預測",
+        "step2_confirm": "🔒 鎖定佈局並計算模擬得分",
         "snapped": "*(引腳已自動對齊至最近嘅橫向車道：{y})*",
         "verify": "請核對橙色路徑與黃色接點（已對齊至淺藍色車道）",
         "step3_title": "📊 第三步：實時性能數據面板（HUD）與核心診斷",
@@ -121,7 +118,7 @@ UI = {
         **核心玩法循環：**
         1. 選擇關卡並提交硬件配置相片。
         2. 掃描結構（第一步）以建立數位電路網絡地圖。
-        3. 通過 **「預測閘門」**（第二步）鎖定假設，以解鎖實時模擬數據。
+        3. 微調引腳落點位置（第二步）。
         4. 解讀 HUD 數據指標，即時優化線路去衝擊全班龍虎榜紀錄！
         
         **面板圖示說明：**
@@ -129,9 +126,6 @@ UI = {
         * 🟦 **藍框：** 元件型號錯誤或阻值不符。
         * 🟡 **黃圈：** 方向性極性接反或軸向打橫放錯。
         """,
-        "prediction_header": "🔮 預測閘門 (Prediction Gate)",
-        "prediction_prompt": "喺 AI 引擎幫你運行模擬之前，你嘅隊伍必須先鎖定一個結構性假設。你認為今次改動會帶嚟咩結果？",
-        "predict_err": "請先選擇一個結果假設，先可以鎖定並確認佈局！",
         "metrics_header": "🏎️ 實時系統性能指標與計分板 (HUD)",
         "metric_brightness": "💡 電流對照得分 (Marks)",
         "metric_resistance": "🚧 交通擠塞厚度 (總電阻屏障)",
@@ -176,7 +170,7 @@ def init_genai_client():
         st.error("GCP Service Account layout configuration missing from secrets file!")
         st.stop()
 
-# Global API Reference Holder
+# Initialize Client Instantiation
 client = init_genai_client()
 
 # --- 3. SYSTEM CORE ROUTINES ---
@@ -187,7 +181,6 @@ def reset_flow():
         else: st.session_state[key] = None
     st.session_state.hough_rows = []
     st.session_state.breadboard_corners = None
-    st.session_state.locked_prediction = "None"
 
 def detect_horizontal_rows(pil_img):
     if pil_img is None: return []
@@ -346,7 +339,7 @@ def create_visual_report(successes, errors, lang):
         
     return img
 
-def save_to_drive(user_id, inferred_task_name, ai_feedback, images_dict, prediction_made, score_achieved):
+def save_to_drive(user_id, inferred_task_name, ai_feedback, images_dict, score_achieved):
     service = get_drive_service()
     hk_tz = pytz.timezone('Asia/Hong_Kong')
     hk_time_str = datetime.now(hk_tz).strftime('%Y-%m-%d %H:%M:%S')
@@ -369,7 +362,6 @@ def save_to_drive(user_id, inferred_task_name, ai_feedback, images_dict, predict
             "User ID": user_id, 
             "Time": hk_time_str, 
             "Task Arena": inferred_task_name,
-            "Prediction Made": prediction_made,
             "Optimization Score": score_achieved,
             "Raw": f"{file_prefix}_1.png", 
             "Final": f"{file_prefix}_4.png", 
@@ -406,19 +398,17 @@ def save_to_drive(user_id, inferred_task_name, ai_feedback, images_dict, predict
     except Exception as e:
         st.error(f"Drive Save Error: {e}")
 
-# --- 6. GLOBAL ENVIRONMENT INITIALIZATION ---
+# --- 4. GLOBAL ENVIRONMENT INITIALIZATION ---
 if "step" not in st.session_state: st.session_state.step = 1
 if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
 if "analysis_result" not in st.session_state: st.session_state.analysis_result = None
 if "hough_rows" not in st.session_state: st.session_state.hough_rows = []
 if "breadboard_corners" not in st.session_state: st.session_state.breadboard_corners = None
 if "last_input_id" not in st.session_state: st.session_state.last_input_id = None
-if "locked_prediction" not in st.session_state: st.session_state.locked_prediction = "None"
 
 for i in range(1, 5): 
     if f"img{i}" not in st.session_state: st.session_state[f"img{i}"] = None
 
-# LANG SELECTOR
 lang_select = st.radio("🌐", ["English", "繁體中文"], horizontal=True, label_visibility="collapsed")
 l = "en" if lang_select == "English" else "hk"
 
@@ -446,7 +436,7 @@ with st.sidebar:
     st.markdown(f"### {UI[l]['guide_title']}")
     st.markdown(UI[l]['guide_text'])
 
-# --- 7. MAIN STATE RUNTIME MACHINE ---
+# --- 5. RUNTIME STATE MACHINE ---
 if active_input:
     current_input_id = getattr(active_input, "file_id", str(hash(active_input.getvalue())))
     
@@ -465,7 +455,7 @@ if active_input:
 
         is_camera_mode = (input_mode == "Camera 📸")
 
-        # --- STEP 1: LOGIC TOPOLOGY SCANNING ---
+        # --- STEP 1: COMPONENT TRACK ACQUISITION ---
         if st.session_state.step == 1:
             grid_visualization = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
             orig_w, orig_h = grid_visualization.size
@@ -540,25 +530,12 @@ if active_input:
                     base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
                     st.session_state.img2 = draw_pins_on_image(base_grid_img, st.session_state.components_df)
                     st.session_state.step = 2
-                    st.header("")
                     st.rerun()
 
-        # --- STEP 2: HYPOTHESIS PREDICTION GATE ---
+        # --- STEP 2: FINE-TUNING PIN PLACEMENTS ---
         elif st.session_state.step == 2:
             st.subheader(UI[l]["step2_title"])
             
-            st.markdown(f"### {UI[l]['prediction_header']}")
-            st.info(UI[l]["prediction_prompt"])
-            
-            hypotheses_options = [
-                "--- Select Hypothesis / 請選擇假設 ---",
-                "📈 Optimize Performance Score (Brighter Light / Longer Fade Window) / 提升表現分數 (更亮 / 更耐)",
-                "📉 Lower Performance Score (Dimmer Light / Faster Drainage) / 降低表現分數 (變暗 / 變快放電)",
-                "💥 Short Circuit Node Condition / 引發系統短路狀態"
-            ]
-            selected_hypothesis = st.selectbox("Your Team's Prediction / 你組別嘅預測：", hypotheses_options, key="quest_prediction")
-            
-            st.divider()
             edit_col, img_col = st.columns([1, 2])
                 
             updated_data = []
@@ -581,17 +558,13 @@ if active_input:
                 st.image(large_img3, caption=UI[l]["verify"], use_container_width=True)
 
             if st.button(UI[l]["step2_confirm"], type="primary"):
-                if selected_hypothesis == hypotheses_options[0]:
-                    st.error(UI[l]["predict_err"])
-                else:
-                    st.session_state.components_df = edited_df
-                    st.session_state.locked_prediction = selected_hypothesis
-                    st.session_state.analysis_result = None
-                    st.session_state.img4 = None
-                    st.session_state.step = 3
-                    st.rerun()
+                st.session_state.components_df = edited_df
+                st.session_state.analysis_result = None
+                st.session_state.img4 = None
+                st.session_state.step = 3
+                st.rerun()
 
-        # --- STEP 3: ANALYTICAL ENGINE & TRANSFORMATION CALCULATIONS ---
+        # --- STEP 3: REAL-TIME SIMULATION & HYBRID SCHEMATIC MAPPER ---
         elif st.session_state.step == 3:
             st.subheader("Step 3: Intent & Connection Verification / 逆向意圖與落點確認")
             st.warning("🔍 Double-check pins before mapping / 評分前請細心核對")
@@ -632,11 +605,32 @@ if active_input:
                             - **Step 3: Final Flow Velocity (Ohm's Law Current & Marks Scaling)** -> Show Current = Voltage / Resistance. State the final resulting mA value and outline how multiplying it by 100 yields their final score out of 100 or 200 marks.
                             - **Strategic Modification Hint**: Give direct strategic engineering clues on how they should alter their physical board components next time to drive metrics higher and scale up on the leaderboard!
                             
+                            CRITICAL HYBRID SCHEMATIC MAP DIRECTIVE (For the 'circuit_semantic_map' block):
+                            Generate a vertically aligned flowchart in 'circuit_semantic_map' using Unicode box characters (│, ─, ┌, ┐, ├, ┤, ┴, ┬). 
+                            You MUST utilize a hybrid approach that lists the descriptive component name, a context emoji, and its official professional electrical blueprint schematic text symbol directly underneath.
+                            Strictly use these exact typographic schemas for component layers:
+                            - Resistor Block: ─[═]─
+                            - LED Block: ─▶│─
+                            - Ground Rail Block: ⏚
+                            
+                            Example layout structure blueprint for multi-lane parallel networks:
+                                   [ 🔴 +5V Power Rail ]
+                                             │
+                                   ┌─────────┴─────────┐
+                                   │                   │
+                             [ 🚧 Resistor 1 ]   [ 🚧 Resistor 2 ]
+                               ─[═]─ 10kΩ          ─[═]─ 10kΩ
+                                   │                   │
+                                   └─────────┬─────────┘
+                                             │
+                                      [ 💡 LED 1 ]
+                                        ─▶│─ (Red)
+                                             │
+                                   [ 🔵 0V Ground Rail ]
+                                             ⏚
+                            
                             Bilingual Format:
                             Provide the full explanation string in 'feedback' with English text first, followed by a newline, then a formal written Cantonese translation.
-                            
-                            ASCII Text Map:
-                            Generate a clean vertically aligned text flowchart for 'circuit_semantic_map' from positive rail down to ground.
                             
                             Component Coordinates:
                             {summary}
@@ -708,7 +702,7 @@ if active_input:
                             save_to_drive(
                                 user_id, selected_task, feedback_text, 
                                 {"1": st.session_state.img1, "4": st.session_state.img4, "summary": report_card_img},
-                                st.session_state.locked_prediction, final_score
+                                final_score
                             )
                             
                             st.session_state.step = 4
@@ -718,12 +712,12 @@ if active_input:
                             st.error(f"AI Numerical Core Execution Failed: {e}")
                             st.session_state.step = 2
                             st.rerun()
-            with col_btn_back:
+            with st.sidebar:
                 if st.button(UI[l]["back"]):
                     st.session_state.step = 2
                     st.rerun()
 
-        # --- STEP 4: THE ULTIMATE TELEMETRY SCORE HUD ARENA ---
+        # --- STEP 4: LIVE METRICS HUD ARENA ---
         elif st.session_state.step == 4:
             st.subheader(UI[l]["step3_title"])
             
@@ -733,7 +727,6 @@ if active_input:
             
             m_col1, m_col2, m_col3 = st.columns(3)
             with m_col1:
-                # Direct scaling output to marks dashboard layout
                 st.markdown(f"""<div class='metric-card'><h4>{UI[l]['metric_brightness']}</h4><h2>{res_data.get('brightness_score', 0)} MARKS</h2></div>""", unsafe_allow_html=True)
             with m_col2:
                 st.markdown(f"""<div class='metric-card' style='border-left-color: #ef4444;'><h4>{UI[l]['metric_resistance']}</h4><h2>{res_data.get('traffic_jam_score', 0)} %</h2></div>""", unsafe_allow_html=True)
@@ -753,7 +746,6 @@ if active_input:
                 st.markdown(f"### {UI[l]['semantic_map_title']}")
                 st.code(res_data.get("circuit_semantic_map", "No Map Generated"), language="text")
                 
-                # Exposes step-by-step mathematical reasoning block safely here
                 st.info(res_data.get("feedback", ""))
                 
                 success_list = res_data.get("success_summary", [])
@@ -763,7 +755,7 @@ if active_input:
                 st.image(report_card_img, use_container_width=True)
 
             if not error_list:
-                st.success("🏆 Hardware Optimization Registered Successfully! Modify layout or choose another quest arena to continue. / 🏆 線路線路優化運算成功！你可以繼續修改線路挑機高分，或者選擇解鎖新任務！")
+                st.success("🏆 Hardware Optimization Registered Successfully! Modify layout or choose another quest arena to continue. / 🏆 線路線路優化運算成功！你可以繼續修改線路挑戰更高分數，或者選擇解鎖新任務！")
                     
             st.divider()
             col_b, col_c = st.columns(2)
