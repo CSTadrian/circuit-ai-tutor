@@ -182,6 +182,28 @@ def reset_flow():
     st.session_state.hough_rows = []
     st.session_state.breadboard_corners = None
 
+def enhance_wire_visibility_clahe(pil_img):
+    """
+    Applies CLAHE locally within the LAB color space Luminance channel.
+    Maximizes contrast profiles of thin silver/copper component paths 
+    without destroying original resistor color signatures.
+    """
+    if pil_img is None: return None
+    img_np = np.array(pil_img)
+    
+    # Convert image format safely from RGB to LAB space
+    lab_matrix = cv2.cvtColor(img_np, cv2.COLOR_RGB2LAB)
+    l_chan, a_chan, b_chan = cv2.split(lab_matrix)
+    
+    # Configure adaptive histogram local window bounds (tileGridSize=(8,8) balances glare control)
+    clahe_engine = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    enhanced_l = clahe_engine.apply(l_chan)
+    
+    # Merge structural layers and revert conversion to crisp source RGB array
+    merged_lab = cv2.merge((enhanced_l, a_chan, b_chan))
+    output_rgb = cv2.cvtColor(merged_lab, cv2.COLOR_LAB2RGB)
+    return PILImage.fromarray(output_rgb)
+
 def detect_horizontal_rows(pil_img):
     if pil_img is None: return []
     img_cv = np.array(pil_img)
@@ -249,6 +271,8 @@ def process_uploaded_image(file_input):
         if max(img.size) > MAX_SAFE_DIM:
             img.thumbnail((MAX_SAFE_DIM, MAX_SAFE_DIM), PILImage.Resampling.LANCZOS)
             
+        # 🚀 Execute Adaptive Contrast Equalization filter to optimize wire pixel profiles 🚀
+        img = enhance_wire_visibility_clahe(img)
         return img
     except Exception as e:
         st.error(f"Image Load Failed: {e}")
@@ -605,7 +629,7 @@ if active_input:
                                - Goal: Maximize 'brightness_score' by dropping total network resistance. Every valid parallel lane drives current higher.
                                - Read verified resistor data strings ('150 ohm', '300 ohm', '1k ohm', or '10k ohm').
                                - Compute loop current (mA) strictly based on Ohm's law: I = 3V / R_total.
-                               - SCORING CRITERIA formula: current_ma * 100. Write final marks integer into 'brightness_score'.
+                               - SCORING CRITERIA formula: current_ma * 100. For instance, 0.300 mA = 30 marks, 0.600 mA = 60 marks, 0.900 mA = 90 marks. Write final marks integer into 'brightness_score'.
                             2. TASK 2 (LONGEST FADE-OUT CHALLENGE):
                                - SPECIAL INTERFACE STATE MACHINE SIMULATION: This task demands a 4-pin 'Special Button 1' and one Capacitor.
                                - Capacitance is fixed at 220uF (0.00022 F). Read resistor values ('150 ohm', '300 ohm', '1k ohm', '10k ohm').
@@ -763,7 +787,7 @@ if active_input:
                 else:
                     st.markdown(f"""<div class='metric-card' style='border-left-color: #cccccc;'><h4>Calculated Current</h4><h2>{res_data.get('calculated_current_ma', 0.0):.3f} mA</h2></div>""", unsafe_allow_html=True)
 
-            st.divider()
+            st.sidebar.divider()
 
             if st.session_state.img4 is not None:
                 st.image(st.session_state.img4, caption=UI[l]["ai_diag"], use_container_width=True)
