@@ -22,15 +22,25 @@ import random
 
 # --- 1. CONFIGURATION & TASK SETUP ---
 TASKS = {
-    "Task 1: Basic LED Circuit": "task1_led.png",
-    "Task 2: LED in Series": "task2_series_led.png",
-    "Task 3: Parallel LED Setup": "task3_parallel_led.png",
-    "Task 4: Switch Control": "task4_switch.png",
-    "Task 5: Button Control": "task5_button.png",
-    "Task 6: Capacitor": "task6_capacitor.png",
-    "Exam 1": "exam1.png",
-    "Exam 2": "exam2.png",
-    "Exam 3": "exam3.png"
+    "Task 1a: Basic LED Circuit": "task1_led.png",
+    "Task 1b: Resistors in series": "series_resistor.png",
+    "Task 1c: Resistors in parallel": "parallel_resistor.png",
+    "Task 1 Challenge: Brightest LED with 10k ohm": "",
+    "Task 2a: Button Control": "task5_button.png",
+    "Task 2b: Capacitor": "task6_capacitor.png",
+    "Task 2 Challenge: LED Fades Out": "", 
+    "Task 3a: Bright-activated LED": "bright_LDR.png",
+    "Task 3b: Dark-activated LED": "dark_LDR.png",
+    "Task 3 Challenge: Largest difference in LED's light intensity": ""
+    
+    # "Task 2: LED in Series": "task2_series_led.png",
+    # "Task 3: Parallel LED Setup": "task3_parallel_led.png",
+    # "Task 4: Switch Control": "task4_switch.png",
+    # "Task 5: Button Control": "task5_button.png",
+    # "Task 6: Capacitor": "task6_capacitor.png",
+    # "Exam 1": "exam1.png",
+    # "Exam 2": "exam2.png",
+    # "Exam 3": "exam3.png"
 }
 
 DATA_FOLDER = "data"
