@@ -99,7 +99,7 @@ UI = {
         "schematic": "挑戰參考電路圖",
         "your_circuit": "你嘅線路掃描（淺藍色線 = 麵包板內部已連通車道）",
         "step1_btn": "🔍 第一步：掃描零件結構拓撲",
-        "analyzing": "AI 引擎正喺度逆向解隔你嘅硬件佈局...",
+        "analyzing": "AI 引擎正喺度逆向解構你嘅硬件佈局...",
         "step2_title": "⚙️ 第二步：微調引腳位置（自動對齊橫向車道）",
         "step2_confirm": "🔒 鎖定佈局並計算模擬得分",
         "snapped": "*(引腳已自動對齊至最近嘅橫向車道：{y})*",
@@ -182,28 +182,6 @@ def reset_flow():
     st.session_state.hough_rows = []
     st.session_state.breadboard_corners = None
 
-def enhance_wire_visibility_clahe(pil_img):
-    """
-    Applies CLAHE locally within the LAB color space Luminance channel.
-    Maximizes contrast profiles of thin silver/copper component paths 
-    without destroying original resistor color signatures.
-    """
-    if pil_img is None: return None
-    img_np = np.array(pil_img)
-    
-    # Convert image format safely from RGB to LAB space
-    lab_matrix = cv2.cvtColor(img_np, cv2.COLOR_RGB2LAB)
-    l_chan, a_chan, b_chan = cv2.split(lab_matrix)
-    
-    # Configure adaptive histogram local window bounds (tileGridSize=(8,8) balances glare control)
-    clahe_engine = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-    enhanced_l = clahe_engine.apply(l_chan)
-    
-    # Merge structural layers and revert conversion to crisp source RGB array
-    merged_lab = cv2.merge((enhanced_l, a_chan, b_chan))
-    output_rgb = cv2.cvtColor(merged_lab, cv2.COLOR_LAB2RGB)
-    return PILImage.fromarray(output_rgb)
-
 def detect_horizontal_rows(pil_img):
     if pil_img is None: return []
     img_cv = np.array(pil_img)
@@ -271,8 +249,6 @@ def process_uploaded_image(file_input):
         if max(img.size) > MAX_SAFE_DIM:
             img.thumbnail((MAX_SAFE_DIM, MAX_SAFE_DIM), PILImage.Resampling.LANCZOS)
             
-        # 🚀 Execute Adaptive Contrast Equalization filter to optimize wire pixel profiles 🚀
-        img = enhance_wire_visibility_clahe(img)
         return img
     except Exception as e:
         st.error(f"Image Load Failed: {e}")
@@ -433,7 +409,7 @@ if "last_input_id" not in st.session_state: st.session_state.last_input_id = Non
 for i in range(1, 5): 
     if f"img{i}" not in st.session_state: st.session_state[f"img{i}"] = None
 
-# 🌟 SECURITY VARIABLE INITIALIZATION TO PREVENT FLOATING RUNTIME NAMEERRORS 🌟
+# 🌟 SAFETY GLOBAL DEEPLINK VARIABLE TO IMMUNIZE STREAMLIT FROM FLOATING FRESH ASYNC COLLAPSES 🌟
 active_input = None
 
 lang_select = st.radio("🌐", ["English", "繁體中文"], horizontal=True, label_visibility="collapsed")
@@ -497,15 +473,15 @@ if active_input:
                         1. Identify the BREADBOARD boundaries: Provide [y, x] coordinates for the four outer corners (top_left, top_right, bottom_right, bottom_left).
                         2. Identify all components and jumper wires physically placed on the breadboard. Follow these strict schema rules:
                         - JUMPER WIRES: Uniquely identify and label every single wire sequentially (e.g., 'Wire 1', 'Wire 2').
-                        - OTHER STRATEGIC ASSETS: Label them uniquely (e.g., 'Resistor 1', 'LED 1', 'Capacitor 1', 'Special Button 1', 'Battery Box 1').
+                        - OTHER STRATEGIC ASSETS: Label them uniquely (e.g., 'Resistor 1', 'LED 1', 'Capacitor 1', 'Slide-Switch 1', 'Special Button 1', 'Battery Box 1').
                         - PINS/LEGS SCHEMA: Order each component's pin locations sequentially within its 'legs' coordinate array.
                         - BATTERY BOX POWER SUPPLY EXPLICIT PIN LAWS: Scan for an external battery module or battery pins if present. 
                           * You MUST strictly label the RED wire/pin node location coordinates as 'Battery Box 1 (Power +ve)'.
                           * You MUST strictly label the BLACK wire/pin node location coordinates as 'Battery Box 1 (Power -ve)'.
                           * If no physical external battery module is captured on the board, fallback safely to standard power rails column markings.
-                        - CRITICAL SELECTOR INTERFACE CONTINUITY LAWS:
-                          * SPECIAL BUTTON / PUSH-BUTTON: For Task 2, this is a special 4-pin tactile routing button. 
-                          * Teach the model its internal physical switching rules: 
+                        - FLEXIBLE SELECTOR INTERFACE CONTINUITY LAWS (TASK 2 GATEWAY):
+                          * SLIDE-SWITCH: A 3-pin component. Based on its layout axis orientation, you MUST assume its 3 legs are always continuous in a single horizontal row or a single vertical column without skipping holes.
+                          * SPECIAL BUTTON: A 4-pin tactile routing button. Teach the model its internal physical switching rules: 
                             - Unpressed State: Current flows strictly horizontally between adjacent pins.
                             - Pressed State: Current flows vertically and diagonally across pins.
                         - CAPACITOR COMPLIANCE: Mark any storage cylinder component. Always assign 220uF properties.
@@ -604,7 +580,7 @@ if active_input:
                 st.session_state.step = 3
                 st.rerun()
 
-        # --- STEP 3: REAL-TIME SIMULATION & HYBRID SCHEMATIC MAPPER ---
+        # --- STEP 3: REAL-TIME SIMULATION & MULTI-GATE EVALUATOR ---
         elif st.session_state.step == 3:
             st.subheader("Step 3: Intent & Connection Verification / 逆向意圖與落點確認")
             st.warning("🔍 Double-check pins before mapping / 評分前請細心核對")
@@ -629,13 +605,15 @@ if active_input:
                                - Goal: Maximize 'brightness_score' by dropping total network resistance. Every valid parallel lane drives current higher.
                                - Read verified resistor data strings ('150 ohm', '300 ohm', '1k ohm', or '10k ohm').
                                - Compute loop current (mA) strictly based on Ohm's law: I = 3V / R_total.
-                               - SCORING CRITERIA formula: current_ma * 100. For instance, 0.300 mA = 30 marks, 0.600 mA = 60 marks, 0.900 mA = 90 marks. Write final marks integer into 'brightness_score'.
+                               - SCORING CRITERIA formula: current_ma * 100. Write final marks integer into 'brightness_score'.
                             2. TASK 2 (LONGEST FADE-OUT CHALLENGE):
-                               - SPECIAL INTERFACE STATE MACHINE SIMULATION: This task demands a 4-pin 'Special Button 1' and one Capacitor.
+                               - FLEXIBLE INTERFACE GATEWAY VALIDATION: This task accepts EITHER a 3-pin Slide-Switch ('Slide-Switch 1') OR a 4-pin Special Button ('Special Button 1') as the core routing gate.
                                - Capacitance is fixed at 220uF (0.00022 F). Read resistor values ('150 ohm', '300 ohm', '1k ohm', '10k ohm').
-                               - You must evaluate the circuit topology under TWO concurrent structural states of this special button:
-                                 * State A (Unpressed): Current flows strictly horizontally between adjacent pins. Evaluate if this horizontal path successfully routes Power Box (+ve) to charge the 220uF capacitor bucket.
-                                 * State B (Pressed): Current switches to flow vertically and diagonally across pins. Evaluate if this path successfully isolates/disconnects the main power supply and routes the capacitor's stored energy through the series resistor chain into the LED to execute a long fade-out loop.
+                               - Dynamic State Machine Evaluation:
+                                 * IF SLIDE-SWITCH ACTIVE: Verify its structural positions. Position A must close the loop to route Power Box (+ve) into the 220uF capacitor for charging. Position B must completely disconnect the main battery loop and route the capacitor's stored power safely into the series resistor chain and LED.
+                                 * IF SPECIAL BUTTON ACTIVE: Evaluate its dual-state topologies:
+                                   - State A (Unpressed): Current flows strictly horizontally between adjacent pins. Check if this setup routes Power Box (+ve) to charge the capacitor.
+                                   - State B (Pressed): Current switches to flow vertically and diagonally across pins. Check if this routes the capacitor's energy through the series resistor chain into the LED for fading, with the main battery supply cut off.
                                - Math Formula: Calculate RC time constant τ = R_total * 0.00022. Stacking higher resistance in a series chain slows leakage time and drives the score higher up to 100 marks. Parallel paths cause instant tank leakage (0 marks). Write the final integer score into 'brightness_score'. Set 'water_tank_score'.
                             3. TASK 3 (MAX LDR DIFFERENCE CHALLENGE):
                                - Goal: Maximize 'ldr_delta_score' (0-100) light-to-dark contrast swing.
@@ -658,6 +636,7 @@ if active_input:
                             Strictly use these exact typographic schemas for component layers:
                             - Resistor Block: ─[═]─
                             - LED Block: ─▶│─
+                            - Slide-Switch Block: ─[██]─
                             - Special Push-Button Block: ─[░░]─ (Label internal states clearly: Horiz if Unpressed / Vert+Diag if Pressed)
                             - Capacitor Block: ─┤│─
                             - Ground Rail Block: ⏚
@@ -787,7 +766,7 @@ if active_input:
                 else:
                     st.markdown(f"""<div class='metric-card' style='border-left-color: #cccccc;'><h4>Calculated Current</h4><h2>{res_data.get('calculated_current_ma', 0.0):.3f} mA</h2></div>""", unsafe_allow_html=True)
 
-            st.sidebar.divider()
+            st.divider()
 
             if st.session_state.img4 is not None:
                 st.image(st.session_state.img4, caption=UI[l]["ai_diag"], use_container_width=True)
