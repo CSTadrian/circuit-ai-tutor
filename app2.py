@@ -10,7 +10,7 @@ import numpy as np
 from datetime import datetime
 from PIL import Image as PILImage, ImageDraw, ImageOps
 
-# --- NEW SDK IMPORTS ---
+# --- SDK IMPORTS ---
 from google import genai
 from google.genai import types
 from google.oauth2 import service_account
@@ -20,7 +20,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 import random
 
-# --- 1. CONFIGURATION & TASK SETUP ---
+# --- 1. CONFIGURATION & PROGRESSIVE TASK MATRIX ---
 TASKS = {
     "Task 1a: Basic LED Circuit": "task1_led.png",
     "Task 1b: Resistors in series": "series_resistor.png",
@@ -41,7 +41,7 @@ MODEL_ID = "gemini-3.1-pro-preview"
 PARENT_FOLDER_ID = "1_cn9lfvMLaozDTx8pvU6LP62J9AVFrvz"
 CSV_FILENAME = "circuit_audit_logs.csv"
 
-# --- NEW: LANGUAGE DICTIONARY ---
+# --- UI LANGUAGE DICTIONARY ---
 UI = {
     "en": {
         "title": "🔌 AI Circuit Tutor",
@@ -62,7 +62,7 @@ UI = {
         "step2_confirm": "✅ Confirm & Analyze Circuit",
         "snapped": "*(Y auto-snapped to nearest row: {y})*",
         "verify": "Verify Orange Legs & Yellow Pins (Snapped to Blue Rows)",
-        "step3_title": "🧠 Step 3: AI Diagnosis",
+        "step3_title": "📊 Step 3: AI Diagnosis & Telemetry HUD",
         "checking": "Checking electrical logic...",
         "ai_diag": "AI Diagnosis: Red circles indicate potential wiring issues",
         "save": "💾 Save to Drive",
@@ -104,7 +104,7 @@ UI = {
         "step2_confirm": "✅ 確認並分析電路",
         "snapped": "*(Y 軸已自動對齊至最近的行：{y})*",
         "verify": "請核對橙色引腳與黃色接點（已對齊至淺藍色行）",
-        "step3_title": "🧠 第三步：AI 診斷",
+        "step3_title": "📊 第三步：AI 診斷與實時面板",
         "checking": "正在檢查電路邏輯...",
         "ai_diag": "AI 診斷：紅圈表示潛在的接線問題",
         "save": "💾 儲存至 Drive",
@@ -158,25 +158,19 @@ if "gcp_service_account" in st.secrets:
 else:
     st.error("GCP Service Account secrets not found!")
     st.stop()
-# --- 3. UI CUSTOMIZATION (Hiding Menus) ---
+
+# --- 3. UI CUSTOMIZATION ---
 st.set_page_config(page_title="AI Circuit Tutor", layout="wide")
 st.markdown("""
     <style>
-    /* Hide the GitHub/Streamlit menu components */
     #MainMenu, footer, header {visibility: hidden;}
     [data-testid="stToolbar"], .stDeployButton {display:none !important;}
-    
-    /* Ensure no stray elements appear */
     #root > div:nth-child(1) > div > div > div > div > section > div {padding-top: 0rem;}
     </style>
     """, unsafe_allow_html=True)
 
 def detect_horizontal_rows(pil_img):
-    """
-    Detects breadboard rows. Uses 8-bit depth safety check.
-    """
     if pil_img is None: return []
-    
     img_cv = np.array(pil_img)
     if img_cv.dtype != np.uint8:
         img_cv = img_cv.astype(np.uint8)
@@ -210,11 +204,9 @@ def detect_horizontal_rows(pil_img):
                 if not peaks or (i - peaks[-1]) >= min_peak_distance:
                     peaks.append(i)
 
-    # MATH FILL-IN ALGORITHM
     if len(peaks) > 5:
         distances = [peaks[i] - peaks[i-1] for i in range(1, len(peaks))]
         median_dist = np.median(distances)
-        
         filled_peaks = []
         for i in range(len(peaks)-1):
             filled_peaks.append(peaks[i])
@@ -230,9 +222,6 @@ def detect_horizontal_rows(pil_img):
     return [int((y / height) * 1000) for y in peaks]
     
 def process_uploaded_image(file_input):
-    """
-    Robust image loader with Memory Safety Cap.
-    """
     try:
         if isinstance(file_input, str):
             img = PILImage.open(file_input)
@@ -246,6 +235,11 @@ def process_uploaded_image(file_input):
         MAX_SAFE_DIM = 4500 
         if max(img.size) > MAX_SAFE_DIM:
             img.thumbnail((MAX_SAFE_DIM, MAX_SAFE_DIM), PILImage.Resampling.LANCZOS)
+            
+        # 🚀 Aggressive Global Contrast Adjustment (Drives massive difference between bright & dark profiles)
+        img_np = np.array(img)
+        enhanced_np = cv2.convertScaleAbs(img_np, alpha=1.6, beta=-35)
+        img = PILImage.fromarray(enhanced_np)
             
         return img
     except Exception as e:
@@ -391,8 +385,7 @@ def save_to_drive(user_id, task_name, ai_feedback, images_dict):
     except Exception as e:
         st.error(f"Drive Save Error: {e}")
 
-    
-# --- 5. SESSION STATE ---
+# --- 5. SESSION STATE MAPS ---
 if "step" not in st.session_state: st.session_state.step = 1
 if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
 if "analysis_result" not in st.session_state: st.session_state.analysis_result = None
@@ -404,7 +397,6 @@ if "socratic_chat" not in st.session_state: st.session_state.socratic_chat = []
 
 for i in range(1, 5): 
     if f"img{i}" not in st.session_state: st.session_state[f"img{i}"] = None
-if "lang" not in st.session_state: st.session_state.lang = "en"
 
 def reset_flow():
     for key in ["step", "components_df", "analysis_result", "img1", "img2", "img3", "img4"]:
@@ -417,80 +409,42 @@ def reset_flow():
     st.session_state.socratic_chat = []
 
 def get_socratic_challenges(task_name, user_id):
-    """
-    Returns 3 specific, progressive challenges tailored for absolute beginners.
-    For Task 1, questions are assigned deterministically based on whether the User ID is Odd or Even.
-    """
-    # Convert User ID string (e.g., "03") to an integer to evaluate parity
     try:
         uid_int = int(user_id)
     except (ValueError, TypeError):
-        uid_int = 0  # Safe fallback if ID parsing fails
+        uid_int = 0
     
     is_odd = (uid_int % 2 != 0)
     
-    # Default fallback challenges for tasks other than Task 1
-    if "Task 1" not in task_name:
+    if "Task 1" in task_name:
+        if is_odd:
+            return [
+                "Level 1 🟢 (The Polarity Trick): Let's test the LED! Pull the LED out of your board, flip it around so the long and short legs are swapped, and plug it back in. Take a photo. Does it still light up? Tell me what you see!\n\n第一關 🟢 (極性小把戲): 測試吓粒 LED！將 LED 抆出嚟，掉轉長短腳再插返入去。影張相，佢仲會唔會發光？話我知你見到咩！",
+                "Level 2 🟡 (The Resistance Test): Great job with your first experiment! Now let's change the resistance. Take out your current resistor and swap it for the 300 ohm one (the one with the ORANGE band). Take a photo. How does the brightness compare to your original circuit?\n\n第二關 🟡 (電阻大測試): 上一關做得好！依家我哋改變吓電阻值。將你依家粒電阻換成 300 ohm (有橙色彩環嗰粒)。影張相，同原本個電路比，燈嘅亮度有咩變化？",
+                "Level 3 🔴 (The Series Layout Challenge): Let's explore circuit layouts! Look at your current circuit. Now, add ONE MORE resistor of the exact same value in series (end-to-end) with your resistor. Take a photo. Compare the brightness: original circuit vs. two resistors in series. What do you notice?\n\n第三關 🔴 (串聯結構大挑戰): 我哋一齊探索電路結構！睇吓你依家個電路。依家加多一粒相同數值嘅電阻，同原本粒電阻「串聯」（頭尾相接）。影張相。對比返兩種情況：原本個電路 vs 串聯兩粒，你觀察到燈嘅光度有咩分別？"
+            ]
+        else:
+            return [
+                "Level 1 🟢 (The Series Swap): Let's test the electrical order! Keep the same wires, but just swap the positions of the LED and the Resistor. Take a photo. Does swapping the order change the brightness?\n\n第一關 🟢 (串聯對調): 測試吓接線嘅「次序」！用返同樣嘅線，將 LED 同電阻對調位置插返好。影張相，對調咗位置之後燈嘅亮度有冇變化？",
+                "Level 2 🟡 (The Resistance Test): Great job with your first experiment! Now let's change the resistance. Take out your current resistor and swap it for the 10k ohm one (the one with the RED band). Take a photo. How does the brightness compare to your original circuit?\n\n第二關 🟡 (電阻大測試): 上一關做得好！依家我哋改變吓電阻值。將你依家粒電阻換成 10k ohm (有紅色彩環嗰粒)。影張相，同原本個電路比，燈嘅亮度有咩變化？",
+                "Level 3 🔴 (The Parallel Layout Challenge): Let's explore circuit layouts! Look at your current circuit. Now, add ONE MORE resistor of the exact same value in parallel (side-by-side) across your resistor. Take a photo. Compare the brightness: original circuit vs. two resistors in parallel. What do you notice?\n\n第三關 🔴 (並聯結構大挑戰): 我哋一齊探索電路結構！睇吓你依家個電路。依家將第二粒相同數值嘅電阻同原本粒「並聯」（並排相接）。影張相。對比返兩種情況：原本個電路 vs 並聯兩粒，你觀察到燈嘅光度有咩分別？"
+            ]
+    elif "Task 2" in task_name:
         return [
-            "Level 1 🟢 (The Polarity Trick): Let's test the LED! Flip it around... \n\n第一關 🟢 (極性小把戲): 測試吓粒 LED！...",
-            "Level 2 🟡 (The Resistance Test): Swap it for the 10k ohm one... \n\n第二關 🟡 (電阻大測試): 換成 10k ohm...",
-            "Level 3 🔴 (The Series Swap): Swap the places of the LED and Resistor... \n\n第三關 🔴 (串聯對調): 將 LED 同電阻對調位置..."
+            "Level 1 🟢 (Switch Mechanics): What happens if you connect your jumper wire to the other side of the button? Try it and explain.\n\n第一關 🟢 (按鈕機制): 如果將導線駁去按鈕嘅另一邊會發生咩事？試下並解釋。",
+            "Level 2 🟡 (Capacitor Drain): Swap the capacitor for a larger one if available or add an extra resistor in series. How does this shift the timing?\n\n第二關 🟡 (電容放電): 試下加多一粒電阻串聯，睇下放電時間會唔會拉長？",
+            "Level 3 🔴 (Fade Optimization): Find a way to make the fade-out effect clear and steady. Trace the loops.\n\n第三關 🔴 (漸變優化): 搵出一個方法令到慢閃放電嘅效果最明顯、最穩定。"
         ]
-        
-    # --- TASK 1 REGION (DETERMINISTIC COHORT ASSIGNMENT) ---
-    challenges = []
-
-    # --- LEVEL 1: Polarity vs. Component Order Swap ---
-    if is_odd:
-        # Odd Cohort: Polarity (Option A)
-        level1_text = (
-            "Level 1 🟢 (The Polarity Trick): Let's test the LED! Pull the LED out of your board, flip it around so the long and short legs are swapped, and plug it back in. Take a photo. Does it still light up? Tell me what you see!\n\n"
-            "第一關 🟢 (極性小把戲): 測試吓粒 LED！將 LED 抆出嚟，掉轉長短腳再插返入去。影張相，佢仲會唔會發光？話我知你見到咩！"
-        )
     else:
-        # Even Cohort: Series Order (Option B)
-        level1_text = (
-            "Level 1 🟢 (The Series Swap): Let's test the electrical order! Keep the same wires, but just swap the positions of the LED and the Resistor. (For example, if the path was Power -> Resistor -> LED, change it to Power -> LED -> Resistor). Make sure LED legs connect correctly! Take a photo. Does swapping the order change the brightness?\n\n"
-            "第一關 🟢 (串聯對調): 測試吓接線嘅「次序」！用返同樣嘅線，將 LED 同電阻對調位置插返好 (例如：原本係「電源 -> 電阻 -> LED」，改為「電源 -> LED -> 電阻」)。記得 LED 兩隻腳要插啱位呀！影張相，對調咗位置之後燈嘅亮度有冇變化？"
-        )
-    challenges.append(level1_text)
-
-    # --- LEVEL 2: 300 Ohm vs. 10k Ohm Swap ---
-    if is_odd:
-        # Odd Cohort: 300 ohm (Orange band)
-        level2_text = (
-            "Level 2 🟡 (The Resistance Test): Great job with your first experiment! Now let's change the resistance. Take out your current resistor and swap it for the 300 ohm one (the one with the ORANGE band). Take a photo. How does the brightness compare to your original circuit?\n\n"
-            "第二關 🟡 (電阻大測試): 上一關做得好！依家我哋改變吓電阻值。將你依家粒電阻換成 300 ohm (有橙色彩環嗰粒)。影張相，同原本個電路比，燈嘅亮度有咩變化？"
-        )
-    else:
-        # Even Cohort: 10k ohm (Red band)
-        level2_text = (
-            "Level 2 🟡 (The Resistance Test): Great job with your first experiment! Now let's change the resistance. Take out your current resistor and swap it for the 10k ohm one (the one with the RED band). Take a photo. How does the brightness compare to your original circuit?\n\n"
-            "第二關 🟡 (電阻大測試): 上一關做得好！依家我哋改變吓電阻值。將你依家粒電阻換成 10k ohm (有紅色彩環嗰粒)。影張相，同原本個電路比，燈嘅亮度有咩變化？"
-        )
-    challenges.append(level2_text)
-
-    # --- LEVEL 3: Add Series vs. Add Parallel ---
-    if is_odd:
-        # Odd Cohort: Compare with an added Series Resistor
-        level3_text = (
-            "Level 3 🔴 (The Series Layout Challenge): Let's explore circuit layouts! Look at your current circuit. Now, add ONE MORE resistor of the exact same value in series (end-to-end) with your resistor. Take a photo. Compare the brightness: original circuit vs. two resistors in series. What do you notice?\n\n"
-            "第三關 🔴 (串聯結構大挑戰): 我哋一齊探索電路結構！睇吓你依家個電路。依家加多一粒相同數值嘅電阻，同原本粒電阻「串聯」（頭尾相接）。影張相。對比返兩種情況：原本個電路 vs 串聯兩粒，你觀察到燈嘅光度有咩分別？"
-        )
-    else:
-        # Even Cohort: Compare with an added Parallel Resistor
-        level3_text = (
-            "Level 3 🔴 (The Parallel Layout Challenge): Let's explore circuit layouts! Look at your current circuit. Now, add ONE MORE resistor of the exact same value in parallel (side-by-side) across your resistor. Take a photo. Compare the brightness: original circuit vs. two resistors in parallel. What do you notice?\n\n"
-            "第三關 🔴 (並聯結構大挑戰): 我哋一齊探索電路結構！睇吓你依家個電路。依家將第二粒相同數值嘅電阻同原本粒「並聯」（並排相接）。影張相。對比返兩種情況：原本個電路 vs 並聯兩粒，你觀察到燈嘅光度有咩分別？"
-        )
-    challenges.append(level3_text)
-
-    return challenges
-    
+        return [
+            "Level 1 🟢 (Light Shadow Swing): Cover the LDR completely with your hand. What changes in the diagnosis metric?\n\n第一關 🟢 (光影擺幅): 用手完全遮反粒 LDR。睇下數據面板有咩轉變？",
+            "Level 2 🟡 (Sensitivity Balancing): Adjust the positioning of your fixed resistor layer to see if it responds faster.\n\n第二關 🟡 (靈敏度平衡): 調整固定電阻嘅分壓位置，睇下會唔會令到反應更靈敏。",
+            "Level 3 🔴 (Dynamic Dark Control): Build a circuit that turns on perfectly only when an absolute shadow hits.\n\n第三關 🔴 (動態暗效應): 砌出一個能夠喺完全黑暗下先至完美觸發嘅自動感光迴路。"
+        ]
 
 # --- 6. MAIN UI ---
+active_input = None
 
-# LANGUAGE TOGGLE
 lang_select = st.radio("🌐", ["English", "繁體中文"], horizontal=True, label_visibility="collapsed")
 l = "en" if lang_select == "English" else "hk"
 
@@ -498,30 +452,36 @@ st.title(UI[l]["title"])
 
 with st.sidebar:
     st.header(UI[l]["setup"])
-    user_id = st.selectbox(UI[l]["user_id"], [f"{i:02d}" for i in range(51)])
+    user_id = st.selectbox(UI[l]["user_id"], [f"{i:02d}" for i in range(1, 52)])
     selected_task = st.selectbox(UI[l]["task"], list(TASKS.keys()))
     
-    path = os.path.join(DATA_FOLDER, TASKS[selected_task])
-    if os.path.exists(path):
-        raw_schematic = process_uploaded_image(path)
-        st.image(raw_schematic, caption=UI[l]["target"])
-    else:
-        st.error(f"Missing {TASKS[selected_task]}")
-        st.stop()
+    # 📋 Dynamic Blueprint Checking Logic
+    raw_schematic = None
+    schematic_filename = TASKS[selected_task]
     
+    if schematic_filename:
+        path = os.path.join(DATA_FOLDER, schematic_filename)
+        if os.path.exists(path):
+            raw_schematic = process_uploaded_image(path)
+            st.image(raw_schematic, caption=UI[l]["target"])
+        else:
+            st.warning(f"Blueprint vector {schematic_filename} not found.")
+    else:
+        # Gracefully handle challenge tiers (No image found, show encouraging prompt)
+        if l == "en":
+            st.info("🏆 **Open Challenge Mode**\n\nThink of the underlying circuit semantics and challenge yourself to explore further! No reference image blueprint is provided for this round.")
+        else:
+            st.info("🏆 **開放式挑戰模式**\n\n細心諗吓當中嘅拓撲原理，突破自己，發掘更多可能！本挑戰關卡不提供對照電路圖。")
 
     st.divider()
 
-    # 📸 UPLOAD METHOD TOGGLE
     input_mode = st.radio("Upload Method" if l == "en" else "上傳方式", ["Camera 📸", "File Upload 📁"], index=1, horizontal=True)
-    
     if input_mode == "Camera 📸":
         active_input = st.camera_input("Take photo of circuit" if l == "en" else "拍攝電路照片")
     else:
-        active_input = st.file_uploader("Upload photo" if l == "en" else "上傳照片", type=["jpg", "png", "jpeg","heic"])
+        active_input = st.file_uploader("Upload photo" if l == "en" else "上傳照片", type=["jpg", "png", "jpeg", "heic"])
         
     st.divider()
-    
     if st.button(UI[l]["reset"]): 
         reset_flow()
         st.session_state.last_input_id = None
@@ -530,10 +490,8 @@ with st.sidebar:
     st.markdown(f"### {UI[l]['guide_title']}")
     st.markdown(UI[l]['guide_text'])
 
-# --- 7. APPLICATION LOGIC ---
-
+# --- 7. APPLICATION WORKFLOW MACHINE ---
 if active_input:
-    # --- AUTO RESET ON NEW IMAGE ---
     current_input_id = getattr(active_input, "file_id", str(hash(active_input.getvalue())))
     
     if st.session_state.get("last_input_id") != current_input_id:
@@ -545,50 +503,51 @@ if active_input:
     
     raw_student = st.session_state.img1
 
-    # Detect rows based on the safe scaled image
     if raw_student is not None:
         if not st.session_state.hough_rows:
             st.session_state.hough_rows = detect_horizontal_rows(raw_student)
 
-        # Flag for determining layout structure magnification
         is_camera_mode = (input_mode == "Camera 📸")
 
-        # STEP 1: DETECTION
+        # --- STEP 1: COMPONENT TRACK ACQUISITION ---
         if st.session_state.step == 1:
             grid_visualization = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
             
             if is_camera_mode:
-                # Direct massive display layout (Enlarged 3x in width and height)
                 orig_w, orig_h = grid_visualization.size
                 large_grid_img = grid_visualization.resize((orig_w * 3, orig_h * 3), PILImage.Resampling.LANCZOS)
-                
                 st.subheader(UI[l]["your_circuit"])
-                st.image(large_grid_img, caption=UI[l]["your_circuit"])
-                with st.expander(UI[l]["schematic"], expanded=False):
-                    st.image(raw_schematic, caption=UI[l]["schematic"])
+                st.image(large_grid_img, use_container_width=True)
+                if raw_schematic is not None:
+                    with st.expander(UI[l]["schematic"], expanded=False):
+                        st.image(raw_schematic, caption=UI[l]["schematic"])
             else:
-                # Standard side-by-side split layout for uploaded files
                 col1, col2 = st.columns(2)
-                col1.image(raw_schematic, caption=UI[l]["schematic"])
+                with col1:
+                    if raw_schematic is not None:
+                        st.image(raw_schematic, caption=UI[l]["schematic"])
+                    else:
+                        st.info("🏆 Challenge Mode Sandbox: No reference guide blueprint. / 挑戰沙盒：本關無電路圖面。" )
                 col2.image(grid_visualization, caption=UI[l]["your_circuit"])
 
             if st.button(UI[l]["step1_btn"], type="primary"):
                 with st.spinner(UI[l]["analyzing"]):
                     prompt = """
-                        1. Identify the BREADBOARD boundaries: Provide the [y, x] coordinates for the four outer corners (top_left, top_right, bottom_right, bottom_left).
-                        2. Identify components and jumper wires on the breadboard. Follow these strict unique component/pin naming constraints:
-                        - JUMPER WIRES: Uniquely identify and label every single wire sequentially (e.g., 'Wire 1', 'Wire 2', 'Wire 3') so users can instantly tell them apart. Do not group them generically.
-                        - OTHER COMPONENTS: Label them uniquely (e.g., 'Resistor 1', 'LED 1', 'Button 1').
-                        - PINS/LEGS SCHEMA: Order each component's pin locations sequentially within its 'legs' coordinate array so they transparently map to 'Pin 1', 'Pin 2', 'Pin 3' respectively.
-                        - POWER SUPPLY: Must identify the power input module. It has exactly 2 pins: the red wire/pin (+ve/Vcc) and the black wire/pin (-ve/GND).
-                        - SLIDE-SWITCH: You MUST identify exactly 3 pins (legs) positioned continuously in a single straight row or a single straight column.
-                        - 4-pin Push Button, LDR, LED
-                        - RESISTOR: Identify 5-band resistors and strictly categorize their detected values using these explicit color signatures:
-                          * '10k ohm' resistor: characterized by containing a red band/line.
-                          * '300 ohm' resistor: characterized by containing an orange band/line.
-                          * '150 ohm' resistor: characterized by containing a green band/line.
-                          * '1k ohm' resistor: If a resistor strictly DOES NOT contain any red, orange, or green bands/lines, it is with certainty a 1k ohm resistor (which typically features mostly black, brown, or grey bands). Use this elimination rule to improve accuracy.
-                          Return JSON mapping 'breadboard_corners' and 'components'.
+                        1. Identify the BREADBOARD boundaries: Provide [y, x] coordinates for the four outer corners (top_left, top_right, bottom_right, bottom_left).
+                        2. Identify all components and jumper wires physically placed on the breadboard. Follow these strict schema rules:
+                        - JUMPER WIRES: Uniquely identify and label every single wire sequentially (e.g., 'Wire 1', 'Wire 2').
+                        - OTHER STRATEGIC ASSETS: Label them uniquely (e.g., 'Resistor 1', 'LED 1', 'Capacitor 1', 'Special Button 1', 'Battery Box 1').
+                        - PINS/LEGS SCHEMA: Order each component's pin locations sequentially within its 'legs' coordinate array.
+                        - BATTERY BOX POWER SUPPLY EXPLICIT PIN LAWS: Label the RED wire/pin as 'Battery Box 1 (Power +ve)' and the BLACK wire/pin as 'Battery Box 1 (Power -ve)'.
+                        - SPECIAL INTERFACE SWITCH MATRIX DETECTIONS:
+                          * BUTTON / PUSH-BUTTON: A 4-pin square matrix configuration component. Current flows horizontally when unpressed, and vertically/diagonally when pressed.
+                        - CAPACITOR COMPLIANCE: Mark any storage cylinder component. Always assign 220uF properties.
+                        - HIGH-ACCURACY RESISTOR COLOR SIGNATURE MATRIX: Scan bands with maximum precision:
+                          * Contains a visual GREEN line/band -> Classify value string strictly as '150 ohm'.
+                          * Contains a visual ORANGE line/band -> Classify value string strictly as '300 ohm'.
+                          * Contains a visual RED line/band -> Classify value string strictly as '10k ohm'.
+                          * Absence of Green, Orange, or Red bands -> Classify value string strictly as '1k ohm'.
+                        Return JSON mapping 'breadboard_corners' and 'components'.
                         """
                     resp = client.models.generate_content(
                         model=MODEL_ID, contents=[raw_student, prompt],
@@ -624,33 +583,21 @@ if active_input:
                     )
                     
                     result = resp.parsed
-                    if isinstance(result, list) and len(result) > 0:
-                        result = result[0]
-                    
+                    if isinstance(result, list) and len(result) > 0: result = result[0]
                     st.session_state.breadboard_corners = result.get("breadboard_corners", {})
 
                     records = []
                     for item in result.get("components", []):
                         center = item.get('center', [500, 500])
-                        if isinstance(center, list) and len(center) == 2:
-                            cy, cx = center
-                        else:
-                            cy, cx = 500, 500
-                            
+                        cy, cx = center if (isinstance(center, list) and len(center) == 2) else (500, 500)
                         legs = item.get('legs', [])
                         if isinstance(legs, list):
                             for i, leg in enumerate(legs):
                                 if isinstance(leg, list) and len(leg) >= 2:
-                                    ly, lx = leg[0], leg[1]
                                     records.append({
                                         "Component": f"{item.get('name')} (Pin {i+1})", 
-                                        "CX": cx, 
-                                        "CY": cy, 
-                                        "LX": lx, 
-                                        "LY": ly
+                                        "CX": cx, "CY": cy, "LX": leg[1], "LY": leg[0]
                                     })
-                                else:
-                                    continue
                                         
                     st.session_state.components_df = pd.DataFrame(records)
                     base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
@@ -658,35 +605,26 @@ if active_input:
                     st.session_state.step = 2
                     st.rerun()
 
-        # STEP 2: TUNING
+        # --- STEP 2: FINE-TUNING PIN PLACEMENTS ---
         elif st.session_state.step == 2:
             st.subheader(UI[l]["step2_title"])
             
-            # Balance configuration layout columns
             edit_col, img_col = st.columns([1, 2])
-                
             updated_data = []
             with edit_col:
                 for i, row in st.session_state.components_df.iterrows():
                     with st.expander(f"📍 {row['Component']}"):
                         lx = st.slider(f"Adjust X position", 0, 1000, int(row["LX"]), key=f"x{i}")
                         raw_ly = st.slider(f"Adjust Y position", 0, 1000, int(row["LY"]), key=f"y{i}")
-                        
-                        snapped_ly = raw_ly
-                        if st.session_state.hough_rows:
-                            snapped_ly = min(st.session_state.hough_rows, key=lambda ry: abs(ry - raw_ly))
-                        
+                        snapped_ly = min(st.session_state.hough_rows, key=lambda ry: abs(ry - raw_ly)) if st.session_state.hough_rows else raw_ly
                         if raw_ly != snapped_ly:
                             st.caption(UI[l]["snapped"].format(y=snapped_ly))
-                            
                         updated_data.append({"Component": row["Component"], "CX": row["CX"], "CY": row["CY"], "LX": lx, "LY": snapped_ly})
             edited_df = pd.DataFrame(updated_data)
 
             with img_col:
                 base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
                 st.session_state.img3 = draw_pins_on_image(base_grid_img, edited_df)
-                
-                # Double width and height (2x) as requested for tuning precision visibility
                 tune_w, tune_h = st.session_state.img3.size
                 large_img3 = st.session_state.img3.resize((tune_w * 2, tune_h * 2), PILImage.Resampling.LANCZOS)
                 st.image(large_img3, caption=UI[l]["verify"], use_container_width=True)
@@ -698,68 +636,66 @@ if active_input:
                 st.session_state.step = 3
                 st.rerun()
 
-        # STEP 3: PRE-ANALYSIS ALIGNMENT TRANSPARENCY DISPLAY
+        # --- STEP 3: REAL-TIME SIMULATION & ANALYSIS ---
         elif st.session_state.step == 3:
             st.subheader("Step 3: Intent vs. Detection Review / 檢查對齊與落點")
             
-            # Transparency Guidance Callout Box
-            if l == "en":
-                st.warning("🔍 **Double check your connections before marking!** Review the large mapping below to look for any misalignments between what you intended to connect vs. an AI vision mapping mistake.")
-            else:
-                st.warning("🔍 **開始評分前請仔細檢查！** 請對照下方放大圖，睇吓你原本想連接嘅位置，同系統『睇』到嘅黃色落點有冇任何偏離或移位。")
-            
-            # Display image prominently at 2x width and 2x height, isolated across the FULL WIDTH layout
             w3, h3 = st.session_state.img3.size
             large_img3_review = st.session_state.img3.resize((w3 * 2, h3 * 2), PILImage.Resampling.LANCZOS)
-            st.image(large_img3_review, caption="Large Alignment Check View (Before AI Logic Assessment)", use_container_width=True)
+            st.image(large_img3_review, caption="Large Alignment Check View", use_container_width=True)
             
-            st.info("Everything looks perfectly aligned! Click below to begin the Socratic Assessment." if l == "en" else "如果落點對齊完全無誤，請點擊下方按鈕開始蘇格拉底式評估。")
-
-            btn_text = UI[l].get("ai_analysis_btn", "🤖 Run AI Analysis" if l == "en" else "🤖 開始 AI 分析")
-            
+            btn_text = "🤖 Run AI Analysis" if l == "en" else "🤖 開始 AI 分析"
             col_btn_run, col_btn_back = st.columns([1, 4])
+            
             with col_btn_run:
                 if st.button(btn_text, type="primary"):
                     with st.spinner(UI[l]["checking"]):
                         summary = st.session_state.components_df.to_string(index=False)
                         
                         prompt = f"""
-                            Task: {selected_task}. 
-                            Structural Connectivity Rules:
-                            1. TERMINAL STRIPS (Center): Pins in the same ROW (horizontal) are electrically connected.
-                            2. POWER RAILS (Edges): The two leftmost and two rightmost columns are Power Rails. 
-                            3. PALE BLUE OVERLAYS: Connected to Power Supply.
-                        
-                            Electrical Analysis & Strict Semantic Resistor Rules: 
-                            1. POWER SUPPLY: Must form a closed loop.
-                            2. SERIES REVERSIBILITY: An LED in series with a resistor is considered correct regardless of order (LED -> Resistor IS THE SAME AS Resistor -> LED).
-                            3. RESISTOR STRUCTURAL & SEMANTIC VALIDATION: You must identify whether the correct resistor is used by checking its visual 5-band color signatures against the target requirement:
-                               - Target requires '150 ohm': Physical resistor must visually contain exactly ONE green band.
-                               - Target requires '10k ohm': Physical resistor must visually contain exactly ONE red band.
-                               - Target requires '300 ohm': Physical resistor must visually contain exactly ONE orange band.
-                               - Target requires '1k ohm': Physical resistor must visually consist mostly of black and brown bands.
-                               CRITICAL SEMANTIC OUTPUT: Explicitly state whether the resistor is correct or not in your evaluation. If the physical color bands fail to match the required target rule, add 'Incorrect Resistor Used' to 'error_summary' and 'detected_errors'. If it matches, add 'Correct Resistor Used' to 'success_summary'.
-                        
-                            Pedagogical Scaffolding Rules (CRITICAL):
-                            1. IF THERE ARE ERRORS: DO NOT give direct answers or tell the student which exact rows to change. Instead, use SOCRATIC SCAFFOLDING. Ask a guiding question related to the underlying theory of their specific mistake (e.g., if the circuit is open, ask how electricity needs a continuous path to return home; if the wrong resistor is used, guide them to inspect the color bands). 
-                            2. IF 100% CORRECT: Praise them enthusiastically, and then provide a "What-If" CHALLENGE to encourage deeper exploration. Tailor the challenge to the components used (e.g., "What happens if you swap the resistor for a smaller one?", "Can you add a button?", "If you have a capacitor, how can you make the LED fade out slowly?").
-
-                            Bilingual Output Requirement:
-                            For the 'feedback' string, provide the English text first, followed by a newline, and then a formal Cantonese (Traditional Chinese) translation. Use emojis and an engaging tone suitable for P4-S3 students.
+                            You are an autonomous engineering tutor reverse-engineering a student breadboard layout for: {selected_task}.
                             
-                            Example Format (Error - Socratic):
-                            "It looks like your LED isn't lighting up! 🧐 Follow the path of electricity from the positive red wire. Does it have a continuous bridge to reach the negative wire? Where does the path break?\\n\\n睇落你粒 LED 唔著喎！🧐 試吓跟住電流由紅線 (+) 出發嘅路徑。佢有冇一條完整嘅路徑可以返去黑線 (-)？條路喺邊度斷咗呀？"
+                            Perform an electrical analysis check and calculate performance metrics based on these strict constraints:
+                            1. PROGRESSIVE TASK MATRIX 1 (LED CIRCUITS & RESISTORS SETUP):
+                               - Task 1a: Light up basic loop (Battery to LED directly). 
+                               - Task 1b: Resistors in end-to-end SERIES string network. Total obstruction adds up.
+                               - Task 1c: Resistors in side-by-side PARALLEL loop paths. Total jam decreases.
+                               - Task 1 Challenge: Maximize 'brightness_score' strictly using only 10k ohm units. Stacking multiple 10k paths in parallel decreases resistance and yields higher scores (current_ma * 100).
+                            2. PROGRESSIVE TASK MATRIX 2 (SWITCH ROUTING & VOLTAGE ACCUMULATION):
+                               - Task 2a: Validate tactile button connections. Unpressed is isolated, pressed forms standard connectivity bridges.
+                               - Task 2b: Trace 220uF capacitor container connection nodes.
+                               - Task 2 Challenge: Must utilize the 4-pin 'Special Button 1' and a capacitor. Evaluate loop dynamics under State A (Unpressed: Horizontal path charging capacitor bucket) and State B (Pressed: Vertical+Diagonal path routing stored energy through series resistance string into the LED). Higher series resistor values slow container drainage and scale final scores close to 100 marks. Parallel paths cause instant leakage (0 marks). Write final integer score into 'brightness_score'. Set 'water_tank_score'.
+                            3. PROGRESSIVE TASK MATRIX 3 (DYNAMIC AMBIENT SENSING):
+                               - Task 3a: Verify bright-activated sensor parameters.
+                               - Task 3b: Verify dark-activated configuration loops.
+                               - Task 3 Challenge: Check contrast range swing code using LDR networks. Look for a 1k ohm safety resistor layer before mapping. If missing, clamp score to 0.
+                            
+                            POWER LOOP SOURCE TRACKING LAWS:
+                            - Trace loops originating from 'Battery Box 1 (Power +ve)' node to 'Battery Box 1 (Power -ve)' node if detected in registry summary. If absent, fallback to standard terminal strips and side distribution rails.
+                            
+                            RESISTOR STRUCTURAL & SEMANTIC VALIDATION:
+                            - Verify whether the correct resistor is used by cross-referencing values derived from color band signatures ('150 ohm', '300 ohm', '1k ohm', or '10k ohm') against task targets. If it fails, add 'Incorrect Resistor Used' to 'error_summary'.
+                            
+                            Pedagogical Scaffolding Rules (CRITICAL):
+                            1. IF THERE ARE ERRORS: DO NOT give direct answers or tell the student which exact rows to change. Instead, use SOCRATIC SCAFFOLDING. Ask a guiding question related to the underlying theory of their specific mistake.
+                            2. IF 100% CORRECT: Praise them enthusiastically, and then provide a "What-If" CHALLENGE to encourage deeper exploration.
+                            
+                            Bilingual Output Requirement:
+                            For the 'feedback' string, provide the English text first, followed by a newline, and then a formal Cantonese (Traditional Chinese) translation.
                             
                             Component Data (Available Pins):
                             {summary}
-                        
-                            Compare to Target Schematic. Return JSON with 'feedback' (containing the Socratic/Challenge text), 'detected_errors', 'success_summary' (array of strings), and 'error_summary' (array of strings).
                             """
                         
                         try:
+                            # 🚀 Pack execution payloads dynamically depending on whether a reference blueprint photo exists
+                            input_contents = [st.session_state.img3, prompt]
+                            if raw_schematic is not None:
+                                input_contents.insert(0, raw_schematic)
+                                
                             resp = client.models.generate_content(
                                 model=MODEL_ID, 
-                                contents=[raw_schematic, st.session_state.img3, prompt],
+                                contents=input_contents,
                                 config=types.GenerateContentConfig(
                                     temperature=0.0,
                                     response_mime_type="application/json",
@@ -769,6 +705,11 @@ if active_input:
                                             "feedback": {"type": "STRING"},
                                             "success_summary": {"type": "ARRAY", "items": {"type": "STRING"}},
                                             "error_summary": {"type": "ARRAY", "items": {"type": "STRING"}},
+                                            "brightness_score": {"type": "INTEGER"},
+                                            "traffic_jam_score": {"type": "INTEGER"},
+                                            "water_tank_score": {"type": "INTEGER"},
+                                            "ldr_delta_score": {"type": "INTEGER"},
+                                            "calculated_current_ma": {"type": "NUMBER"},
                                             "detected_errors": {
                                                 "type": "ARRAY", 
                                                 "items": {
@@ -786,12 +727,9 @@ if active_input:
                             )
                             
                             result = resp.parsed
-                            if isinstance(result, list) and len(result) > 0:
-                                result = result[0]
-                            
+                            if isinstance(result, list) and len(result) > 0: result = result[0]
                             st.session_state.analysis_result = result
                             
-                            # Drawing marker error layers
                             diag_img = st.session_state.img3.copy()
                             draw = ImageDraw.Draw(diag_img)
                             w, h = diag_img.size
@@ -806,10 +744,14 @@ if active_input:
                                         
                             st.session_state.img4 = diag_img
                             
-                            # --- AUTO-SAVE SEQUENCE ---
-                            feedback_text = st.session_state.analysis_result.get("feedback", "")
-                            success_list = st.session_state.analysis_result.get("success_summary", [])
-                            error_list = st.session_state.analysis_result.get("error_summary", [])
+                            if "Challenge" in selected_task or "Task 1" in selected_task or "Task 2" in selected_task:
+                                final_score = result.get("brightness_score", 0)
+                            else:
+                                final_score = result.get("ldr_delta_score", 0)
+
+                            feedback_text = result.get("feedback", "")
+                            success_list = result.get("success_summary", [])
+                            error_list = result.get("error_summary", [])
                             report_card_img = create_visual_report(success_list, error_list, l)
                             
                             save_to_drive(user_id, selected_task, feedback_text, 
@@ -819,7 +761,7 @@ if active_input:
                             st.rerun()
                             
                         except Exception as e:
-                            st.error(f"AI Analysis failed: {e}")
+                            st.error(f"AI Assessment failed: {e}")
                             st.session_state.step = 2
                             st.rerun()
             with col_btn_back:
@@ -827,23 +769,39 @@ if active_input:
                     st.session_state.step = 2
                     st.rerun()
 
-        # STEP 4: AI AUTOMATED CIRCUIT ANALYSIS RESULTS
+        # --- STEP 4: LIVE PERFORMANCE HUD & INTERACTIVE LOGS ---
         elif st.session_state.step == 4:
             st.subheader(UI[l]["step3_title"])
             
+            res_data = st.session_state.analysis_result
+            
+            m_col1, m_col2, m_col3 = st.columns(3)
+            with m_col1:
+                st.metric(label=UI[l]["metric_brightness"], value=f"{res_data.get('brightness_score', 0)} MARKS")
+            with m_col2:
+                st.metric(label=UI[l]["metric_resistance"], value=f"{res_data.get('traffic_jam_score', 0)} %")
+            with m_col3:
+                if "Task 2" in selected_task:
+                    st.metric(label=UI[l]["metric_capacitance"], value=f"{res_data.get('water_tank_score', 0)} L")
+                elif "Task 3" in selected_task:
+                    st.metric(label=UI[l]["metric_ldr_delta"], value=f"{res_data.get('ldr_delta_score', 0)} Δ")
+                else:
+                    st.metric(label="Calculated Loop Flow Current", value=f"{res_data.get('calculated_current_ma', 0.0):.3f} mA")
+
+            st.divider()
+
             if st.session_state.img4 is not None:
                 st.image(st.session_state.img4, caption=UI[l]["ai_diag"], use_container_width=True)
                 
-                feedback_text = st.session_state.analysis_result.get("feedback", "")
+                feedback_text = res_data.get("feedback", "")
                 st.info(feedback_text)
                 
-                success_list = st.session_state.analysis_result.get("success_summary", [])
-                error_list = st.session_state.analysis_result.get("error_summary", [])
+                success_list = res_data.get("success_summary", [])
+                error_list = res_data.get("error_summary", [])
                 
                 report_card_img = create_visual_report(success_list, error_list, l)
-                st.image(report_card_img, width="stretch")
+                st.image(report_card_img, use_container_width=True)
 
-            # If Base Circuit is 100% correct, unlock Personalized Socratic Scaffold!
             if not error_list:
                 st.success("🎉 Perfect base circuit! Ready to level up? / 完美嘅基礎電路！準備好升級挑戰未？")
                 if st.button("🚀 Enter Socratic Challenge Mode! / 進入蘇格拉底挑戰模式", type="primary"):
@@ -851,7 +809,6 @@ if active_input:
                     st.rerun()
                     
             st.divider()
-            # Flow Actions Footer Columns
             col_b, col_c = st.columns(2)
             with col_b:
                 if st.button(UI[l]["back"]):
@@ -865,28 +822,24 @@ if active_input:
                     st.session_state.last_input_id = None
                     st.rerun()
 
-        # STEP 5: PERSONALIZED SOCRATIC CHALLENGE MODE
+        # --- STEP 5: PROGESSIVE SOCRATIC EXPERIMENT SCANNERS ---
         elif st.session_state.step == 5:
             st.subheader("🚀 Socratic Challenge Mode / 蘇格拉底挑戰模式")
             
             challenges = get_socratic_challenges(selected_task, user_id)
             
-            # Display past experiments to enforce the "progressive/spiral" feeling
             for msg in st.session_state.socratic_chat:
                 with st.chat_message(msg["role"]):
                     st.markdown(msg["content"])
                     
             if st.session_state.socratic_q_idx < len(challenges):
                 current_q = challenges[st.session_state.socratic_q_idx]
-                
                 st.info(f"**Current Challenge ({st.session_state.socratic_q_idx + 1}/{len(challenges)}):**\n\n{current_q}")
                 
                 st.markdown("### Verify Your Experiment 🔬")
                 student_text = st.text_area("What did you change and what happened? / 你改咗咩？觀察到咩？")
                 
-                # Dedicated iPad/Mobile Upload for the Socratic Challenge
                 socratic_upload_mode = st.radio("Upload your modified circuit:", ["Camera 📸", "File 📁"], horizontal=True, label_visibility="collapsed", key=f"s_upload_{st.session_state.socratic_q_idx}")
-                
                 if socratic_upload_mode.startswith("Camera"):
                     proof_img = st.camera_input("Take a photo of the new circuit", key=f"s_cam_{st.session_state.socratic_q_idx}")
                 else:
@@ -898,23 +851,21 @@ if active_input:
                     else:
                         with st.spinner("AI is verifying your hands-on experiment..."):
                             img_pil = process_uploaded_image(io.BytesIO(proof_img.getvalue()))
-                            
-                            # Construct chat history string to pass context so AI can personalize the feedback
                             history_context = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in st.session_state.socratic_chat])
                             
                             prompt = f"""
-                            Task Context: {selected_task}
-                            Previous Conversation History (Use this to personalize your response and reference past levels):
-                            {history_context}
-                            
-                            Current Socratic Challenge: {current_q}
-                            Student's Explanation: "{student_text}"
-                            
-                            Task: Evaluate if the physical circuit image AND their text explanation prove they successfully completed the CURRENT challenge.
-                            If correct, respond EXACTLY with "[VERIFICATION: PASSED]" followed by encouraging feedback that references their success in both this level and past levels.
-                            If incorrect, respond EXACTLY with "[VERIFICATION: FAILED]" followed by a helpful Socratic hint pointing to their image (do not give the direct answer).
-                            Tone: Fun, encouraging, suited for P4-S3 students. Provide bilingual text (English, then Traditional Chinese).
-                            """
+                                Task Context: {selected_task}
+                                Previous Conversation History:
+                                {history_context}
+                                
+                                Current Socratic Challenge: {current_q}
+                                Student's Explanation: "{student_text}"
+                                
+                                Task: Evaluate if the physical circuit image AND their text explanation prove they successfully completed the CURRENT challenge.
+                                If correct, respond EXACTLY with "[VERIFICATION: PASSED]" followed by encouraging feedback that references their success.
+                                If incorrect, respond EXACTLY with "[VERIFICATION: FAILED]" followed by a helpful Socratic hint pointing to their image.
+                                Tone: Fun, encouraging, suited for P4-S3 students. Provide bilingual text (English, then Traditional Chinese).
+                                """
                             try:
                                 resp = client.models.generate_content(
                                     model=MODEL_ID, 
@@ -922,7 +873,6 @@ if active_input:
                                     config=types.GenerateContentConfig(temperature=0.4)
                                 )
                                 feedback = resp.text
-                                
                                 display_feedback = feedback.replace("[VERIFICATION: PASSED]", "").replace("[VERIFICATION: FAILED]", "").strip()
                                 
                                 st.session_state.socratic_chat.append({"role": "user", "content": f"📝 **My Observation:** {student_text}\n*(Circuit Image Uploaded)*"})
@@ -935,7 +885,6 @@ if active_input:
                                 
                             except Exception as e:
                                 st.error(f"AI Verification Error: {e}")
-                                
             else:
                 st.success("🏆 You are a Circuit Master! All challenges completed! / 🏆 你已經成為電路大師！完成晒所有挑戰！")
                 
@@ -950,6 +899,5 @@ if active_input:
                     reset_flow()
                     st.session_state.last_input_id = None
                     st.rerun()
-                        
 else:
     st.error("Please upload an image or turn on the camera system to begin / 請上傳圖片或開啟相機鏡頭以開始")
