@@ -27,7 +27,7 @@ TASKS = {
     "Task 1c: Resistors in parallel": "parallel_resistor.png",
     "Task 1 Challenge: Brightest LED with 10k ohm": "",
     "Task 2a: Button Control": "task5_button.png",
-    "Task 2b: Capacitor": "task6_capacitor.png",
+    "Task 2b: Capacitor": "capacitor_300.png",
     "Task 2 Challenge: LED Fades Out": "", 
     "Task 3a: Bright-activated LED": "bright_LDR.png",
     "Task 3b: Dark-activated LED": "dark_LDR.png",
