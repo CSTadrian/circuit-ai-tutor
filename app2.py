@@ -41,7 +41,7 @@ MODEL_ID = "gemini-3.1-pro-preview"
 PARENT_FOLDER_ID = "1_cn9lfvMLaozDTx8pvU6LP62J9AVFrvz"
 CSV_FILENAME = "circuit_audit_logs.csv"
 
-# --- UI LANGUAGE DICTIONARY ---
+# --- UI LANGUAGE DICTIONARY (FULLY SYNCHRONIZED) ---
 UI = {
     "en": {
         "title": "🔌 AI Circuit Tutor",
@@ -62,14 +62,14 @@ UI = {
         "step2_confirm": "✅ Confirm & Analyze Circuit",
         "snapped": "*(Y auto-snapped to nearest row: {y})*",
         "verify": "Verify Orange Legs & Yellow Pins (Snapped to Blue Rows)",
-        "step3_title": "📊 Step 3: AI Diagnosis & Telemetry HUD",
+        "step3_title": "🧠 Step 3: AI Diagnosis",
         "checking": "Checking electrical logic...",
         "ai_diag": "AI Diagnosis: Red circles indicate potential wiring issues",
+        "semantic_map_title": "🗺️ Detected Circuit Schematic Map",
         "save": "💾 Save to Drive",
         "back": "🔙 Back",
         "new": "🎉 New Task",
         "upload_prompt": "Please select an input method to upload or capture a photo.",
-        "prompt_addition": "", 
         "guide_title": "📖 Quick Guide",
         "camera": "Take a Photo of your Circuit",
         "guide_text": """
@@ -84,6 +84,11 @@ UI = {
         * 🟦 **Blue Box:** Wrong component used.
         * 🟡 **Yellow Circle:** Wrong connection/orientation (e.g., switch placed horizontally).
         """,
+        "metrics_header": "🏎️ Live Performance Metrics & Scoreboard",
+        "metric_brightness": "💡 Current-to-Marks Score",
+        "metric_resistance": "🚧 Traffic Jam Thickness (Resistance Blockage)",
+        "metric_capacitance": "💧 Energy Water Tank Volume",
+        "metric_ldr_delta": "🌗 Light-to-Shadow Delta Swing",
     },
     "hk": {
         "title": "🔌 AI 電路導師",
@@ -104,9 +109,10 @@ UI = {
         "step2_confirm": "✅ 確認並分析電路",
         "snapped": "*(Y 軸已自動對齊至最近的行：{y})*",
         "verify": "請核對橙色引腳與黃色接點（已對齊至淺藍色行）",
-        "step3_title": "📊 第三步：AI 診斷與實時面板",
+        "step3_title": "🧠 第三步：AI 診斷",
         "checking": "正在檢查電路邏輯...",
         "ai_diag": "AI 診斷：紅圈表示潛在的接線問題",
+        "semantic_map_title": "🗺️ 偵測到嘅電路結構路徑圖",
         "save": "💾 儲存至 Drive",
         "back": "🔙 返回",
         "new": "🎉 新任務",
@@ -125,7 +131,11 @@ UI = {
         * 🟦 **藍框：** 使用了錯誤的零件。
         * 🟡 **黃圈：** 接法或方向錯誤（例如：開關打橫插）。
         """,
-        "prompt_addition": "Please provide the 'feedback' text entirely in written formal Cantonese (Traditional Chinese). Ensure the tone is encouraging for a primary/secondary school student."
+        "metrics_header": "🏎️ 實時系統性能指標與計分板 (HUD)",
+        "metric_brightness": "💡 電流對照得分 (Marks)",
+        "metric_resistance": "🚧 交通擠塞厚度 (總電阻屏障)",
+        "metric_capacitance": "💧 儲能水箱容量 (電容容量)",
+        "metric_ldr_delta": "🌗 光影動態擺幅 (LDR 變動差值)",
     }
 }
 
@@ -159,7 +169,7 @@ else:
     st.error("GCP Service Account secrets not found!")
     st.stop()
 
-# --- 3. UI CUSTOMIZATION ---
+# --- 3. UI CUSTOMIZATION (Hiding Menus) ---
 st.set_page_config(page_title="AI Circuit Tutor", layout="wide")
 st.markdown("""
     <style>
@@ -236,7 +246,7 @@ def process_uploaded_image(file_input):
         if max(img.size) > MAX_SAFE_DIM:
             img.thumbnail((MAX_SAFE_DIM, MAX_SAFE_DIM), PILImage.Resampling.LANCZOS)
             
-        # 🚀 Aggressive Global Contrast Adjustment (Drives massive difference between bright & dark profiles)
+        # Aggressive Global Contrast Adjustment Matrix (No CLAHE Artifacting)
         img_np = np.array(img)
         enhanced_np = cv2.convertScaleAbs(img_np, alpha=1.6, beta=-35)
         img = PILImage.fromarray(enhanced_np)
@@ -385,7 +395,7 @@ def save_to_drive(user_id, task_name, ai_feedback, images_dict):
     except Exception as e:
         st.error(f"Drive Save Error: {e}")
 
-# --- 5. SESSION STATE MAPS ---
+# --- 4. GLOBAL STATE SYSTEM MAPPERS ---
 if "step" not in st.session_state: st.session_state.step = 1
 if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
 if "analysis_result" not in st.session_state: st.session_state.analysis_result = None
@@ -397,6 +407,9 @@ if "socratic_chat" not in st.session_state: st.session_state.socratic_chat = []
 
 for i in range(1, 5): 
     if f"img{i}" not in st.session_state: st.session_state[f"img{i}"] = None
+
+# Safety synchronization instance block
+active_input = None
 
 def reset_flow():
     for key in ["step", "components_df", "analysis_result", "img1", "img2", "img3", "img4"]:
@@ -413,7 +426,6 @@ def get_socratic_challenges(task_name, user_id):
         uid_int = int(user_id)
     except (ValueError, TypeError):
         uid_int = 0
-    
     is_odd = (uid_int % 2 != 0)
     
     if "Task 1" in task_name:
@@ -437,14 +449,12 @@ def get_socratic_challenges(task_name, user_id):
         ]
     else:
         return [
-            "Level 1 🟢 (Light Shadow Swing): Cover the LDR completely with your hand. What changes in the diagnosis metric?\n\n第一關 🟢 (光影擺幅): 用手完全遮反粒 LDR。睇下數據面板有咩轉變？",
+            "Level 1 🟢 (Light Shadow Swing): Cover the LDR completely with your hand. What changes in the diagnosis metric?\n\n第一關 🟢 (光影擺幅): 用手完全遮住粒 LDR。睇下數據面板有咩轉變？",
             "Level 2 🟡 (Sensitivity Balancing): Adjust the positioning of your fixed resistor layer to see if it responds faster.\n\n第二關 🟡 (靈敏度平衡): 調整固定電阻嘅分壓位置，睇下會唔會令到反應更靈敏。",
             "Level 3 🔴 (Dynamic Dark Control): Build a circuit that turns on perfectly only when an absolute shadow hits.\n\n第三關 🔴 (動態暗效應): 砌出一個能夠喺完全黑暗下先至完美觸發嘅自動感光迴路。"
         ]
 
-# --- 6. MAIN UI ---
-active_input = None
-
+# --- 6. MAIN ENVIRONMENT UI RENDERING ---
 lang_select = st.radio("🌐", ["English", "繁體中文"], horizontal=True, label_visibility="collapsed")
 l = "en" if lang_select == "English" else "hk"
 
@@ -455,7 +465,7 @@ with st.sidebar:
     user_id = st.selectbox(UI[l]["user_id"], [f"{i:02d}" for i in range(1, 52)])
     selected_task = st.selectbox(UI[l]["task"], list(TASKS.keys()))
     
-    # 📋 Dynamic Blueprint Checking Logic
+    # Blueprint Loader Verification Block
     raw_schematic = None
     schematic_filename = TASKS[selected_task]
     
@@ -465,21 +475,20 @@ with st.sidebar:
             raw_schematic = process_uploaded_image(path)
             st.image(raw_schematic, caption=UI[l]["target"])
         else:
-            st.warning(f"Blueprint vector {schematic_filename} not found.")
+            st.warning(f"Blueprint layout asset {schematic_filename} missing.")
     else:
-        # Gracefully handle challenge tiers (No image found, show encouraging prompt)
         if l == "en":
             st.info("🏆 **Open Challenge Mode**\n\nThink of the underlying circuit semantics and challenge yourself to explore further! No reference image blueprint is provided for this round.")
         else:
-            st.info("🏆 **開放式挑戰模式**\n\n細心諗吓當中嘅拓撲原理，突破自己，發掘更多可能！本挑戰關卡不提供對照電路圖。")
+            st.info("🏆 **開放式挑戰模式**\n\n細心諗大中嘅拓撲原理，突破自己，發掘更多可能！本挑戰關卡不提供對照電路圖。")
 
     st.divider()
 
-    input_mode = st.radio("Upload Method" if l == "en" else "上傳方式", ["Camera 📸", "File Upload 📁"], index=1, horizontal=True)
-    if input_mode == "Camera 📸":
-        active_input = st.camera_input("Take photo of circuit" if l == "en" else "拍攝電路照片")
+    input_mode = st.radio(UI[l]["input_mode"], [UI[l]["mode_camera"], UI[l]["mode_upload"]], index=1, horizontal=True)
+    if input_mode == UI[l]["mode_camera"]:
+        active_input = st.camera_input(UI[l]["camera"])
     else:
-        active_input = st.file_uploader("Upload photo" if l == "en" else "上傳照片", type=["jpg", "png", "jpeg", "heic"])
+        active_input = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "heic"])
         
     st.divider()
     if st.button(UI[l]["reset"]): 
@@ -490,7 +499,7 @@ with st.sidebar:
     st.markdown(f"### {UI[l]['guide_title']}")
     st.markdown(UI[l]['guide_text'])
 
-# --- 7. APPLICATION WORKFLOW MACHINE ---
+# --- 7. LOGIC CONTROL MATRICES ---
 if active_input:
     current_input_id = getattr(active_input, "file_id", str(hash(active_input.getvalue())))
     
@@ -507,7 +516,7 @@ if active_input:
         if not st.session_state.hough_rows:
             st.session_state.hough_rows = detect_horizontal_rows(raw_student)
 
-        is_camera_mode = (input_mode == "Camera 📸")
+        is_camera_mode = (input_mode == UI[l]["mode_camera"])
 
         # --- STEP 1: COMPONENT TRACK ACQUISITION ---
         if st.session_state.step == 1:
@@ -528,7 +537,8 @@ if active_input:
                         st.image(raw_schematic, caption=UI[l]["schematic"])
                     else:
                         st.info("🏆 Challenge Mode Sandbox: No reference guide blueprint. / 挑戰沙盒：本關無電路圖面。" )
-                col2.image(grid_visualization, caption=UI[l]["your_circuit"])
+                with col2:
+                    st.image(grid_visualization, caption=UI[l]["your_circuit"])
 
             if st.button(UI[l]["step1_btn"], type="primary"):
                 with st.spinner(UI[l]["analyzing"]):
@@ -636,19 +646,17 @@ if active_input:
                 st.session_state.step = 3
                 st.rerun()
 
-        # --- STEP 3: REAL-TIME SIMULATION & ANALYSIS ---
+        # --- STEP 3: REAL-TIME SIMULATION & TIMING TRANSLATIONS ---
         elif st.session_state.step == 3:
-            st.subheader("Step 3: Intent vs. Detection Review / 檢查對齊與落點")
+            st.subheader(UI[l]["your_circuit"])
             
             w3, h3 = st.session_state.img3.size
             large_img3_review = st.session_state.img3.resize((w3 * 2, h3 * 2), PILImage.Resampling.LANCZOS)
-            st.image(large_img3_review, caption="Large Alignment Check View", use_container_width=True)
+            st.image(large_img3_review, use_container_width=True)
             
-            btn_text = "🤖 Run AI Analysis" if l == "en" else "🤖 開始 AI 分析"
             col_btn_run, col_btn_back = st.columns([1, 4])
-            
             with col_btn_run:
-                if st.button(btn_text, type="primary"):
+                if st.button(UI[l]["step2_confirm"], type="primary"):
                     with st.spinner(UI[l]["checking"]):
                         summary = st.session_state.components_df.to_string(index=False)
                         
@@ -664,7 +672,7 @@ if active_input:
                             2. PROGRESSIVE TASK MATRIX 2 (SWITCH ROUTING & VOLTAGE ACCUMULATION):
                                - Task 2a: Validate tactile button connections. Unpressed is isolated, pressed forms standard connectivity bridges.
                                - Task 2b: Trace 220uF capacitor container connection nodes.
-                               - Task 2 Challenge: Must utilize the 4-pin 'Special Button 1' and a capacitor. Evaluate loop dynamics under State A (Unpressed: Horizontal path charging capacitor bucket) and State B (Pressed: Vertical+Diagonal path routing stored energy through series resistance string into the LED). Higher series resistor values slow container drainage and scale final scores close to 100 marks. Parallel paths cause instant leakage (0 marks). Write final integer score into 'brightness_score'. Set 'water_tank_score'.
+                               - Task 2 Challenge: Must utilize the 4-pin 'Special Button 1' and a capacitor. Evaluate loop dynamics under State A (Unpressed: Horizontal path charging capacitor bucket) and State B (Pressed: Vertical+Diagonal path routing stored energy through series resistance string into the LED). Higher series resistor values slow container drainage and scale final scores close to 100 marks. Parallel paths cause instant tank leakage (0 marks). Write final integer score into 'brightness_score'. Set 'water_tank_score'.
                             3. PROGRESSIVE TASK MATRIX 3 (DYNAMIC AMBIENT SENSING):
                                - Task 3a: Verify bright-activated sensor parameters.
                                - Task 3b: Verify dark-activated configuration loops.
@@ -683,12 +691,20 @@ if active_input:
                             Bilingual Output Requirement:
                             For the 'feedback' string, provide the English text first, followed by a newline, and then a formal Cantonese (Traditional Chinese) translation.
                             
+                            CRITICAL HYBRID SCHEMATIC MAP DIRECTIVE (For the 'circuit_semantic_map' block):
+                            Generate a vertically aligned flowchart in 'circuit_semantic_map' using Unicode box characters (│, ─, ┌, ┐, ├, ┤, ┴, ┬).
+                            List descriptive component name, context emoji, and official typographic blueprint block tokens:
+                            - Resistor: ─[═]─
+                            - LED: ─▶│─
+                            - Push Button: ─[░░]─
+                            - Capacitor: ─┤│─
+                            - Ground Rail: ⏚
+                            
                             Component Data (Available Pins):
                             {summary}
                             """
                         
                         try:
-                            # 🚀 Pack execution payloads dynamically depending on whether a reference blueprint photo exists
                             input_contents = [st.session_state.img3, prompt]
                             if raw_schematic is not None:
                                 input_contents.insert(0, raw_schematic)
@@ -703,6 +719,7 @@ if active_input:
                                         "type": "OBJECT",
                                         "properties": {
                                             "feedback": {"type": "STRING"},
+                                            "circuit_semantic_map": {"type": "STRING"},
                                             "success_summary": {"type": "ARRAY", "items": {"type": "STRING"}},
                                             "error_summary": {"type": "ARRAY", "items": {"type": "STRING"}},
                                             "brightness_score": {"type": "INTEGER"},
@@ -721,7 +738,7 @@ if active_input:
                                                 }
                                             }
                                         },
-                                        "required": ["feedback", "detected_errors", "success_summary", "error_summary"]
+                                        "required": ["feedback", "circuit_semantic_map", "detected_errors", "success_summary", "error_summary", "calculated_current_ma"]
                                     }
                                 )
                             )
@@ -750,18 +767,14 @@ if active_input:
                                 final_score = result.get("ldr_delta_score", 0)
 
                             feedback_text = result.get("feedback", "")
-                            success_list = result.get("success_summary", [])
-                            error_list = result.get("error_summary", [])
-                            report_card_img = create_visual_report(success_list, error_list, l)
-                            
                             save_to_drive(user_id, selected_task, feedback_text, 
-                                          {"1": st.session_state.img1, "4": st.session_state.img4, "summary": report_card_img})
+                                          {"1": st.session_state.img1, "4": st.session_state.img4, "summary": diag_img})
                             
                             st.session_state.step = 4
                             st.rerun()
                             
                         except Exception as e:
-                            st.error(f"AI Assessment failed: {e}")
+                            st.error(f"AI Core processing crashed: {e}")
                             st.session_state.step = 2
                             st.rerun()
             with col_btn_back:
@@ -769,7 +782,7 @@ if active_input:
                     st.session_state.step = 2
                     st.rerun()
 
-        # --- STEP 4: LIVE PERFORMANCE HUD & INTERACTIVE LOGS ---
+        # --- STEP 4: PERFORMANCE TELEMETRY HUD SCOREBOARD ---
         elif st.session_state.step == 4:
             st.subheader(UI[l]["step3_title"])
             
@@ -786,12 +799,15 @@ if active_input:
                 elif "Task 3" in selected_task:
                     st.metric(label=UI[l]["metric_ldr_delta"], value=f"{res_data.get('ldr_delta_score', 0)} Δ")
                 else:
-                    st.metric(label="Calculated Loop Flow Current", value=f"{res_data.get('calculated_current_ma', 0.0):.3f} mA")
+                    st.metric(label="Calculated Current", value=f"{res_data.get('calculated_current_ma', 0.0):.3f} mA")
 
             st.divider()
 
             if st.session_state.img4 is not None:
                 st.image(st.session_state.img4, caption=UI[l]["ai_diag"], use_container_width=True)
+                
+                st.markdown(f"### {UI[l]['semantic_map_title']}")
+                st.code(res_data.get("circuit_semantic_map", "No Map Extracted"), language="text")
                 
                 feedback_text = res_data.get("feedback", "")
                 st.info(feedback_text)
@@ -803,8 +819,8 @@ if active_input:
                 st.image(report_card_img, use_container_width=True)
 
             if not error_list:
-                st.success("🎉 Perfect base circuit! Ready to level up? / 完美嘅基礎電路！準備好升級挑戰未？")
-                if st.button("🚀 Enter Socratic Challenge Mode! / 進入蘇格拉底挑戰模式", type="primary"):
+                st.success("🏆 Hardware Core Loop Stable! Optimization Sandbox unlocked! / 基礎結構安全無誤！優化競技場沙盒已解鎖！")
+                if st.button("🚀 Enter Personalized Socratic Sandbox / 進入蘇格拉底深度挑戰", type="primary"):
                     st.session_state.step = 5
                     st.rerun()
                     
@@ -822,12 +838,11 @@ if active_input:
                     st.session_state.last_input_id = None
                     st.rerun()
 
-        # --- STEP 5: PROGESSIVE SOCRATIC EXPERIMENT SCANNERS ---
+        # --- STEP 5: PERSONALIZED SOCRATIC CHALLENGE MODE ---
         elif st.session_state.step == 5:
             st.subheader("🚀 Socratic Challenge Mode / 蘇格拉底挑戰模式")
             
             challenges = get_socratic_challenges(selected_task, user_id)
-            
             for msg in st.session_state.socratic_chat:
                 with st.chat_message(msg["role"]):
                     st.markdown(msg["content"])
