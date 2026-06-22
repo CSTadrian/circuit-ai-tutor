@@ -28,7 +28,7 @@ TASKS = {
     "Task 1 Challenge: Brightest LED with 10k ohm": "",
     "Task 2a: Button Control": "task5_button.png",
     "Task 2b: Capacitor": "capacitor_300.png",
-    "Task 2 Challenge: LED Fades Out": "", 
+    "Task 2 Challenge: Longest LED Fades Out Duration": "", 
     "Task 3a: Bright-activated LED": "bright_LDR.png",
     "Task 3b: Dark-activated LED": "dark_LDR.png",
     "Task 3 Challenge: Largest difference in LED's light intensity": ""
