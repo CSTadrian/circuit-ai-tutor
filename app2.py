@@ -246,10 +246,10 @@ def process_uploaded_image(file_input):
         if max(img.size) > MAX_SAFE_DIM:
             img.thumbnail((MAX_SAFE_DIM, MAX_SAFE_DIM), PILImage.Resampling.LANCZOS)
             
-        # Aggressive Global Contrast Adjustment Matrix (No CLAHE Artifacting)
-        img_np = np.array(img)
-        enhanced_np = cv2.convertScaleAbs(img_np, alpha=1.6, beta=-35)
-        img = PILImage.fromarray(enhanced_np)
+        # # Aggressive Global Contrast Adjustment Matrix (No CLAHE Artifacting)
+        # img_np = np.array(img)
+        # enhanced_np = cv2.convertScaleAbs(img_np, alpha=1.6, beta=-35)
+        # img = PILImage.fromarray(enhanced_np)
             
         return img
     except Exception as e:
