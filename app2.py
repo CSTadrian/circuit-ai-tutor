@@ -22,7 +22,7 @@ import random
 
 # --- 1. CONFIGURATION & PROGRESSIVE TASK MATRIX ---
 TASKS = {
-    "Task 1a: Basic LED Circuit": "task1_led.png",
+    "Task 1a: Basic LED Circuit": "task1_led_10k.png",
     "Task 1b: Resistors in series": "series_resistor.png",
     "Task 1c: Resistors in parallel": "parallel_resistor.png",
     "Task 1 Challenge: Brightest LED with 10k ohm": "",
