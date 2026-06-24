@@ -783,17 +783,31 @@ if active_input:
                     st.rerun()
 
         # --- STEP 4: PERFORMANCE TELEMETRY HUD SCOREBOARD ---
+        # --- STEP 4: PERFORMANCE TELEMETRY HUD SCOREBOARD ---
         elif st.session_state.step == 4:
             st.subheader(UI[l]["step3_title"])
             
             res_data = st.session_state.analysis_result
+            success_list = res_data.get("success_summary", [])
+            error_list = res_data.get("error_summary", [])
             
-            m_col1, m_col2, m_col3 = st.columns(3)
+            # --- NEW OBJECTIVE SCORING MATRIX ---
+            # Formula: successes / (successes + errors) scaled out of 100 Marks
+            total_diagnostics = len(success_list) + len(error_list)
+            if total_diagnostics > 0:
+                calculated_marks = int((len(success_list) / total_diagnostics) * 100)
+            else:
+                calculated_marks = 0
+            
+            # 2-Column Layout (Column 2/Traffic Jam is completely removed)
+            m_col1, m_col2 = st.columns(2)
+            
+            # Column 1: Core Performance Marks (Calculated proportionally)
             with m_col1:
-                st.metric(label=UI[l]["metric_brightness"], value=f"{res_data.get('brightness_score', 0)} MARKS")
+                st.metric(label=UI[l]["metric_brightness"], value=f"{calculated_marks} MARKS")
+                
+            # Column 3: Context-Dependent Tooling Metrics
             with m_col2:
-                st.metric(label=UI[l]["metric_resistance"], value=f"{res_data.get('traffic_jam_score', 0)} %")
-            with m_col3:
                 if "Task 2" in selected_task:
                     st.metric(label=UI[l]["metric_capacitance"], value=f"{res_data.get('water_tank_score', 0)} L")
                 elif "Task 3" in selected_task:
@@ -802,6 +816,7 @@ if active_input:
                     st.metric(label="Calculated Current", value=f"{res_data.get('calculated_current_ma', 0.0):.3f} mA")
 
             st.divider()
+            
 
             if st.session_state.img4 is not None:
                 st.image(st.session_state.img4, caption=UI[l]["ai_diag"], use_container_width=True)
