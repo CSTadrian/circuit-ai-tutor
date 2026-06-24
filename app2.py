@@ -341,7 +341,7 @@ def create_visual_report(successes, errors, lang):
         
     return img
 
-def save_to_drive(user_id, task_name, ai_feedback, images_dict):
+def save_to_drive(user_id, task_name, ai_feedback, calculated_marks, res_data, images_dict):
     service = get_drive_service()
     hk_tz = pytz.timezone('Asia/Hong_Kong')
     hk_time_str = datetime.now(hk_tz).strftime('%Y-%m-%d %H:%M:%S')
@@ -349,6 +349,7 @@ def save_to_drive(user_id, task_name, ai_feedback, images_dict):
     file_prefix = f"user{user_id}_task{task_num}"
 
     try:
+        # 1. Process and save visual assets to Drive
         for img_key, img_obj in images_dict.items():
             if img_obj:
                 buf = io.BytesIO()
@@ -359,12 +360,28 @@ def save_to_drive(user_id, task_name, ai_feedback, images_dict):
                 media = MediaIoBaseUpload(buf, mimetype='image/png', resumable=True)
                 service.files().create(body=img_metadata, media_body=media).execute()
 
+        # 2. Format lists into clean text blocks using standard pipe delimiters 
+        # This keeps multi-line text entries inside a single, clean CSV cell row structure.
+        success_joined = " | ".join(res_data.get("success_summary", []))
+        error_joined = " | ".join(res_data.get("error_summary", []))
+
+        # 3. Compile the true comprehensive multi-column audit dataset
         new_row = pd.DataFrame([{
-            "User ID": user_id, "Time": hk_time_str, 
-            "Raw": f"{file_prefix}_1.png", "Final": f"{file_prefix}_4.png", 
-            "Feedback": ai_feedback
+            "User ID": user_id, 
+            "Task Name": task_name,
+            "Timestamp": hk_time_str, 
+            "Calculated Marks": calculated_marks,
+            "Calculated Current (mA)": res_data.get("calculated_current_ma", 0.0),
+            "Water Tank Score (L)": res_data.get("water_tank_score", 0),
+            "LDR Delta Score (Δ)": res_data.get("ldr_delta_score", 0),
+            "Raw AI Feedback String": ai_feedback, 
+            "What You Did Well": success_joined,
+            "Things To Check / Improve": error_joined,
+            "Raw Student Image": f"{file_prefix}_1.png", 
+            "Final Diagnostic Image": f"{file_prefix}_4.png"
         }])
 
+        # 4. Read/Write update pipeline for the cloud repository tracking CSV file
         query = f"name='{CSV_FILENAME}' and '{PARENT_FOLDER_ID}' in parents and trashed=false"
         items = service.files().list(q=query, fields="files(id)").execute().get('files', [])
 
@@ -390,7 +407,7 @@ def save_to_drive(user_id, task_name, ai_feedback, images_dict):
             media = MediaIoBaseUpload(io.BytesIO(updated_csv_bytes), mimetype='text/csv')
             service.files().update(fileId=file_id, media_body=media).execute()
             
-        st.toast("✅ Automatically saved to Google Drive!")
+        st.toast("✅ Automatically saved complete metrics row to Google Drive!")
         
     except Exception as e:
         st.error(f"Drive Save Error: {e}")
@@ -761,17 +778,30 @@ if active_input:
                                         
                             st.session_state.img4 = diag_img
                             
-                            if "Challenge" in selected_task or "Task 1" in selected_task or "Task 2" in selected_task:
-                                final_score = result.get("brightness_score", 0)
+                            # --- CALCULATE THE OBJECTIVE ACCURACY METRIC MARKS ---
+                            success_list = result.get("success_summary", [])
+                            error_list = result.get("error_summary", [])
+                            total_diagnostics = len(success_list) + len(error_list)
+                            
+                            if total_diagnostics > 0:
+                                calculated_marks = int((len(success_list) / total_diagnostics) * 100)
                             else:
-                                final_score = result.get("ldr_delta_score", 0)
-
+                                calculated_marks = 0
+                            
+                            # --- EXECUTE THE NEW LOGGING DATA ROW SUBMISSION ---
                             feedback_text = result.get("feedback", "")
-                            save_to_drive(user_id, selected_task, feedback_text, 
-                                          {"1": st.session_state.img1, "4": st.session_state.img4, "summary": diag_img})
+                            save_to_drive(
+                                user_id=user_id, 
+                                task_name=selected_task, 
+                                ai_feedback=feedback_text,
+                                calculated_marks=calculated_marks, 
+                                res_data=result,
+                                images_dict={"1": st.session_state.img1, "4": st.session_state.img4, "summary": diag_img}
+                            )
                             
                             st.session_state.step = 4
                             st.rerun()
+                            
                             
                         except Exception as e:
                             st.error(f"AI Core processing crashed: {e}")
