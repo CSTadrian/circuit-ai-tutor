@@ -244,7 +244,7 @@ def process_uploaded_image(file_input):
         
         # --- NEW MEMORY OPTIMIZATION: DOWNRES BY 50% ---
         w, h = img.size
-        img = img.resize((w // 2, h // 2), PILImage.Resampling.LANCZOS)
+        img = img.resize((w // 4, h // 4), PILImage.Resampling.LANCZOS)
         
         MAX_SAFE_DIM = 4500 
         if max(img.size) > MAX_SAFE_DIM:
