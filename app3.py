@@ -242,14 +242,13 @@ def process_uploaded_image(file_input):
         img = ImageOps.exif_transpose(img)
         img = img.convert("RGB")
         
+        # --- NEW MEMORY OPTIMIZATION: DOWNRES BY 50% ---
+        w, h = img.size
+        img = img.resize((w // 2, h // 2), PILImage.Resampling.LANCZOS)
+        
         MAX_SAFE_DIM = 4500 
         if max(img.size) > MAX_SAFE_DIM:
             img.thumbnail((MAX_SAFE_DIM, MAX_SAFE_DIM), PILImage.Resampling.LANCZOS)
-            
-        # # Aggressive Global Contrast Adjustment Matrix (No CLAHE Artifacting)
-        # img_np = np.array(img)
-        # enhanced_np = cv2.convertScaleAbs(img_np, alpha=1.6, beta=-35)
-        # img = PILImage.fromarray(enhanced_np)
             
         return img
     except Exception as e:
