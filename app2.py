@@ -543,7 +543,7 @@ if active_input:
                 orig_w, orig_h = grid_visualization.size
                 large_grid_img = grid_visualization.resize((orig_w * 3, orig_h * 3), PILImage.Resampling.LANCZOS)
                 st.subheader(UI[l]["your_circuit"])
-                st.image(large_grid_img, use_container_width=True)
+                st.image(large_grid_img, width="stretch")
                 if raw_schematic is not None:
                     with st.expander(UI[l]["schematic"], expanded=False):
                         st.image(raw_schematic, caption=UI[l]["schematic"])
@@ -654,7 +654,7 @@ if active_input:
                 st.session_state.img3 = draw_pins_on_image(base_grid_img, edited_df)
                 tune_w, tune_h = st.session_state.img3.size
                 large_img3 = st.session_state.img3.resize((tune_w * 2, tune_h * 2), PILImage.Resampling.LANCZOS)
-                st.image(large_img3, caption=UI[l]["verify"], use_container_width=True)
+                st.image(large_img3, caption=UI[l]["verify"], width="stretch")
 
             if st.button(UI[l]["step2_confirm"], type="primary"):
                 st.session_state.components_df = edited_df
@@ -670,7 +670,7 @@ if active_input:
             
             w3, h3 = st.session_state.img3.size
             large_img3_review = st.session_state.img3.resize((w3 * 2, h3 * 2), PILImage.Resampling.LANCZOS)
-            st.image(large_img3_review, use_container_width=True)
+            st.image(large_img3_review, width="stretch")
             
             col_btn_run, col_btn_back = st.columns([1, 4])
             with col_btn_run:
@@ -852,7 +852,7 @@ if active_input:
             
 
             if st.session_state.img4 is not None:
-                st.image(st.session_state.img4, caption=UI[l]["ai_diag"], use_container_width=True)
+                st.image(st.session_state.img4, caption=UI[l]["ai_diag"], width="stretch")
                 
                 st.markdown(f"### {UI[l]['semantic_map_title']}")
                 st.code(res_data.get("circuit_semantic_map", "No Map Extracted"), language="text")
@@ -864,7 +864,7 @@ if active_input:
                 error_list = res_data.get("error_summary", [])
                 
                 report_card_img = create_visual_report(success_list, error_list, l)
-                st.image(report_card_img, use_container_width=True)
+                st.image(report_card_img, width="stretch")
 
             if not error_list:
                 st.success("🏆 Hardware Core Loop Stable! Optimization Sandbox unlocked! / 基礎結構安全無誤！優化競技場沙盒已解鎖！")
