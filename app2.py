@@ -664,6 +664,7 @@ if active_input:
                 st.rerun()
 
         # --- STEP 3: REAL-TIME SIMULATION & TIMING TRANSLATIONS ---
+        # --- STEP 3: REAL-TIME SIMULATION & TIMING TRANSLATIONS ---
         elif st.session_state.step == 3:
             st.subheader(UI[l]["your_circuit"])
             
@@ -673,7 +674,8 @@ if active_input:
             
             col_btn_run, col_btn_back = st.columns([1, 4])
             with col_btn_run:
-                if st.button(UI[l]["step2_confirm"], type="primary"):
+                # FIX 1: Added unique key="btn_step3_analyze" to prevent widget key collision
+                if st.button(UI[l]["step2_confirm"], type="primary", key="btn_step3_analyze"):
                     with st.spinner(UI[l]["checking"]):
                         summary = st.session_state.components_df.to_string(index=False)
                         
@@ -760,8 +762,9 @@ if active_input:
                                 )
                             )
                             
-                            result = resp.parsed
-                            if isinstance(result, list) and len(result) > 0: result = result[0]
+                            # FIX 2: Parse raw text JSON to guarantee it functions as a standard dictionary
+                            # This fully completely bypasses Pydantic Object .get() attribute errors.
+                            result = json.loads(resp.text)
                             st.session_state.analysis_result = result
                             
                             diag_img = st.session_state.img3.copy()
@@ -802,13 +805,13 @@ if active_input:
                             st.session_state.step = 4
                             st.rerun()
                             
-                            
                         except Exception as e:
-                            st.error(f"AI Core processing crashed: {e}")
-                            st.session_state.step = 2
-                            st.rerun()
+                            # FIX 3: Removed instant st.rerun() so you can read what actually caused the crash!
+                            st.error(f"⚠️ AI Execution Error: {e}")
+                            st.info("The application paused here so you can read the error above. Fix your asset paths, API credentials, or Drive connection parameters, then click reset.")
+                            
             with col_btn_back:
-                if st.button(UI[l]["back"]):
+                if st.button(UI[l]["back"], key="btn_step3_back"):
                     st.session_state.step = 2
                     st.rerun()
 
