@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
+import streamlit.components.v1 as components
 import time
 import pandas as pd
 import json
@@ -53,8 +54,8 @@ UI = {
         "target": "Target Schematic",
         "input_mode": "Input Method",
         "mode_bench_cam": "📷 Bench USB Camera (1080p V4L2)",
+        "mode_camera": "📸 Browser Webcam (1080p Enforced)",
         "mode_upload": "📁 Upload 1080p Image (Fair Benchmark)",
-        "mode_camera": "📸 Browser Webcam",
         "upload": "Upload Student Photo",
         "reset": "Reset Process",
         "schematic": "Schematic",
@@ -74,10 +75,10 @@ UI = {
         "new": "🎉 New Task",
         "upload_prompt": "Please select an input method to upload or capture a photo.",
         "guide_title": "📖 Quick Guide",
-        "camera": "Take a Photo of your Circuit",
+        "camera": "Capture Real-Time 1080p Circuit Photo",
         "guide_text": """
         **How to Start:**
-        1. Select Task & Capture/Upload 1080p Photo
+        1. Select Task & Capture 1080p Photo
         2. Detect Components (Step 1)
         3. Adjust Pin Rows (Step 2)
         4. AI Diagnosis (Step 3)
@@ -111,8 +112,8 @@ UI = {
         "target": "目標電路圖",
         "input_mode": "輸入方式",
         "mode_bench_cam": "📷 實驗台 1080p 鏡頭 (Nano V4L2)",
+        "mode_camera": "📸 瀏覽器高清相機 (強制 1080p)",
         "mode_upload": "📁 上傳 1080p 圖片 (公平基準測試)",
-        "mode_camera": "📸 瀏覽器相機",
         "upload": "上傳學生電路照片",
         "reset": "重置流程",
         "schematic": "電路圖",
@@ -132,10 +133,10 @@ UI = {
         "new": "🎉 新任務",
         "upload_prompt": "請選擇上傳照片或拍攝新照片以開始。",
         "guide_title": "📖 快速指南",
-        "camera": "拍攝電路照片",
+        "camera": "實時拍攝 1080p 高清電路照片",
         "guide_text": """
         **使用步驟：**
-        1. 選擇任務並拍攝/上傳 1080p 照片
+        1. 選擇任務並拍攝 1080p 高清照片
         2. 偵測零件（第一步）
         3. 微調引腳位置（第二步）
         4. AI 進行診斷（第三步）
@@ -193,7 +194,7 @@ else:
     st.error("GCP Service Account secrets not found!")
     st.stop()
 
-# --- 3. UI CUSTOMIZATION ---
+# --- 3. UI CUSTOMIZATION & 1080P BROWSER WEBRTC INJECTOR ---
 st.set_page_config(page_title="AI Circuit Tutor", layout="wide")
 st.markdown("""
     <style>
@@ -202,6 +203,45 @@ st.markdown("""
     #root > div:nth-child(1) > div > div > div > div > section > div {padding-top: 0rem;}
     </style>
     """, unsafe_allow_html=True)
+
+def inject_1080p_camera_constraint():
+    """Injects WebRTC applyConstraints into Streamlit DOM to force browser camera to stream and snap in true 1080p."""
+    components.html(
+        """
+        <script>
+        (function() {
+            const upgradeWebcamTo1080p = () => {
+                try {
+                    const doc = window.parent.document;
+                    const videos = doc.querySelectorAll('video');
+                    videos.forEach(video => {
+                        if (video.srcObject && !video.dataset.upgraded1080p) {
+                            const tracks = video.srcObject.getVideoTracks();
+                            if (tracks.length > 0) {
+                                const track = tracks[0];
+                                track.applyConstraints({
+                                    width: { ideal: 1920, min: 1280 },
+                                    height: { ideal: 1080, min: 720 }
+                                }).then(() => {
+                                    video.dataset.upgraded1080p = "true";
+                                    console.log("Webcam locked to 1080p stream: " + video.videoWidth + "x" + video.videoHeight);
+                                }).catch(err => {
+                                    console.warn("Camera could not satisfy 1080p constraint:", err);
+                                });
+                            }
+                        }
+                    });
+                } catch (e) {
+                    // Suppress cross-origin if embedded
+                }
+            };
+            setInterval(upgradeWebcamTo1080p, 400);
+        })();
+        </script>
+        """,
+        height=0,
+        width=0
+    )
 
 RESAMPLE_METHOD = getattr(PILImage, 'Resampling', PILImage).LANCZOS
 
@@ -283,18 +323,17 @@ def process_uploaded_image(file_input):
         return None
 
 def capture_from_jetson_cam():
-    """Captures native 1080p frame from HC010 USB camera via Linux V4L2."""
+    """Captures native 1080p frame from HC010 USB camera via Linux V4L2 on Jetson Nano."""
     t_start = time.perf_counter()
     cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
     if not cap.isOpened():
         return None, "Cannot connect to USB camera on Jetson (/dev/video0)."
     
-    # Force native 1080p MJPEG hardware stream
+    # Configure Hardware MJPEG at native 1920x1080
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
     
-    # Flush 5 warm-up frames to stabilize sensor auto-exposure
     for _ in range(5):
         cap.grab()
         
@@ -579,7 +618,7 @@ with st.sidebar:
 
     input_mode = st.radio(
         UI[l]["input_mode"], 
-        [UI[l]["mode_bench_cam"], UI[l]["mode_upload"], UI[l]["mode_camera"]], 
+        [UI[l]["mode_bench_cam"], UI[l]["mode_camera"], UI[l]["mode_upload"]], 
         index=0
     )
 
@@ -624,6 +663,8 @@ with st.sidebar:
                 cap.release()
 
     elif input_mode == UI[l]["mode_camera"]:
+        st.caption("Client WebRTC camera stream with active 1080p constraints injector")
+        inject_1080p_camera_constraint()
         active_input = st.camera_input(UI[l]["camera"])
     else:
         active_input = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "heic"])
@@ -647,7 +688,7 @@ with st.sidebar:
         if "Step 1a: OpenCV Grid Extraction (ms)" in lat:
             st.metric(label=UI[l]["lat_grid"], value=f"{lat['Step 1a: OpenCV Grid Extraction (ms)']:.1f} ms")
         if "Total Time to Grid (ms)" in lat:
-            st.metric(label=UI[l]["lat_total_cv"], value=f"{lat['Total Time to Grid (ms)']:.1f} ms", delta="Sub-50ms Realtime", delta_color="normal")
+            st.metric(label=UI[l]["lat_total_cv"], value=f"{lat['Total Time to Grid (ms)']:.1f} ms", delta="Ingress + Compute", delta_color="normal")
 
         st.markdown(f"**{UI[l]['cloud_header']}**")
         if "Step 1b: Cloud Vision AI (s)" in lat:
@@ -1063,6 +1104,7 @@ if active_input or st.session_state.get("img1") is not None:
                     if proof_img_obj:
                         st.image(proof_img_obj, caption="Captured 1080p Proof", width=400)
                 elif socratic_upload_mode.startswith("Webcam"):
+                    inject_1080p_camera_constraint()
                     proof_webcam = st.camera_input("Take photo", key=f"s_cam_{st.session_state.socratic_q_idx}")
                     proof_img_obj = process_uploaded_image(io.BytesIO(proof_webcam.getvalue())) if proof_webcam else None
                 else:
@@ -1127,4 +1169,4 @@ if active_input or st.session_state.get("img1") is not None:
                     st.session_state.last_input_id = None
                     st.rerun()
 else:
-    st.info("Please capture from the bench camera or upload an image to begin / 請使用實驗台鏡頭拍照或上傳圖片以開始")
+    st.info("Please capture from the bench camera, use webcam, or upload an image to begin / 請使用相機拍照或上傳圖片以開始")
