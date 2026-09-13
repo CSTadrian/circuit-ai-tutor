@@ -54,8 +54,8 @@ UI = {
         "target": "Target Schematic",
         "input_mode": "Input Method",
         "mode_bench_cam": "📷 Bench USB Camera (1080p V4L2)",
-        "mode_camera": "📸 Browser Webcam (1080p Enforced)",
-        "mode_upload": "📁 Upload 1080p Image (Fair Benchmark)",
+        "mode_camera": "📸 Browser Webcam (1080p Enforced & Normalized)",
+        "mode_upload": "📁 Upload Image (Normalized to 1080p)",
         "upload": "Upload Student Photo",
         "reset": "Reset Process",
         "schematic": "Schematic",
@@ -112,8 +112,8 @@ UI = {
         "target": "目標電路圖",
         "input_mode": "輸入方式",
         "mode_bench_cam": "📷 實驗台 1080p 鏡頭 (Nano V4L2)",
-        "mode_camera": "📸 瀏覽器高清相機 (強制 1080p)",
-        "mode_upload": "📁 上傳 1080p 圖片 (公平基準測試)",
+        "mode_camera": "📸 瀏覽器高清相機 (強制並標準化 1080p)",
+        "mode_upload": "📁 上傳圖片 (自動標準化為 1080p)",
         "upload": "上傳學生電路照片",
         "reset": "重置流程",
         "schematic": "電路圖",
@@ -194,7 +194,7 @@ else:
     st.error("GCP Service Account secrets not found!")
     st.stop()
 
-# --- 3. UI CUSTOMIZATION & 1080P BROWSER WEBRTC INJECTOR ---
+# --- 3. UI CUSTOMIZATION & 1080P WEBRTC INJECTOR ---
 st.set_page_config(page_title="AI Circuit Tutor", layout="wide")
 st.markdown("""
     <style>
@@ -205,7 +205,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 def inject_1080p_camera_constraint():
-    """Injects WebRTC applyConstraints into Streamlit DOM to force browser camera to stream and snap in true 1080p."""
+    """Forces browser webcam stream to negotiate a true 1920x1080 resolution."""
     components.html(
         """
         <script>
@@ -231,9 +231,7 @@ def inject_1080p_camera_constraint():
                             }
                         }
                     });
-                } catch (e) {
-                    // Suppress cross-origin if embedded
-                }
+                } catch (e) {}
             };
             setInterval(upgradeWebcamTo1080p, 400);
         })();
@@ -298,6 +296,12 @@ def detect_horizontal_rows(pil_img):
     return [int((y / height) * 1000) for y in peaks]
     
 def process_uploaded_image(file_input):
+    """
+    Ingests and STRICTLY NORMALIZES any input image to 1920x1080 (1080p).
+    - Downgrades larger images (4K / 12MP) using INTER_AREA.
+    - Upgrades smaller browser/webcam images (720p/480p) using INTER_CUBIC.
+    This guarantees an identical 2.07M pixel computational payload for a fair benchmark.
+    """
     t_start = time.perf_counter()
     try:
         if isinstance(file_input, str):
@@ -309,14 +313,20 @@ def process_uploaded_image(file_input):
         img = ImageOps.exif_transpose(img)
         img = img.convert("RGB")
         
-        MAX_SAFE_DIM = 4500 
-        if max(img.size) > MAX_SAFE_DIM:
-            img.thumbnail((MAX_SAFE_DIM, MAX_SAFE_DIM), RESAMPLE_METHOD)
+        target_w, target_h = 1920, 1080
+        orig_w, orig_h = img.size
+        
+        if orig_w != target_w or orig_h != target_h:
+            img_cv = np.array(img)
+            interp = cv2.INTER_AREA if (orig_w > target_w or orig_h > target_h) else cv2.INTER_CUBIC
+            resized_cv = cv2.resize(img_cv, (target_w, target_h), interpolation=interp)
+            img = PILImage.fromarray(resized_cv)
             
         t_duration_ms = (time.perf_counter() - t_start) * 1000.0
         if "latency_log" not in st.session_state:
             st.session_state.latency_log = {}
         st.session_state.latency_log["Step 0: Ingress / Bus Grab (ms)"] = t_duration_ms
+        st.session_state.latency_log["Resolution"] = "1920 x 1080 (Normalized)"
         return img
     except Exception as e:
         st.error(f"Image Load Failed: {e}")
@@ -329,7 +339,6 @@ def capture_from_jetson_cam():
     if not cap.isOpened():
         return None, "Cannot connect to USB camera on Jetson (/dev/video0)."
     
-    # Configure Hardware MJPEG at native 1920x1080
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
@@ -349,6 +358,7 @@ def capture_from_jetson_cam():
     if "latency_log" not in st.session_state:
         st.session_state.latency_log = {}
     st.session_state.latency_log["Step 0: Ingress / Bus Grab (ms)"] = t_cap_ms
+    st.session_state.latency_log["Resolution"] = "1920 x 1080 (Native V4L2)"
 
     return PILImage.fromarray(rgb), None
 
@@ -688,7 +698,7 @@ with st.sidebar:
         if "Step 1a: OpenCV Grid Extraction (ms)" in lat:
             st.metric(label=UI[l]["lat_grid"], value=f"{lat['Step 1a: OpenCV Grid Extraction (ms)']:.1f} ms")
         if "Total Time to Grid (ms)" in lat:
-            st.metric(label=UI[l]["lat_total_cv"], value=f"{lat['Total Time to Grid (ms)']:.1f} ms", delta="Ingress + Compute", delta_color="normal")
+            st.metric(label=UI[l]["lat_total_cv"], value=f"{lat['Total Time to Grid (ms)']:.1f} ms", delta="Normalized 1080p Compute", delta_color="normal")
 
         st.markdown(f"**{UI[l]['cloud_header']}**")
         if "Step 1b: Cloud Vision AI (s)" in lat:
@@ -730,7 +740,6 @@ if active_input or st.session_state.get("img1") is not None:
             cv_duration = (time.perf_counter() - t_cv_start) * 1000.0
             st.session_state.latency_log["Step 1a: OpenCV Grid Extraction (ms)"] = cv_duration
             
-            # Compute total edge transit + computation time
             t_ing = st.session_state.latency_log.get("Step 0: Ingress / Bus Grab (ms)", 0.0)
             st.session_state.latency_log["Total Time to Grid (ms)"] = t_ing + cv_duration
 
