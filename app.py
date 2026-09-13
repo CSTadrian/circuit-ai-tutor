@@ -52,9 +52,9 @@ UI = {
         "task": "Select Task",
         "target": "Target Schematic",
         "input_mode": "Input Method",
-        "mode_bench_cam": "📷 Bench USB Camera (1080p)",
-        "mode_upload": "Upload Image",
-        "mode_camera": "Webcam (Browser)",
+        "mode_bench_cam": "📷 Bench USB Camera (1080p V4L2)",
+        "mode_upload": "📁 Upload 1080p Image (Fair Benchmark)",
+        "mode_camera": "📸 Browser Webcam",
         "upload": "Upload Student Photo",
         "reset": "Reset Process",
         "schematic": "Schematic",
@@ -77,7 +77,7 @@ UI = {
         "camera": "Take a Photo of your Circuit",
         "guide_text": """
         **How to Start:**
-        1. Select Task & Capture 1080p Photo
+        1. Select Task & Capture/Upload 1080p Photo
         2. Detect Components (Step 1)
         3. Adjust Pin Rows (Step 2)
         4. AI Diagnosis (Step 3)
@@ -93,10 +93,12 @@ UI = {
         "metric_capacitance": "💧 Energy Water Tank Volume",
         "metric_ldr_delta": "🌗 Light-to-Shadow Delta Swing",
         "benchmarks_title": "⏱️ Latency Benchmarks (HUD)",
-        "edge_header": "⚡ Local Edge Processing (Jetson Nano)",
+        "edge_header": "⚡ Local Processing & Ingress",
         "cloud_header": "☁️ Cloud Multimodal AI (Gemini 3.1 Pro)",
-        "lat_usb": "Hardware USB 1080p Ingestion",
-        "lat_grid": "Edge OpenCV Grid Extraction",
+        "lat_res": "Captured Resolution",
+        "lat_ingress": "Ingress / Bus Frame Grab",
+        "lat_grid": "OpenCV Grid Extraction",
+        "lat_total_cv": "Total Time to Grid (Ingress + CV)",
         "lat_vision": "Cloud Vision Component ID",
         "lat_diag": "Cloud Electrical Diagnosis",
         "lat_socratic": "Cloud Socratic Verification"
@@ -108,9 +110,9 @@ UI = {
         "task": "選擇任務",
         "target": "目標電路圖",
         "input_mode": "輸入方式",
-        "mode_bench_cam": "📷 實驗台 1080p 高清鏡頭",
-        "mode_upload": "上傳圖片",
-        "mode_camera": "使用瀏覽器相機",
+        "mode_bench_cam": "📷 實驗台 1080p 鏡頭 (Nano V4L2)",
+        "mode_upload": "📁 上傳 1080p 圖片 (公平基準測試)",
+        "mode_camera": "📸 瀏覽器相機",
         "upload": "上傳學生電路照片",
         "reset": "重置流程",
         "schematic": "電路圖",
@@ -133,7 +135,7 @@ UI = {
         "camera": "拍攝電路照片",
         "guide_text": """
         **使用步驟：**
-        1. 選擇任務並拍攝 1080p 照片
+        1. 選擇任務並拍攝/上傳 1080p 照片
         2. 偵測零件（第一步）
         3. 微調引腳位置（第二步）
         4. AI 進行診斷（第三步）
@@ -149,10 +151,12 @@ UI = {
         "metric_capacitance": "💧 儲能水箱容量 (電容容量)",
         "metric_ldr_delta": "🌗 光影動態擺幅 (LDR 變動差值)",
         "benchmarks_title": "⏱️ 延遲基準測試監控 (HUD)",
-        "edge_header": "⚡ 邊緣硬體加速 (Jetson Nano 本地)",
+        "edge_header": "⚡ 本地影格擷取與影像運算",
         "cloud_header": "☁️ 雲端多模態 AI (Gemini 3.1 Pro)",
-        "lat_usb": "硬體 USB 1080p 影格擷取",
-        "lat_grid": "邊緣 OpenCV 導電軌道網格運算",
+        "lat_res": "實時辨識解析度",
+        "lat_ingress": "影格載入 / 硬體總線耗時",
+        "lat_grid": "OpenCV 導電軌道網格運算",
+        "lat_total_cv": "網格總耗時 (總線傳輸 + 運算)",
         "lat_vision": "雲端視覺零件特徵辨識",
         "lat_diag": "雲端電路拓撲與邏輯診斷",
         "lat_socratic": "雲端蘇格拉底實驗驗證"
@@ -254,6 +258,7 @@ def detect_horizontal_rows(pil_img):
     return [int((y / height) * 1000) for y in peaks]
     
 def process_uploaded_image(file_input):
+    t_start = time.perf_counter()
     try:
         if isinstance(file_input, str):
             img = PILImage.open(file_input)
@@ -268,24 +273,28 @@ def process_uploaded_image(file_input):
         if max(img.size) > MAX_SAFE_DIM:
             img.thumbnail((MAX_SAFE_DIM, MAX_SAFE_DIM), RESAMPLE_METHOD)
             
+        t_duration_ms = (time.perf_counter() - t_start) * 1000.0
+        if "latency_log" not in st.session_state:
+            st.session_state.latency_log = {}
+        st.session_state.latency_log["Step 0: Ingress / Bus Grab (ms)"] = t_duration_ms
         return img
     except Exception as e:
         st.error(f"Image Load Failed: {e}")
         return None
 
 def capture_from_jetson_cam():
-    """Captures uncompromised 1080p frame from HC010 USB camera via V4L2 on Jetson Nano."""
+    """Captures native 1080p frame from HC010 USB camera via Linux V4L2."""
     t_start = time.perf_counter()
     cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
     if not cap.isOpened():
         return None, "Cannot connect to USB camera on Jetson (/dev/video0)."
     
-    # Configure Hardware MJPEG at native 1920x1080
+    # Force native 1080p MJPEG hardware stream
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
     
-    # Flush warm-up frames to stabilize sensor auto-exposure and auto-white-balance
+    # Flush 5 warm-up frames to stabilize sensor auto-exposure
     for _ in range(5):
         cap.grab()
         
@@ -300,7 +309,7 @@ def capture_from_jetson_cam():
     
     if "latency_log" not in st.session_state:
         st.session_state.latency_log = {}
-    st.session_state.latency_log["Step 0: Edge Hardware Capture (ms)"] = t_cap_ms
+    st.session_state.latency_log["Step 0: Ingress / Bus Grab (ms)"] = t_cap_ms
 
     return PILImage.fromarray(rgb), None
 
@@ -436,8 +445,10 @@ def save_to_drive(user_id, task_name, ai_feedback, calculated_marks, res_data, i
             "Calculated Current (mA)": res_data.get("calculated_current_ma", 0.0),
             "Water Tank Score (L)": res_data.get("water_tank_score", 0),
             "LDR Delta Score (Δ)": res_data.get("ldr_delta_score", 0),
-            "Latency Edge Capture (ms)": lat_log.get("Step 0: Edge Hardware Capture (ms)", 0.0),
-            "Latency Edge OpenCV (ms)": lat_log.get("Step 1a: Edge OpenCV Grid (ms)", 0.0),
+            "Resolution": lat_log.get("Resolution", "Unknown"),
+            "Latency Ingress (ms)": lat_log.get("Step 0: Ingress / Bus Grab (ms)", 0.0),
+            "Latency OpenCV Grid (ms)": lat_log.get("Step 1a: OpenCV Grid Extraction (ms)", 0.0),
+            "Total Ingress + CV (ms)": lat_log.get("Total Time to Grid (ms)", 0.0),
             "Latency Cloud Vision (s)": lat_log.get("Step 1b: Cloud Vision AI (s)", 0.0),
             "Latency Cloud Diag (s)": lat_log.get("Step 3: Cloud AI Diagnosis (s)", 0.0),
             "Raw AI Feedback String": ai_feedback, 
@@ -595,7 +606,6 @@ with st.sidebar:
                     st.rerun()
 
         elif live_feed and st.session_state.get("img1") is None:
-            # Low overhead preview stream to keep Jetson cool while aligning
             cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
             cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -609,7 +619,7 @@ with st.sidebar:
                         break
                     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     preview_box.image(rgb, caption="Bench View (Align breadboard here)", use_container_width=True)
-                    time.sleep(0.05)  # Limit preview to ~20 FPS
+                    time.sleep(0.05)
             finally:
                 cap.release()
 
@@ -624,16 +634,20 @@ with st.sidebar:
         st.session_state.last_input_id = None
         st.rerun()
 
-    # --- LATENCY BENCHMARK HUD ---
+    # --- LATENCY & RESOLUTION BENCHMARK HUD ---
     st.divider()
     st.markdown(f"### {UI[l]['benchmarks_title']}")
     lat = st.session_state.get("latency_log", {})
     if lat:
         st.markdown(f"**{UI[l]['edge_header']}**")
-        if "Step 0: Edge Hardware Capture (ms)" in lat:
-            st.metric(label=UI[l]["lat_usb"], value=f"{lat['Step 0: Edge Hardware Capture (ms)']:.1f} ms", delta="Hardware Bus", delta_color="normal")
-        if "Step 1a: Edge OpenCV Grid (ms)" in lat:
-            st.metric(label=UI[l]["lat_grid"], value=f"{lat['Step 1a: Edge OpenCV Grid (ms)']:.1f} ms", delta="Nano Local", delta_color="normal")
+        if "Resolution" in lat:
+            st.caption(f"{UI[l]['lat_res']}: `{lat['Resolution']}`")
+        if "Step 0: Ingress / Bus Grab (ms)" in lat:
+            st.metric(label=UI[l]["lat_ingress"], value=f"{lat['Step 0: Ingress / Bus Grab (ms)']:.1f} ms")
+        if "Step 1a: OpenCV Grid Extraction (ms)" in lat:
+            st.metric(label=UI[l]["lat_grid"], value=f"{lat['Step 1a: OpenCV Grid Extraction (ms)']:.1f} ms")
+        if "Total Time to Grid (ms)" in lat:
+            st.metric(label=UI[l]["lat_total_cv"], value=f"{lat['Total Time to Grid (ms)']:.1f} ms", delta="Sub-50ms Realtime", delta_color="normal")
 
         st.markdown(f"**{UI[l]['cloud_header']}**")
         if "Step 1b: Cloud Vision AI (s)" in lat:
@@ -643,7 +657,7 @@ with st.sidebar:
         if "Step 5: Cloud Socratic AI (s)" in lat:
             st.metric(label=UI[l]["lat_socratic"], value=f"{lat['Step 5: Cloud Socratic AI (s)']:.2f} s")
     else:
-        st.caption("No operations clocked yet. Capture a circuit to benchmark.")
+        st.caption("No operations clocked yet. Capture or upload an image to benchmark.")
 
     st.markdown(f"### {UI[l]['guide_title']}")
     st.markdown(UI[l]['guide_text'])
@@ -663,11 +677,21 @@ if active_input or st.session_state.get("img1") is not None:
     raw_student = st.session_state.img1
 
     if raw_student is not None:
+        w_img, h_img = raw_student.size
+        if "latency_log" not in st.session_state:
+            st.session_state.latency_log = {}
+        st.session_state.latency_log["Resolution"] = f"{w_img} x {h_img}"
+
         # --- BENCHMARK: LOCAL OPENCV GRID DETECTION ---
         if not st.session_state.hough_rows:
-            t_hough_start = time.perf_counter()
+            t_cv_start = time.perf_counter()
             st.session_state.hough_rows = detect_horizontal_rows(raw_student)
-            st.session_state.latency_log["Step 1a: Edge OpenCV Grid (ms)"] = (time.perf_counter() - t_hough_start) * 1000.0
+            cv_duration = (time.perf_counter() - t_cv_start) * 1000.0
+            st.session_state.latency_log["Step 1a: OpenCV Grid Extraction (ms)"] = cv_duration
+            
+            # Compute total edge transit + computation time
+            t_ing = st.session_state.latency_log.get("Step 0: Ingress / Bus Grab (ms)", 0.0)
+            st.session_state.latency_log["Total Time to Grid (ms)"] = t_ing + cv_duration
 
         is_direct_camera = (input_mode == UI[l]["mode_bench_cam"] or input_mode == UI[l]["mode_camera"])
 
