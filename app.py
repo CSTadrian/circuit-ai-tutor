@@ -43,7 +43,7 @@ MODEL_ID = "gemini-3.1-pro-preview"
 PARENT_FOLDER_ID = "1_cn9lfvMLaozDTx8pvU6LP62J9AVFrvz"
 CSV_FILENAME = "circuit_audit_logs.csv"
 
-# --- UI LANGUAGE DICTIONARY (FULLY SYNCHRONIZED) ---
+# --- UI LANGUAGE DICTIONARY ---
 UI = {
     "en": {
         "title": "🔌 AI Circuit Tutor",
@@ -52,8 +52,9 @@ UI = {
         "task": "Select Task",
         "target": "Target Schematic",
         "input_mode": "Input Method",
+        "mode_bench_cam": "📷 Bench USB Camera (1080p)",
         "mode_upload": "Upload Image",
-        "mode_camera": "Use Camera",
+        "mode_camera": "Webcam (Browser)",
         "upload": "Upload Student Photo",
         "reset": "Reset Process",
         "schematic": "Schematic",
@@ -76,7 +77,7 @@ UI = {
         "camera": "Take a Photo of your Circuit",
         "guide_text": """
         **How to Start:**
-        1. Select Task & Upload Photo
+        1. Select Task & Capture 1080p Photo
         2. Detect Components (Step 1)
         3. Adjust Pin Rows (Step 2)
         4. AI Diagnosis (Step 3)
@@ -92,12 +93,12 @@ UI = {
         "metric_capacitance": "💧 Energy Water Tank Volume",
         "metric_ldr_delta": "🌗 Light-to-Shadow Delta Swing",
         "benchmarks_title": "⏱️ Latency Benchmarks (HUD)",
-        "cv_header": "⚡ Local / CV Image Processing",
-        "cloud_header": "☁️ Cloud Multimodal AI (Gemini)",
-        "lat_ingress": "Image Upload & Ingress Decode",
-        "lat_grid": "OpenCV Grid Extraction",
-        "lat_vision": "Cloud Vision Component Identification",
-        "lat_diag": "Cloud Electrical Logic Diagnosis",
+        "edge_header": "⚡ Local Edge Processing (Jetson Nano)",
+        "cloud_header": "☁️ Cloud Multimodal AI (Gemini 3.1 Pro)",
+        "lat_usb": "Hardware USB 1080p Ingestion",
+        "lat_grid": "Edge OpenCV Grid Extraction",
+        "lat_vision": "Cloud Vision Component ID",
+        "lat_diag": "Cloud Electrical Diagnosis",
         "lat_socratic": "Cloud Socratic Verification"
     },
     "hk": {
@@ -107,8 +108,9 @@ UI = {
         "task": "選擇任務",
         "target": "目標電路圖",
         "input_mode": "輸入方式",
+        "mode_bench_cam": "📷 實驗台 1080p 高清鏡頭",
         "mode_upload": "上傳圖片",
-        "mode_camera": "使用相機",
+        "mode_camera": "使用瀏覽器相機",
         "upload": "上傳學生電路照片",
         "reset": "重置流程",
         "schematic": "電路圖",
@@ -131,7 +133,7 @@ UI = {
         "camera": "拍攝電路照片",
         "guide_text": """
         **使用步驟：**
-        1. 選擇任務並上傳照片
+        1. 選擇任務並拍攝 1080p 照片
         2. 偵測零件（第一步）
         3. 微調引腳位置（第二步）
         4. AI 進行診斷（第三步）
@@ -147,10 +149,10 @@ UI = {
         "metric_capacitance": "💧 儲能水箱容量 (電容容量)",
         "metric_ldr_delta": "🌗 光影動態擺幅 (LDR 變動差值)",
         "benchmarks_title": "⏱️ 延遲基準測試監控 (HUD)",
-        "cv_header": "⚡ 本地 / CV 影像運算處理",
+        "edge_header": "⚡ 邊緣硬體加速 (Jetson Nano 本地)",
         "cloud_header": "☁️ 雲端多模態 AI (Gemini 3.1 Pro)",
-        "lat_ingress": "圖片上傳傳輸與解碼",
-        "lat_grid": "OpenCV 導電軌道網格運算",
+        "lat_usb": "硬體 USB 1080p 影格擷取",
+        "lat_grid": "邊緣 OpenCV 導電軌道網格運算",
         "lat_vision": "雲端視覺零件特徵辨識",
         "lat_diag": "雲端電路拓撲與邏輯診斷",
         "lat_socratic": "雲端蘇格拉底實驗驗證"
@@ -187,7 +189,7 @@ else:
     st.error("GCP Service Account secrets not found!")
     st.stop()
 
-# --- 3. UI CUSTOMIZATION (Hiding Menus) ---
+# --- 3. UI CUSTOMIZATION ---
 st.set_page_config(page_title="AI Circuit Tutor", layout="wide")
 st.markdown("""
     <style>
@@ -252,7 +254,6 @@ def detect_horizontal_rows(pil_img):
     return [int((y / height) * 1000) for y in peaks]
     
 def process_uploaded_image(file_input):
-    t_start = time.perf_counter()
     try:
         if isinstance(file_input, str):
             img = PILImage.open(file_input)
@@ -267,14 +268,41 @@ def process_uploaded_image(file_input):
         if max(img.size) > MAX_SAFE_DIM:
             img.thumbnail((MAX_SAFE_DIM, MAX_SAFE_DIM), RESAMPLE_METHOD)
             
-        t_duration_ms = (time.perf_counter() - t_start) * 1000.0
-        if "latency_log" not in st.session_state:
-            st.session_state.latency_log = {}
-        st.session_state.latency_log["Step 0: Image Ingress (ms)"] = t_duration_ms
         return img
     except Exception as e:
         st.error(f"Image Load Failed: {e}")
         return None
+
+def capture_from_jetson_cam():
+    """Captures uncompromised 1080p frame from HC010 USB camera via V4L2 on Jetson Nano."""
+    t_start = time.perf_counter()
+    cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+    if not cap.isOpened():
+        return None, "Cannot connect to USB camera on Jetson (/dev/video0)."
+    
+    # Configure Hardware MJPEG at native 1920x1080
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+    
+    # Flush warm-up frames to stabilize sensor auto-exposure and auto-white-balance
+    for _ in range(5):
+        cap.grab()
+        
+    ret, frame = cap.read()
+    cap.release()
+    
+    if not ret or frame is None:
+        return None, "Failed to capture image from Jetson camera."
+        
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    t_cap_ms = (time.perf_counter() - t_start) * 1000.0
+    
+    if "latency_log" not in st.session_state:
+        st.session_state.latency_log = {}
+    st.session_state.latency_log["Step 0: Edge Hardware Capture (ms)"] = t_cap_ms
+
+    return PILImage.fromarray(rgb), None
 
 def draw_coordinate_grid(image, snap_rows=None, corners=None):
     draw = ImageDraw.Draw(image)
@@ -408,8 +436,8 @@ def save_to_drive(user_id, task_name, ai_feedback, calculated_marks, res_data, i
             "Calculated Current (mA)": res_data.get("calculated_current_ma", 0.0),
             "Water Tank Score (L)": res_data.get("water_tank_score", 0),
             "LDR Delta Score (Δ)": res_data.get("ldr_delta_score", 0),
-            "Latency Image Ingress (ms)": lat_log.get("Step 0: Image Ingress (ms)", 0.0),
-            "Latency OpenCV Grid (ms)": lat_log.get("Step 1a: OpenCV Grid Extraction (ms)", 0.0),
+            "Latency Edge Capture (ms)": lat_log.get("Step 0: Edge Hardware Capture (ms)", 0.0),
+            "Latency Edge OpenCV (ms)": lat_log.get("Step 1a: Edge OpenCV Grid (ms)", 0.0),
             "Latency Cloud Vision (s)": lat_log.get("Step 1b: Cloud Vision AI (s)", 0.0),
             "Latency Cloud Diag (s)": lat_log.get("Step 3: Cloud AI Diagnosis (s)", 0.0),
             "Raw AI Feedback String": ai_feedback, 
@@ -532,18 +560,64 @@ with st.sidebar:
             st.warning(f"Blueprint layout asset {schematic_filename} missing.")
     else:
         if l == "en":
-            st.info("🏆 **Open Challenge Mode**\n\nThink of the underlying circuit semantics and challenge yourself to explore further! No reference image blueprint is provided for this round.")
+            st.info("🏆 **Open Challenge Mode**\n\nNo reference image blueprint is provided for this round.")
         else:
-            st.info("🏆 **開放式挑戰模式**\n\n細心諗大中嘅拓撲原理，突破自己，發掘更多可能！本挑戰關卡不提供對照電路圖。")
+            st.info("🏆 **開放式挑戰模式**\n\n本挑戰關卡不提供對照電路圖。")
 
     st.divider()
 
-    input_mode = st.radio(UI[l]["input_mode"], [UI[l]["mode_camera"], UI[l]["mode_upload"]], index=1, horizontal=True)
-    if input_mode == UI[l]["mode_camera"]:
+    input_mode = st.radio(
+        UI[l]["input_mode"], 
+        [UI[l]["mode_bench_cam"], UI[l]["mode_upload"], UI[l]["mode_camera"]], 
+        index=0
+    )
+
+    if input_mode == UI[l]["mode_bench_cam"]:
+        st.caption("Overhead bench inspection camera via direct Linux V4L2 (1080p)")
+        
+        col_cam1, col_cam2 = st.columns([1, 1])
+        with col_cam1:
+            live_feed = st.toggle("🔴 Viewfinder", value=False)
+        with col_cam2:
+            snap_trigger = st.button("📸 Capture 1080p", type="primary", use_container_width=True)
+
+        preview_box = st.empty()
+
+        if snap_trigger:
+            with st.spinner("Capturing uncompressed 1080p circuit image..."):
+                img, err = capture_from_jetson_cam()
+                if err:
+                    st.error(err)
+                else:
+                    reset_flow()
+                    st.session_state.img1 = img
+                    st.session_state.last_input_id = f"jetson_cam_{datetime.now().timestamp()}"
+                    st.rerun()
+
+        elif live_feed and st.session_state.get("img1") is None:
+            # Low overhead preview stream to keep Jetson cool while aligning
+            cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            
+            try:
+                while live_feed:
+                    ret, frame = cap.read()
+                    if not ret:
+                        preview_box.warning("Unable to stream from camera.")
+                        break
+                    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    preview_box.image(rgb, caption="Bench View (Align breadboard here)", use_container_width=True)
+                    time.sleep(0.05)  # Limit preview to ~20 FPS
+            finally:
+                cap.release()
+
+    elif input_mode == UI[l]["mode_camera"]:
         active_input = st.camera_input(UI[l]["camera"])
     else:
         active_input = st.file_uploader(UI[l]["upload"], type=["jpg", "png", "jpeg", "heic"])
-        
+
     st.divider()
     if st.button(UI[l]["reset"]): 
         reset_flow()
@@ -555,56 +629,55 @@ with st.sidebar:
     st.markdown(f"### {UI[l]['benchmarks_title']}")
     lat = st.session_state.get("latency_log", {})
     if lat:
-        st.markdown(f"**{UI[l]['cv_header']}**")
-        if "Step 0: Image Ingress (ms)" in lat:
-            st.metric(label=UI[l]["lat_ingress"], value=f"{lat['Step 0: Image Ingress (ms)']:.1f} ms")
-        if "Step 1a: OpenCV Grid Extraction (ms)" in lat:
-            st.metric(label=UI[l]["lat_grid"], value=f"{lat['Step 1a: OpenCV Grid Extraction (ms)']:.1f} ms")
+        st.markdown(f"**{UI[l]['edge_header']}**")
+        if "Step 0: Edge Hardware Capture (ms)" in lat:
+            st.metric(label=UI[l]["lat_usb"], value=f"{lat['Step 0: Edge Hardware Capture (ms)']:.1f} ms", delta="Hardware Bus", delta_color="normal")
+        if "Step 1a: Edge OpenCV Grid (ms)" in lat:
+            st.metric(label=UI[l]["lat_grid"], value=f"{lat['Step 1a: Edge OpenCV Grid (ms)']:.1f} ms", delta="Nano Local", delta_color="normal")
 
         st.markdown(f"**{UI[l]['cloud_header']}**")
         if "Step 1b: Cloud Vision AI (s)" in lat:
             st.metric(label=UI[l]["lat_vision"], value=f"{lat['Step 1b: Cloud Vision AI (s)']:.2f} s")
         if "Step 3: Cloud AI Diagnosis (s)" in lat:
             st.metric(label=UI[l]["lat_diag"], value=f"{lat['Step 3: Cloud AI Diagnosis (s)']:.2f} s")
-        if "Step 5: Cloud Socratic Verification (s)" in lat:
-            st.metric(label=UI[l]["lat_socratic"], value=f"{lat['Step 5: Cloud Socratic Verification (s)']:.2f} s")
+        if "Step 5: Cloud Socratic AI (s)" in lat:
+            st.metric(label=UI[l]["lat_socratic"], value=f"{lat['Step 5: Cloud Socratic AI (s)']:.2f} s")
     else:
-        st.caption("No operations clocked yet. Upload or snap a photo to benchmark.")
+        st.caption("No operations clocked yet. Capture a circuit to benchmark.")
 
     st.markdown(f"### {UI[l]['guide_title']}")
     st.markdown(UI[l]['guide_text'])
 
 # --- 6. LOGIC CONTROL MATRICES ---
-if active_input:
-    current_input_id = getattr(active_input, "file_id", str(hash(active_input.getvalue())))
-    
-    if st.session_state.get("last_input_id") != current_input_id:
-        reset_flow()
-        st.session_state.last_input_id = current_input_id
-        st.session_state.img1 = process_uploaded_image(io.BytesIO(active_input.getvalue()))
-    elif st.session_state.img1 is None:
-        st.session_state.img1 = process_uploaded_image(io.BytesIO(active_input.getvalue()))
+if active_input or st.session_state.get("img1") is not None:
+    if active_input:
+        current_input_id = getattr(active_input, "file_id", str(hash(active_input.getvalue())))
+        
+        if st.session_state.get("last_input_id") != current_input_id:
+            reset_flow()
+            st.session_state.last_input_id = current_input_id
+            st.session_state.img1 = process_uploaded_image(io.BytesIO(active_input.getvalue()))
+        elif st.session_state.img1 is None:
+            st.session_state.img1 = process_uploaded_image(io.BytesIO(active_input.getvalue()))
     
     raw_student = st.session_state.img1
 
     if raw_student is not None:
-        # --- BENCHMARK: OPENCV GRID DETECTION ---
+        # --- BENCHMARK: LOCAL OPENCV GRID DETECTION ---
         if not st.session_state.hough_rows:
-            t_cv_start = time.perf_counter()
+            t_hough_start = time.perf_counter()
             st.session_state.hough_rows = detect_horizontal_rows(raw_student)
-            st.session_state.latency_log["Step 1a: OpenCV Grid Extraction (ms)"] = (time.perf_counter() - t_cv_start) * 1000.0
+            st.session_state.latency_log["Step 1a: Edge OpenCV Grid (ms)"] = (time.perf_counter() - t_hough_start) * 1000.0
 
-        is_camera_mode = (input_mode == UI[l]["mode_camera"])
+        is_direct_camera = (input_mode == UI[l]["mode_bench_cam"] or input_mode == UI[l]["mode_camera"])
 
         # --- STEP 1: COMPONENT TRACK ACQUISITION ---
         if st.session_state.step == 1:
             grid_visualization = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
             
-            if is_camera_mode:
-                orig_w, orig_h = grid_visualization.size
-                large_grid_img = grid_visualization.resize((orig_w * 3, orig_h * 3), RESAMPLE_METHOD)
+            if is_direct_camera:
                 st.subheader(UI[l]["your_circuit"])
-                st.image(large_grid_img, use_container_width=True)
+                st.image(grid_visualization, use_container_width=True)
                 if raw_schematic is not None:
                     with st.expander(UI[l]["schematic"], expanded=False):
                         st.image(raw_schematic, caption=UI[l]["schematic"])
@@ -638,7 +711,6 @@ if active_input:
                         Return JSON mapping 'breadboard_corners' and 'components'.
                         """
 
-                    # Benchmark Step 1b: Cloud Vision Call
                     t_api_start = time.perf_counter()
                     resp = client.models.generate_content(
                         model=MODEL_ID, contents=[raw_student, prompt],
@@ -658,9 +730,9 @@ if active_input:
                                         }
                                     },
                                     "components": {
-                                        "type": "ARRAY", 
+                                        "type": "ARRAY",
                                         "items": {
-                                            "type": "OBJECT", 
+                                            "type": "OBJECT",
                                             "properties": {
                                                 "name": {"type": "STRING"},
                                                 "center": {"type": "ARRAY", "items": {"type": "INTEGER"}},
@@ -673,7 +745,7 @@ if active_input:
                         )
                     )
                     st.session_state.latency_log["Step 1b: Cloud Vision AI (s)"] = time.perf_counter() - t_api_start
-                    
+
                     result = resp.parsed
                     if isinstance(result, list) and len(result) > 0: result = result[0]
                     st.session_state.breadboard_corners = result.get("breadboard_corners", {})
@@ -687,10 +759,10 @@ if active_input:
                             for i, leg in enumerate(legs):
                                 if isinstance(leg, list) and len(leg) >= 2:
                                     records.append({
-                                        "Component": f"{item.get('name')} (Pin {i+1})", 
+                                        "Component": f"{item.get('name')} (Pin {i+1})",
                                         "CX": cx, "CY": cy, "LX": leg[1], "LY": leg[0]
                                     })
-                                        
+
                     st.session_state.components_df = pd.DataFrame(records)
                     base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
                     st.session_state.img2 = draw_pins_on_image(base_grid_img, st.session_state.components_df)
@@ -717,9 +789,7 @@ if active_input:
             with img_col:
                 base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
                 st.session_state.img3 = draw_pins_on_image(base_grid_img, edited_df)
-                tune_w, tune_h = st.session_state.img3.size
-                large_img3 = st.session_state.img3.resize((tune_w * 2, tune_h * 2), RESAMPLE_METHOD)
-                st.image(large_img3, caption=UI[l]["verify"], use_container_width=True)
+                st.image(st.session_state.img3, caption=UI[l]["verify"], use_container_width=True)
 
             if st.button(UI[l]["step2_confirm"], type="primary"):
                 st.session_state.components_df = edited_df
@@ -731,10 +801,7 @@ if active_input:
         # --- STEP 3: REAL-TIME SIMULATION & DIAGNOSIS ---
         elif st.session_state.step == 3:
             st.subheader(UI[l]["your_circuit"])
-            
-            w3, h3 = st.session_state.img3.size
-            large_img3_review = st.session_state.img3.resize((w3 * 2, h3 * 2), RESAMPLE_METHOD)
-            st.image(large_img3_review, use_container_width=True)
+            st.image(st.session_state.img3, use_container_width=True)
             
             col_btn_run, col_btn_back = st.columns([1, 4])
             with col_btn_run:
@@ -777,9 +844,9 @@ if active_input:
                             Generate a vertically aligned flowchart in 'circuit_semantic_map' using Unicode box characters (│, ─, ┌, ┐, ├, ┤, ┴, ┬).
                             List descriptive component name, context emoji, and official typographic blueprint block tokens:
                             - Resistor: ─[═]─
-                            - LED: ─▶│─
+                            - LED: ─▶|─
                             - Push Button: ─[░░]─
-                            - Capacitor: ─┤│─
+                            - Capacitor: ─┤|─
                             - Ground Rail: ⏚
                             
                             Component Data (Available Pins):
@@ -791,7 +858,6 @@ if active_input:
                             if raw_schematic is not None:
                                 input_contents.insert(0, raw_schematic)
                                 
-                            # Benchmark Step 3: Cloud Diagnosis Call
                             t_diag_start = time.perf_counter()
                             resp = client.models.generate_content(
                                 model=MODEL_ID, 
@@ -858,7 +924,7 @@ if active_input:
                             save_to_drive(
                                 user_id=user_id, 
                                 task_name=selected_task, 
-                                ai_feedback=feedback_text, 
+                                ai_feedback=feedback_text,
                                 calculated_marks=calculated_marks, 
                                 res_data=result,
                                 images_dict={"1": st.session_state.img1, "4": st.session_state.img4, "summary": diag_img}
@@ -869,7 +935,7 @@ if active_input:
                             
                         except Exception as e:
                             st.error(f"⚠️ AI Execution Error: {e}")
-                            st.info("The application paused here so you can read the error above. Fix your asset paths, API credentials, or Drive connection parameters, then click reset.")
+                            st.info("The application paused here so you can read the error above.")
                             
             with col_btn_back:
                 if st.button(UI[l]["back"], key="btn_step3_back"):
@@ -917,7 +983,7 @@ if active_input:
                 st.image(report_card_img, use_container_width=True)
 
             if not error_list:
-                st.success("🏆 Hardware Core Loop Stable! Optimization Sandbox unlocked! / 基礎結構安全無誤！優化競技場沙盒已解鎖！")
+                st.success("🏆 Hardware Core Loop Stable! Optimization Sandbox unlocked! / 核心電路結構正確！進階蘇格拉底挑戰已解鎖！")
                 if st.button("🚀 Enter Personalized Socratic Sandbox / 進入蘇格拉底深度挑戰", type="primary"):
                     st.session_state.step = 5
                     st.rerun()
@@ -950,20 +1016,41 @@ if active_input:
                 st.info(f"**Current Challenge ({st.session_state.socratic_q_idx + 1}/{len(challenges)}):**\n\n{current_q}")
                 
                 st.markdown("### Verify Your Experiment 🔬")
-                student_text = st.text_area("What did you change and what happened? / 你改咗咩？觀察到咩？")
+                student_text = st.text_area("What did you change and what happened? / 你改動了甚麼？觀察到甚麼變化？")
                 
-                socratic_upload_mode = st.radio("Upload your modified circuit:", ["Camera 📸", "File 📁"], horizontal=True, label_visibility="collapsed", key=f"s_upload_{st.session_state.socratic_q_idx}")
-                if socratic_upload_mode.startswith("Camera"):
-                    proof_img = st.camera_input("Take a photo of the new circuit", key=f"s_cam_{st.session_state.socratic_q_idx}")
+                socratic_upload_mode = st.radio(
+                    "Upload your modified circuit:", 
+                    ["Bench Camera 📷", "Webcam 📸", "File 📁"], 
+                    horizontal=True, 
+                    label_visibility="collapsed", 
+                    key=f"s_upload_{st.session_state.socratic_q_idx}"
+                )
+                
+                proof_img_obj = None
+                if socratic_upload_mode.startswith("Bench Camera"):
+                    if st.button("📸 Capture Proof (1080p)", key=f"s_snap_btn_{st.session_state.socratic_q_idx}"):
+                        cam_img, cam_err = capture_from_jetson_cam()
+                        if cam_err:
+                            st.error(cam_err)
+                        else:
+                            st.session_state[f"proof_{st.session_state.socratic_q_idx}"] = cam_img
+                    
+                    proof_img_obj = st.session_state.get(f"proof_{st.session_state.socratic_q_idx}", None)
+                    if proof_img_obj:
+                        st.image(proof_img_obj, caption="Captured 1080p Proof", width=400)
+                elif socratic_upload_mode.startswith("Webcam"):
+                    proof_webcam = st.camera_input("Take photo", key=f"s_cam_{st.session_state.socratic_q_idx}")
+                    proof_img_obj = process_uploaded_image(io.BytesIO(proof_webcam.getvalue())) if proof_webcam else None
                 else:
-                    proof_img = st.file_uploader("Upload a photo", type=["jpg", "png", "jpeg"], key=f"s_file_{st.session_state.socratic_q_idx}")
+                    proof_file = st.file_uploader("Upload photo", type=["jpg", "png", "jpeg"], key=f"s_file_{st.session_state.socratic_q_idx}")
+                    proof_img_obj = process_uploaded_image(io.BytesIO(proof_file.getvalue())) if proof_file else None
                     
                 if st.button("Verify My Experiment! 🔍", type="primary"):
-                    if not student_text or not proof_img:
-                        st.warning("Please provide both your explanation and an image! / 請同時提供文字解釋及相片！")
+                    if not student_text or not proof_img_obj:
+                        st.warning("Please provide both your explanation and an image! / 請同時提供文字解釋及電路照片！")
                     else:
                         with st.spinner("AI is verifying your hands-on experiment..."):
-                            img_pil = process_uploaded_image(io.BytesIO(proof_img.getvalue()))
+                            img_pil = proof_img_obj
                             history_context = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in st.session_state.socratic_chat])
                             
                             prompt = f"""
@@ -986,7 +1073,7 @@ if active_input:
                                     contents=[img_pil, prompt],
                                     config=types.GenerateContentConfig(temperature=0.4)
                                 )
-                                st.session_state.latency_log["Step 5: Cloud Socratic Verification (s)"] = time.perf_counter() - t_socratic_start
+                                st.session_state.latency_log["Step 5: Cloud Socratic AI (s)"] = time.perf_counter() - t_socratic_start
 
                                 feedback = resp.text
                                 display_feedback = feedback.replace("[VERIFICATION: PASSED]", "").replace("[VERIFICATION: FAILED]", "").strip()
@@ -1002,7 +1089,7 @@ if active_input:
                             except Exception as e:
                                 st.error(f"AI Verification Error: {e}")
             else:
-                st.success("🏆 You are a Circuit Master! All challenges completed! / 🏆 你已經成為電路大師！完成晒所有挑戰！")
+                st.success("🏆 You are a Circuit Master! All challenges completed! / 🏆 你已經成為電路大師！成功完成所有挑戰！")
                 
             st.divider()
             col_b, col_c = st.columns(2)
@@ -1016,4 +1103,4 @@ if active_input:
                     st.session_state.last_input_id = None
                     st.rerun()
 else:
-    st.info("Please upload an image or turn on the camera system to begin / 請上傳圖片或開啟相機鏡頭以開始")
+    st.info("Please capture from the bench camera or upload an image to begin / 請使用實驗台鏡頭拍照或上傳圖片以開始")
