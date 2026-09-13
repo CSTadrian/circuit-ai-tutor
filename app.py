@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
+import time
 import pandas as pd
 import json
 import os
@@ -8,7 +9,8 @@ import pytz
 import cv2
 import numpy as np
 from datetime import datetime
-from PIL import Image as PILImage, ImageDraw, ImageOps
+from PIL import Image as PILImage, ImageFont, ImageDraw, ImageOps
+import re
 
 # --- SDK IMPORTS ---
 from google import genai
@@ -89,6 +91,14 @@ UI = {
         "metric_resistance": "🚧 Traffic Jam Thickness (Resistance Blockage)",
         "metric_capacitance": "💧 Energy Water Tank Volume",
         "metric_ldr_delta": "🌗 Light-to-Shadow Delta Swing",
+        "benchmarks_title": "⏱️ Latency Benchmarks (HUD)",
+        "cv_header": "⚡ Local / CV Image Processing",
+        "cloud_header": "☁️ Cloud Multimodal AI (Gemini)",
+        "lat_ingress": "Image Upload & Ingress Decode",
+        "lat_grid": "OpenCV Grid Extraction",
+        "lat_vision": "Cloud Vision Component Identification",
+        "lat_diag": "Cloud Electrical Logic Diagnosis",
+        "lat_socratic": "Cloud Socratic Verification"
     },
     "hk": {
         "title": "🔌 AI 電路導師",
@@ -136,6 +146,14 @@ UI = {
         "metric_resistance": "🚧 交通擠塞厚度 (總電阻屏障)",
         "metric_capacitance": "💧 儲能水箱容量 (電容容量)",
         "metric_ldr_delta": "🌗 光影動態擺幅 (LDR 變動差值)",
+        "benchmarks_title": "⏱️ 延遲基準測試監控 (HUD)",
+        "cv_header": "⚡ 本地 / CV 影像運算處理",
+        "cloud_header": "☁️ 雲端多模態 AI (Gemini 3.1 Pro)",
+        "lat_ingress": "圖片上傳傳輸與解碼",
+        "lat_grid": "OpenCV 導電軌道網格運算",
+        "lat_vision": "雲端視覺零件特徵辨識",
+        "lat_diag": "雲端電路拓撲與邏輯診斷",
+        "lat_socratic": "雲端蘇格拉底實驗驗證"
     }
 }
 
@@ -178,6 +196,8 @@ st.markdown("""
     #root > div:nth-child(1) > div > div > div > div > section > div {padding-top: 0rem;}
     </style>
     """, unsafe_allow_html=True)
+
+RESAMPLE_METHOD = getattr(PILImage, 'Resampling', PILImage).LANCZOS
 
 def detect_horizontal_rows(pil_img):
     if pil_img is None: return []
@@ -232,6 +252,7 @@ def detect_horizontal_rows(pil_img):
     return [int((y / height) * 1000) for y in peaks]
     
 def process_uploaded_image(file_input):
+    t_start = time.perf_counter()
     try:
         if isinstance(file_input, str):
             img = PILImage.open(file_input)
@@ -244,13 +265,12 @@ def process_uploaded_image(file_input):
         
         MAX_SAFE_DIM = 4500 
         if max(img.size) > MAX_SAFE_DIM:
-            img.thumbnail((MAX_SAFE_DIM, MAX_SAFE_DIM), PILImage.Resampling.LANCZOS)
+            img.thumbnail((MAX_SAFE_DIM, MAX_SAFE_DIM), RESAMPLE_METHOD)
             
-        # # Aggressive Global Contrast Adjustment Matrix (No CLAHE Artifacting)
-        # img_np = np.array(img)
-        # enhanced_np = cv2.convertScaleAbs(img_np, alpha=1.6, beta=-35)
-        # img = PILImage.fromarray(enhanced_np)
-            
+        t_duration_ms = (time.perf_counter() - t_start) * 1000.0
+        if "latency_log" not in st.session_state:
+            st.session_state.latency_log = {}
+        st.session_state.latency_log["Step 0: Image Ingress (ms)"] = t_duration_ms
         return img
     except Exception as e:
         st.error(f"Image Load Failed: {e}")
@@ -316,29 +336,46 @@ def draw_pins_on_image(image, df_components):
         draw.ellipse([end[0]-6, end[1]-6, end[0]+6, end[1]+6], fill=(255, 255, 0), outline=(0,0,0))
     return img_copy
 
-def create_visual_report(successes, errors, lang):
-    img = PILImage.new('RGB', (800, 600), color=(255, 255, 255))
+def get_ui_font(size=18):
+    font_path = '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc'
+    try:
+        return ImageFont.truetype(font_path, size)
+    except Exception:
+        return ImageFont.load_default()
+
+def create_visual_report(successes, errors, lang='en'):
+    w, h = 900, max(500, 120 + (len(successes) + len(errors)) * 36)
+    img = PILImage.new('RGB', (w, h), color=(248, 249, 250))
     draw = ImageDraw.Draw(img)
     
-    title = "Visual Performance Summary 📊" if lang == "en" else "視覺化成果總結 📊"
-    draw.text((30, 20), title, fill=(0, 0, 0))
+    title_font = get_ui_font(22)
+    body_font = get_ui_font(18)
     
-    draw.rectangle([30, 60, 770, 280], outline=(0, 150, 0), width=3, fill=(240, 255, 240))
-    draw.text((50, 75), "✅ What you did well! / 做得好嘅地方！", fill=(0, 128, 0))
+    draw.rectangle([(0, 0), (w, 60)], fill=(41, 128, 185))
+    draw.text((25, 18), '[ REPORT ] Circuit Evaluation / 電路診斷總結報告', fill=(255, 255, 255), font=title_font)
     
-    y_off = 110
-    for item in successes[:5]: 
-        draw.text((60, y_off), f"🌟 {item}", fill=(30, 30, 30))
-        y_off += 30
-
-    draw.rectangle([30, 310, 770, 560], outline=(200, 100, 0), width=3, fill=(255, 250, 240))
-    draw.text((50, 325), "🛠️ Things to check / 需要檢查嘅地方", fill=(200, 100, 0))
-    
-    y_off = 360
-    for item in errors[:5]:
-        draw.text((60, y_off), f"🔍 {item}", fill=(30, 30, 30))
-        y_off += 30
-        
+    y = 80
+    draw.text((30, y), '[PASS] Correct Connections / 正確接線:', fill=(39, 174, 96), font=title_font)
+    y += 35
+    if not successes:
+        draw.text((50, y), '- None detected yet / 尚未檢測到', fill=(100, 100, 100), font=body_font)
+        y += 30
+    else:
+        for item in successes:
+            draw.text((50, y), f'+ {str(item).strip()}', fill=(30, 30, 30), font=body_font)
+            y += 30
+            
+    y += 15
+    draw.text((30, y), '[CHECK] Items to Adjust / 需要檢查與調整:', fill=(192, 57, 43), font=title_font)
+    y += 35
+    if not errors:
+        draw.text((50, y), '- All checks passed! No issues / 全部正常，無錯誤！', fill=(39, 174, 96), font=body_font)
+        y += 30
+    else:
+        for item in errors:
+            draw.text((50, y), f'- {str(item).strip()}', fill=(30, 30, 30), font=body_font)
+            y += 30
+            
     return img
 
 def save_to_drive(user_id, task_name, ai_feedback, calculated_marks, res_data, images_dict):
@@ -347,9 +384,9 @@ def save_to_drive(user_id, task_name, ai_feedback, calculated_marks, res_data, i
     hk_time_str = datetime.now(hk_tz).strftime('%Y-%m-%d %H:%M:%S')
     task_num = task_name.split(":")[0].replace("Task", "").strip()
     file_prefix = f"user{user_id}_task{task_num}"
+    lat_log = st.session_state.get("latency_log", {})
 
     try:
-        # 1. Process and save visual assets to Drive
         for img_key, img_obj in images_dict.items():
             if img_obj:
                 buf = io.BytesIO()
@@ -360,12 +397,9 @@ def save_to_drive(user_id, task_name, ai_feedback, calculated_marks, res_data, i
                 media = MediaIoBaseUpload(buf, mimetype='image/png', resumable=True)
                 service.files().create(body=img_metadata, media_body=media).execute()
 
-        # 2. Format lists into clean text blocks using standard pipe delimiters 
-        # This keeps multi-line text entries inside a single, clean CSV cell row structure.
         success_joined = " | ".join(res_data.get("success_summary", []))
         error_joined = " | ".join(res_data.get("error_summary", []))
 
-        # 3. Compile the true comprehensive multi-column audit dataset
         new_row = pd.DataFrame([{
             "User ID": user_id, 
             "Task Name": task_name,
@@ -374,6 +408,10 @@ def save_to_drive(user_id, task_name, ai_feedback, calculated_marks, res_data, i
             "Calculated Current (mA)": res_data.get("calculated_current_ma", 0.0),
             "Water Tank Score (L)": res_data.get("water_tank_score", 0),
             "LDR Delta Score (Δ)": res_data.get("ldr_delta_score", 0),
+            "Latency Image Ingress (ms)": lat_log.get("Step 0: Image Ingress (ms)", 0.0),
+            "Latency OpenCV Grid (ms)": lat_log.get("Step 1a: OpenCV Grid Extraction (ms)", 0.0),
+            "Latency Cloud Vision (s)": lat_log.get("Step 1b: Cloud Vision AI (s)", 0.0),
+            "Latency Cloud Diag (s)": lat_log.get("Step 3: Cloud AI Diagnosis (s)", 0.0),
             "Raw AI Feedback String": ai_feedback, 
             "What You Did Well": success_joined,
             "Things To Check / Improve": error_joined,
@@ -381,7 +419,6 @@ def save_to_drive(user_id, task_name, ai_feedback, calculated_marks, res_data, i
             "Final Diagnostic Image": f"{file_prefix}_4.png"
         }])
 
-        # 4. Read/Write update pipeline for the cloud repository tracking CSV file
         query = f"name='{CSV_FILENAME}' and '{PARENT_FOLDER_ID}' in parents and trashed=false"
         items = service.files().list(q=query, fields="files(id)").execute().get('files', [])
 
@@ -407,12 +444,13 @@ def save_to_drive(user_id, task_name, ai_feedback, calculated_marks, res_data, i
             media = MediaIoBaseUpload(io.BytesIO(updated_csv_bytes), mimetype='text/csv')
             service.files().update(fileId=file_id, media_body=media).execute()
             
-        st.toast("✅ Automatically saved complete metrics row to Google Drive!")
+        st.toast("✅ Automatically logged benchmarked run to Google Drive!")
         
     except Exception as e:
         st.error(f"Drive Save Error: {e}")
 
 # --- 4. GLOBAL STATE SYSTEM MAPPERS ---
+if "latency_log" not in st.session_state: st.session_state.latency_log = {}
 if "step" not in st.session_state: st.session_state.step = 1
 if "components_df" not in st.session_state: st.session_state.components_df = pd.DataFrame()
 if "analysis_result" not in st.session_state: st.session_state.analysis_result = None
@@ -425,7 +463,6 @@ if "socratic_chat" not in st.session_state: st.session_state.socratic_chat = []
 for i in range(1, 5): 
     if f"img{i}" not in st.session_state: st.session_state[f"img{i}"] = None
 
-# Safety synchronization instance block
 active_input = None
 
 def reset_flow():
@@ -437,6 +474,7 @@ def reset_flow():
     st.session_state.breadboard_corners = None
     st.session_state.socratic_q_idx = 0
     st.session_state.socratic_chat = []
+    st.session_state.latency_log = {}
 
 def get_socratic_challenges(task_name, user_id):
     try:
@@ -471,7 +509,7 @@ def get_socratic_challenges(task_name, user_id):
             "Level 3 🔴 (Dynamic Dark Control): Build a circuit that turns on perfectly only when an absolute shadow hits.\n\n第三關 🔴 (動態暗效應): 砌出一個能夠喺完全黑暗下先至完美觸發嘅自動感光迴路。"
         ]
 
-# --- 6. MAIN ENVIRONMENT UI RENDERING ---
+# --- 5. MAIN ENVIRONMENT UI RENDERING ---
 lang_select = st.radio("🌐", ["English", "繁體中文"], horizontal=True, label_visibility="collapsed")
 l = "en" if lang_select == "English" else "hk"
 
@@ -482,7 +520,6 @@ with st.sidebar:
     user_id = st.selectbox(UI[l]["user_id"], [f"{i:02d}" for i in range(1, 52)])
     selected_task = st.selectbox(UI[l]["task"], list(TASKS.keys()))
     
-    # Blueprint Loader Verification Block
     raw_schematic = None
     schematic_filename = TASKS[selected_task]
     
@@ -513,10 +550,31 @@ with st.sidebar:
         st.session_state.last_input_id = None
         st.rerun()
 
+    # --- LATENCY BENCHMARK HUD ---
+    st.divider()
+    st.markdown(f"### {UI[l]['benchmarks_title']}")
+    lat = st.session_state.get("latency_log", {})
+    if lat:
+        st.markdown(f"**{UI[l]['cv_header']}**")
+        if "Step 0: Image Ingress (ms)" in lat:
+            st.metric(label=UI[l]["lat_ingress"], value=f"{lat['Step 0: Image Ingress (ms)']:.1f} ms")
+        if "Step 1a: OpenCV Grid Extraction (ms)" in lat:
+            st.metric(label=UI[l]["lat_grid"], value=f"{lat['Step 1a: OpenCV Grid Extraction (ms)']:.1f} ms")
+
+        st.markdown(f"**{UI[l]['cloud_header']}**")
+        if "Step 1b: Cloud Vision AI (s)" in lat:
+            st.metric(label=UI[l]["lat_vision"], value=f"{lat['Step 1b: Cloud Vision AI (s)']:.2f} s")
+        if "Step 3: Cloud AI Diagnosis (s)" in lat:
+            st.metric(label=UI[l]["lat_diag"], value=f"{lat['Step 3: Cloud AI Diagnosis (s)']:.2f} s")
+        if "Step 5: Cloud Socratic Verification (s)" in lat:
+            st.metric(label=UI[l]["lat_socratic"], value=f"{lat['Step 5: Cloud Socratic Verification (s)']:.2f} s")
+    else:
+        st.caption("No operations clocked yet. Upload or snap a photo to benchmark.")
+
     st.markdown(f"### {UI[l]['guide_title']}")
     st.markdown(UI[l]['guide_text'])
 
-# --- 7. LOGIC CONTROL MATRICES ---
+# --- 6. LOGIC CONTROL MATRICES ---
 if active_input:
     current_input_id = getattr(active_input, "file_id", str(hash(active_input.getvalue())))
     
@@ -530,8 +588,11 @@ if active_input:
     raw_student = st.session_state.img1
 
     if raw_student is not None:
+        # --- BENCHMARK: OPENCV GRID DETECTION ---
         if not st.session_state.hough_rows:
+            t_cv_start = time.perf_counter()
             st.session_state.hough_rows = detect_horizontal_rows(raw_student)
+            st.session_state.latency_log["Step 1a: OpenCV Grid Extraction (ms)"] = (time.perf_counter() - t_cv_start) * 1000.0
 
         is_camera_mode = (input_mode == UI[l]["mode_camera"])
 
@@ -541,7 +602,7 @@ if active_input:
             
             if is_camera_mode:
                 orig_w, orig_h = grid_visualization.size
-                large_grid_img = grid_visualization.resize((orig_w * 3, orig_h * 3), PILImage.Resampling.LANCZOS)
+                large_grid_img = grid_visualization.resize((orig_w * 3, orig_h * 3), RESAMPLE_METHOD)
                 st.subheader(UI[l]["your_circuit"])
                 st.image(large_grid_img, use_container_width=True)
                 if raw_schematic is not None:
@@ -576,6 +637,9 @@ if active_input:
                           * Absence of Green, Orange, or Red bands -> Classify value string strictly as '1k ohm'.
                         Return JSON mapping 'breadboard_corners' and 'components'.
                         """
+
+                    # Benchmark Step 1b: Cloud Vision Call
+                    t_api_start = time.perf_counter()
                     resp = client.models.generate_content(
                         model=MODEL_ID, contents=[raw_student, prompt],
                         config=types.GenerateContentConfig(
@@ -608,6 +672,7 @@ if active_input:
                             }
                         )
                     )
+                    st.session_state.latency_log["Step 1b: Cloud Vision AI (s)"] = time.perf_counter() - t_api_start
                     
                     result = resp.parsed
                     if isinstance(result, list) and len(result) > 0: result = result[0]
@@ -653,7 +718,7 @@ if active_input:
                 base_grid_img = draw_coordinate_grid(raw_student.copy(), st.session_state.hough_rows, st.session_state.breadboard_corners)
                 st.session_state.img3 = draw_pins_on_image(base_grid_img, edited_df)
                 tune_w, tune_h = st.session_state.img3.size
-                large_img3 = st.session_state.img3.resize((tune_w * 2, tune_h * 2), PILImage.Resampling.LANCZOS)
+                large_img3 = st.session_state.img3.resize((tune_w * 2, tune_h * 2), RESAMPLE_METHOD)
                 st.image(large_img3, caption=UI[l]["verify"], use_container_width=True)
 
             if st.button(UI[l]["step2_confirm"], type="primary"):
@@ -663,18 +728,16 @@ if active_input:
                 st.session_state.step = 3
                 st.rerun()
 
-        # --- STEP 3: REAL-TIME SIMULATION & TIMING TRANSLATIONS ---
-        # --- STEP 3: REAL-TIME SIMULATION & TIMING TRANSLATIONS ---
+        # --- STEP 3: REAL-TIME SIMULATION & DIAGNOSIS ---
         elif st.session_state.step == 3:
             st.subheader(UI[l]["your_circuit"])
             
             w3, h3 = st.session_state.img3.size
-            large_img3_review = st.session_state.img3.resize((w3 * 2, h3 * 2), PILImage.Resampling.LANCZOS)
+            large_img3_review = st.session_state.img3.resize((w3 * 2, h3 * 2), RESAMPLE_METHOD)
             st.image(large_img3_review, use_container_width=True)
             
             col_btn_run, col_btn_back = st.columns([1, 4])
             with col_btn_run:
-                # FIX 1: Added unique key="btn_step3_analyze" to prevent widget key collision
                 if st.button(UI[l]["step2_confirm"], type="primary", key="btn_step3_analyze"):
                     with st.spinner(UI[l]["checking"]):
                         summary = st.session_state.components_df.to_string(index=False)
@@ -728,6 +791,8 @@ if active_input:
                             if raw_schematic is not None:
                                 input_contents.insert(0, raw_schematic)
                                 
+                            # Benchmark Step 3: Cloud Diagnosis Call
+                            t_diag_start = time.perf_counter()
                             resp = client.models.generate_content(
                                 model=MODEL_ID, 
                                 contents=input_contents,
@@ -749,7 +814,7 @@ if active_input:
                                             "detected_errors": {
                                                 "type": "ARRAY", 
                                                 "items": {
-                                                    "type": "OBJECT",
+                                                    "type": "OBJECT", 
                                                     "properties": {
                                                         "error_type": {"type": "STRING"},
                                                         "location": {"type": "ARRAY", "items": {"type": "INTEGER"}}
@@ -761,9 +826,8 @@ if active_input:
                                     }
                                 )
                             )
+                            st.session_state.latency_log["Step 3: Cloud AI Diagnosis (s)"] = time.perf_counter() - t_diag_start
                             
-                            # FIX 2: Parse raw text JSON to guarantee it functions as a standard dictionary
-                            # This fully completely bypasses Pydantic Object .get() attribute errors.
                             result = json.loads(resp.text)
                             st.session_state.analysis_result = result
                             
@@ -781,7 +845,6 @@ if active_input:
                                         
                             st.session_state.img4 = diag_img
                             
-                            # --- CALCULATE THE OBJECTIVE ACCURACY METRIC MARKS ---
                             success_list = result.get("success_summary", [])
                             error_list = result.get("error_summary", [])
                             total_diagnostics = len(success_list) + len(error_list)
@@ -791,12 +854,11 @@ if active_input:
                             else:
                                 calculated_marks = 0
                             
-                            # --- EXECUTE THE NEW LOGGING DATA ROW SUBMISSION ---
                             feedback_text = result.get("feedback", "")
                             save_to_drive(
                                 user_id=user_id, 
                                 task_name=selected_task, 
-                                ai_feedback=feedback_text,
+                                ai_feedback=feedback_text, 
                                 calculated_marks=calculated_marks, 
                                 res_data=result,
                                 images_dict={"1": st.session_state.img1, "4": st.session_state.img4, "summary": diag_img}
@@ -806,7 +868,6 @@ if active_input:
                             st.rerun()
                             
                         except Exception as e:
-                            # FIX 3: Removed instant st.rerun() so you can read what actually caused the crash!
                             st.error(f"⚠️ AI Execution Error: {e}")
                             st.info("The application paused here so you can read the error above. Fix your asset paths, API credentials, or Drive connection parameters, then click reset.")
                             
@@ -816,7 +877,6 @@ if active_input:
                     st.rerun()
 
         # --- STEP 4: PERFORMANCE TELEMETRY HUD SCOREBOARD ---
-        # --- STEP 4: PERFORMANCE TELEMETRY HUD SCOREBOARD ---
         elif st.session_state.step == 4:
             st.subheader(UI[l]["step3_title"])
             
@@ -824,22 +884,16 @@ if active_input:
             success_list = res_data.get("success_summary", [])
             error_list = res_data.get("error_summary", [])
             
-            # --- NEW OBJECTIVE SCORING MATRIX ---
-            # Formula: successes / (successes + errors) scaled out of 100 Marks
             total_diagnostics = len(success_list) + len(error_list)
             if total_diagnostics > 0:
                 calculated_marks = int((len(success_list) / total_diagnostics) * 100)
             else:
                 calculated_marks = 0
             
-            # 2-Column Layout (Column 2/Traffic Jam is completely removed)
             m_col1, m_col2 = st.columns(2)
-            
-            # Column 1: Core Performance Marks (Calculated proportionally)
             with m_col1:
                 st.metric(label=UI[l]["metric_brightness"], value=f"{calculated_marks} MARKS")
                 
-            # Column 3: Context-Dependent Tooling Metrics
             with m_col2:
                 if "Task 2" in selected_task:
                     st.metric(label=UI[l]["metric_capacitance"], value=f"{res_data.get('water_tank_score', 0)} L")
@@ -849,7 +903,6 @@ if active_input:
                     st.metric(label="Calculated Current", value=f"{res_data.get('calculated_current_ma', 0.0):.3f} mA")
 
             st.divider()
-            
 
             if st.session_state.img4 is not None:
                 st.image(st.session_state.img4, caption=UI[l]["ai_diag"], use_container_width=True)
@@ -859,9 +912,6 @@ if active_input:
                 
                 feedback_text = res_data.get("feedback", "")
                 st.info(feedback_text)
-                
-                success_list = res_data.get("success_summary", [])
-                error_list = res_data.get("error_summary", [])
                 
                 report_card_img = create_visual_report(success_list, error_list, l)
                 st.image(report_card_img, use_container_width=True)
@@ -930,11 +980,14 @@ if active_input:
                                 Tone: Fun, encouraging, suited for P4-S3 students. Provide bilingual text (English, then Traditional Chinese).
                                 """
                             try:
+                                t_socratic_start = time.perf_counter()
                                 resp = client.models.generate_content(
                                     model=MODEL_ID, 
                                     contents=[img_pil, prompt],
                                     config=types.GenerateContentConfig(temperature=0.4)
                                 )
+                                st.session_state.latency_log["Step 5: Cloud Socratic Verification (s)"] = time.perf_counter() - t_socratic_start
+
                                 feedback = resp.text
                                 display_feedback = feedback.replace("[VERIFICATION: PASSED]", "").replace("[VERIFICATION: FAILED]", "").strip()
                                 
@@ -963,4 +1016,4 @@ if active_input:
                     st.session_state.last_input_id = None
                     st.rerun()
 else:
-    st.error("Please upload an image or turn on the camera system to begin / 請上傳圖片或開啟相機鏡頭以開始")
+    st.info("Please upload an image or turn on the camera system to begin / 請上傳圖片或開啟相機鏡頭以開始")
